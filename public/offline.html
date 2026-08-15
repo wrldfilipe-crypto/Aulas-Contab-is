@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Sem Ligação — Global Account</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+      background: #0B1E3D;
+      color: #E2F0FF;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+    }
+    .logo {
+      display: flex; align-items: center; gap: 12px;
+      margin-bottom: 40px;
+    }
+    .logo-icon {
+      width: 48px; height: 48px; background: #2563EB;
+      border-radius: 12px; display: flex; align-items: center;
+      justify-content: center; font-size: 24px;
+    }
+    .logo-text { font-size: 20px; font-weight: 700; color: #E2F0FF; }
+    .logo-sub  { font-size: 12px; color: #93C5FD; }
+
+    .signal-icon {
+      font-size: 72px; margin-bottom: 20px;
+      animation: float 3s ease-in-out infinite;
+    }
+    @keyframes float {
+      0%,100% { transform: translateY(0); }
+      50%      { transform: translateY(-8px); }
+    }
+
+    h1 { font-size: 26px; font-weight: 700; margin-bottom: 10px; text-align: center; }
+    .subtitle {
+      font-size: 15px; color: #93C5FD; text-align: center;
+      max-width: 380px; line-height: 1.6; margin-bottom: 36px;
+    }
+
+    .available-title {
+      font-size: 12px; font-weight: 700; color: #64748B;
+      letter-spacing: 1px; text-transform: uppercase;
+      margin-bottom: 14px;
+    }
+    .cards {
+      display: grid; grid-template-columns: 1fr 1fr;
+      gap: 14px; width: 100%; max-width: 420px;
+      margin-bottom: 32px;
+    }
+    .card {
+      background: rgba(17,45,84,0.80);
+      border: 1px solid rgba(96,165,250,0.25);
+      border-radius: 16px; padding: 20px 16px;
+      text-decoration: none; color: inherit;
+      cursor: pointer; transition: all 0.25s;
+      text-align: center; display: block;
+    }
+    .card:hover {
+      background: rgba(30,64,115,0.90);
+      border-color: #3B82F6;
+      transform: translateY(-3px);
+      box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+    }
+    .card-icon  { font-size: 36px; margin-bottom: 10px; }
+    .card-name  { font-size: 15px; font-weight: 700; color: #E2F0FF; margin-bottom: 4px; }
+    .card-desc  { font-size: 12px; color: #93C5FD; line-height: 1.4; }
+    .card-badge {
+      display: inline-block; margin-top: 8px;
+      background: rgba(34,197,94,0.15);
+      border: 1px solid rgba(34,197,94,0.4);
+      color: #4ADE80; border-radius: 20px;
+      font-size: 10px; font-weight: 700;
+      padding: 2px 10px; letter-spacing: 0.5px;
+    }
+
+    .blocked-section {
+      width: 100%; max-width: 420px;
+      background: rgba(220,38,38,0.06);
+      border: 1px solid rgba(220,38,38,0.2);
+      border-radius: 12px; padding: 14px 16px;
+      margin-bottom: 28px;
+    }
+    .blocked-title {
+      font-size: 11px; font-weight: 700; color: #F87171;
+      letter-spacing: 0.8px; text-transform: uppercase;
+      margin-bottom: 10px;
+      display: flex; align-items: center; gap: 6px;
+    }
+    .blocked-list {
+      display: flex; flex-wrap: wrap; gap: 6px;
+    }
+    .blocked-tag {
+      background: rgba(255,255,255,0.05);
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 6px; padding: 3px 10px;
+      font-size: 11px; color: #64748B;
+    }
+
+    .btn-retry {
+      background: #2563EB; color: white;
+      border: none; padding: 13px 32px;
+      border-radius: 10px; font-size: 15px;
+      font-weight: 600; cursor: pointer;
+      transition: all 0.2s; margin-bottom: 16px;
+      display: flex; align-items: center; gap: 8px;
+    }
+    .btn-retry:hover { background: #1D4ED8; transform: translateY(-1px); }
+    .btn-retry.checking { opacity: 0.7; cursor: not-allowed; }
+
+    .status-bar {
+      display: flex; align-items: center; gap: 8px;
+      font-size: 12px; color: #475569;
+    }
+    .dot {
+      width: 8px; height: 8px; border-radius: 50%;
+      background: #DC2626;
+      animation: blink 1.5s ease infinite;
+    }
+    .dot.online { background: #22C55E; animation: none; }
+    @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.3} }
+
+    @media (max-width: 400px) {
+      .cards { grid-template-columns: 1fr; }
+      h1 { font-size: 22px; }
+    }
+  </style>
+</head>
+<body>
+
+  <div class="logo">
+    <div class="logo-icon">📒</div>
+    <div>
+      <div class="logo-text">Global Account</div>
+      <div class="logo-sub">Contabilidade Unificada</div>
+    </div>
+  </div>
+
+  <div class="signal-icon">📵</div>
+  <h1>Sem ligação à internet</h1>
+  <p class="subtitle">
+    Não foi possível aceder a esta página sem dados móveis
+    ou Wi-Fi. Podes usar as páginas disponíveis offline:
+  </p>
+
+  <div class="available-title">✅ Disponível sem internet</div>
+  <div class="cards">
+    <a href="/" class="card">
+      <div class="card-icon">🏠</div>
+      <div class="card-name">Página Principal</div>
+      <div class="card-desc">Dashboard com os teus indicadores e resumo</div>
+      <div class="card-badge">OFFLINE OK</div>
+    </a>
+    <a href="/Estudos" class="card">
+      <div class="card-icon">📚</div>
+      <div class="card-name">Aprendizados</div>
+      <div class="card-desc">Estudos, quizzes e certificações guardados</div>
+      <div class="card-badge">OFFLINE OK</div>
+    </a>
+  </div>
+
+  <div class="blocked-section">
+    <div class="blocked-title">
+      🔒 Requerem ligação à internet
+    </div>
+    <div class="blocked-list">
+      <span class="blocked-tag">🤖 IA Contabilista</span>
+      <span class="blocked-tag">🧾 Faturação</span>
+      <span class="blocked-tag">📊 Relatórios</span>
+      <span class="blocked-tag">🏢 ERP</span>
+      <span class="blocked-tag">👥 RH</span>
+      <span class="blocked-tag">📦 Stocks</span>
+      <span class="blocked-tag">💱 Câmbio Live</span>
+      <span class="blocked-tag">📰 Notícias</span>
+      <span class="blocked-tag">📒 Contabilidade</span>
+    </div>
+  </div>
+
+  <button class="btn-retry" onclick="tryReconnect()" id="retryBtn">
+    🔄 Verificar ligação
+  </button>
+
+  <div class="status-bar">
+    <div class="dot" id="statusDot"></div>
+    <span id="statusText">Offline — aguardando ligação...</span>
+  </div>
+
+  <script>
+    let checking = false;
+
+    async function tryReconnect() {
+      if (checking) return;
+      checking = true;
+      const btn = document.getElementById("retryBtn");
+      btn.textContent = "⏳ A verificar...";
+      btn.classList.add("checking");
+
+      try {
+        await fetch("/manifest.json", { cache: "no-store" });
+        document.getElementById("statusDot").classList.add("online");
+        document.getElementById("statusText").textContent = 
+          "Ligação restaurada! A redirecionar...";
+        btn.textContent = "✅ Online — A redirecionar!";
+        setTimeout(() => history.back() || location.replace("/"), 1200);
+      } catch {
+        btn.textContent = "❌ Ainda sem ligação. Tenta mais tarde.";
+        setTimeout(() => {
+          btn.textContent    = "🔄 Verificar ligação";
+          btn.classList.remove("checking");
+          checking = false;
+        }, 2500);
+      }
+    }
+
+    window.addEventListener("online", () => {
+      document.getElementById("statusDot").classList.add("online");
+      document.getElementById("statusText").textContent =
+        "Ligação restaurada! A redirecionar em 1 segundo...";
+      setTimeout(() => history.back() || location.replace("/"), 1200);
+    });
+  </script>
+
+</body>
+</html>

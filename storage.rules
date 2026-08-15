@@ -1,0 +1,18 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    // Foto de perfil: só o dono escreve, qualquer autenticado lê
+    match /profilePhotos/{uid}/{fileName} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null && request.auth.uid == uid;
+    }
+
+    // Arquivos de conversas: só membro da conversa escreve, qualquer autenticado lê
+    match /conversations/{convId}/files/{fileName} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null
+        && request.auth.uid in firestore.get(/databases/$(database)/documents/conversations/$(convId)).data.members;
+    }
+  }
+}

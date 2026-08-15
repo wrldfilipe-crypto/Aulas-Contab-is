@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="icon" type="image/svg+xml" href="/logo.svg" />
+    <link rel="manifest" href="/manifest.json"/>
+    <meta name="theme-color" content="#1E3A8A"/>
+    <meta name="apple-mobile-web-app-capable" content="yes"/>
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
+    <meta name="apple-mobile-web-app-title" content="ContaGlobal"/>
+    <link rel="apple-touch-icon" href="/logo_icone_192.png"/>
+    <title>Contabilidade Unificada — Global Account</title>
+    <script>
+      // Immediate theme initialization from localStorage to prevent flash of white
+      (function() {
+        try {
+          var theme = localStorage.getItem('app_theme') || 'auto';
+          var isDark = theme === 'dark' || (theme === 'auto' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+          if (isDark) {
+            document.documentElement.classList.add('dark');
+          } else {
+            document.documentElement.classList.remove('dark');
+          }
+        } catch (e) {}
+      })();
+    </script>
+    <script>
+      // Service Worker Registration for PWA
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', function() {
+          navigator.serviceWorker.register('/sw.js')
+            .then(function(registration) {
+              console.log('[PWA] Service Worker registrado com sucesso no escopo:', registration.scope);
+            })
+            .catch(function(error) {
+              console.warn('[PWA] Falha ao registrar Service Worker:', error);
+            });
+        });
+      }
+    </script>
+    <script>
+      // Suppress benign Vite WebSocket HMR disconnection errors in sandboxed iframe environment
+      window.addEventListener('unhandledrejection', function(event) {
+        var reason = event && event.reason;
+        var msg = (reason && (reason.message || reason.toString())) || '';
+        if (msg.includes('WebSocket') || msg.includes('vite') || msg.includes('closed without opened')) {
+          event.preventDefault();
+          event.stopImmediatePropagation();
+        }
+      }, true);
+      window.addEventListener('error', function(event) {
+        var msg = (event && event.message) || '';
+        if (msg.includes('WebSocket') || msg.includes('vite')) {
+          event.preventDefault();
+          event.stopImmediatePropagation();
+        }
+      }, true);
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
+

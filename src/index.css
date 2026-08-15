@@ -1,0 +1,902 @@
+@import "tailwindcss";
+
+/* Modo Foco Noturno - Tons Pastéis Escuros para menor fadiga ocular */
+html.night-focus-mode,
+html.night-focus-mode body {
+  background-color: #12151d !important;
+  color: #e2e8f0 !important;
+  transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+html.night-focus-mode ::selection {
+  background-color: #4338ca;
+  color: #f1f5f9;
+}
+
+/* Base containers & cards adaptation to dark pastel */
+html.night-focus-mode .bg-white,
+html.night-focus-mode .bg-slate-50,
+html.night-focus-mode .bg-slate-100 {
+  background-color: #1a1e29 !important;
+  color: #e2e8f0 !important;
+  border-color: #2e3446 !important;
+}
+
+html.night-focus-mode .bg-slate-200,
+html.night-focus-mode .bg-slate-300 {
+  background-color: #262c3d !important;
+  color: #f1f5f9 !important;
+  border-color: #3b4258 !important;
+}
+
+/* Borders */
+html.night-focus-mode .border-slate-100,
+html.night-focus-mode .border-slate-200,
+html.night-focus-mode .border-slate-300 {
+  border-color: #2a3040 !important;
+}
+
+/* Text colors adaptation for soft pastel contrast */
+html.night-focus-mode .text-slate-900,
+html.night-focus-mode .text-slate-800,
+html.night-focus-mode .text-slate-700 {
+  color: #e8ecf4 !important;
+}
+
+html.night-focus-mode .text-slate-600,
+html.night-focus-mode .text-slate-500 {
+  color: #94a3b8 !important;
+}
+
+html.night-focus-mode .text-slate-400 {
+  color: #818cf8 !important; /* Soft pastel indigo tone for labels */
+}
+
+/* Light color badges/containers converted to soft pastel dark backgrounds */
+html.night-focus-mode .bg-blue-50,
+html.night-focus-mode .bg-blue-100 {
+  background-color: #1e293b !important;
+  color: #93c5fd !important;
+  border-color: #2563eb40 !important;
+}
+
+html.night-focus-mode .bg-indigo-50,
+html.night-focus-mode .bg-indigo-100 {
+  background-color: #1e1b4b !important;
+  color: #c7d2fe !important;
+}
+
+html.night-focus-mode .bg-amber-50,
+html.night-focus-mode .bg-amber-100 {
+  background-color: #2e2617 !important;
+  color: #fde047 !important;
+}
+
+html.night-focus-mode .bg-emerald-50,
+html.night-focus-mode .bg-emerald-100 {
+  background-color: #142e23 !important;
+  color: #6ee7b7 !important;
+}
+
+html.night-focus-mode .bg-purple-50,
+html.night-focus-mode .bg-purple-100 {
+  background-color: #291e3b !important;
+  color: #e9d5ff !important;
+}
+
+html.night-focus-mode .bg-rose-50,
+html.night-focus-mode .bg-rose-100 {
+  background-color: #311822 !important;
+  color: #fca5a5 !important;
+}
+
+/* Header & Navigation bar soft dark pastel adjustment */
+html.night-focus-mode header,
+html.night-focus-mode nav,
+html.night-focus-mode .bg-slate-900 {
+  background-color: #11131a !important;
+  border-color: #272c3b !important;
+}
+
+/* === NIGHT FOCUS PASTEL COLOR PALETTES === */
+
+/* 1. Oceano Profundo (Deep Ocean - Pastel Azul/Marinho) */
+html.night-focus-mode.night-theme-ocean body,
+html.night-focus-mode.night-theme-ocean .bg-slate-50,
+html.night-focus-mode.night-theme-ocean .bg-gray-50 {
+  background-color: #0c1322 !important;
+  color: #cbd5e1 !important;
+}
+html.night-focus-mode.night-theme-ocean .bg-white {
+  background-color: #162032 !important;
+  color: #f1f5f9 !important;
+  border-color: #27364d !important;
+}
+html.night-focus-mode.night-theme-ocean #night-focus-mode-card {
+  background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%) !important;
+  border-color: #38bdf8 !important;
+}
+
+/* 2. Floresta Suave (Soft Forest - Pastel Verde Pinho) */
+html.night-focus-mode.night-theme-forest body,
+html.night-focus-mode.night-theme-forest .bg-slate-50,
+html.night-focus-mode.night-theme-forest .bg-gray-50 {
+  background-color: #0b1913 !important;
+  color: #cbd5e1 !important;
+}
+html.night-focus-mode.night-theme-forest .bg-white {
+  background-color: #13261e !important;
+  color: #f1f5f9 !important;
+  border-color: #224234 !important;
+}
+html.night-focus-mode.night-theme-forest #night-focus-mode-card {
+  background: linear-gradient(135deg, #06261a 0%, #143d2b 100%) !important;
+  border-color: #34d399 !important;
+}
+
+/* 3. Crepúsculo (Twilight - Pastel Violeta/Ameixa) */
+html.night-focus-mode.night-theme-twilight body,
+html.night-focus-mode.night-theme-twilight .bg-slate-50,
+html.night-focus-mode.night-theme-twilight .bg-gray-50 {
+  background-color: #150e20 !important;
+  color: #cbd5e1 !important;
+}
+html.night-focus-mode.night-theme-twilight .bg-white {
+  background-color: #211633 !important;
+  color: #f1f5f9 !important;
+  border-color: #382554 !important;
+}
+html.night-focus-mode.night-theme-twilight #night-focus-mode-card {
+  background: linear-gradient(135deg, #201035 0%, #361b58 100%) !important;
+  border-color: #c084fc !important;
+}
+
+/* Inputs & Selects */
+html.night-focus-mode input:not([type="checkbox"]):not([type="radio"]),
+html.night-focus-mode select,
+html.night-focus-mode textarea {
+  background-color: #161922 !important;
+  color: #e2e8f0 !important;
+  border-color: #2a3142 !important;
+}
+
+html.night-focus-mode input::placeholder,
+html.night-focus-mode textarea::placeholder {
+  color: #64748b !important;
+}
+
+/* Shadows softening */
+html.night-focus-mode .shadow-sm,
+html.night-focus-mode .shadow-md,
+html.night-focus-mode .shadow-lg,
+html.night-focus-mode .shadow-xl {
+  box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.5) !important;
+}
+
+/* Eye-care tint overlay for reducing eye strain */
+html.night-focus-mode::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 99999;
+  background: rgba(253, 230, 138, 0.012);
+  mix-blend-mode: multiply;
+}
+
+/* ==========================================================================
+   Desktop Sidebar Panel & Navigation Interactive Enhancements
+   ========================================================================== */
+
+#sidebar-panel-desktop {
+  transition: width 300ms cubic-bezier(0.4, 0, 0.2, 1), 
+              box-shadow 300ms cubic-bezier(0.4, 0, 0.2, 1), 
+              transform 300ms cubic-bezier(0.4, 0, 0.2, 1), 
+              filter 250ms ease-out,
+              backdrop-filter 250ms ease-out, 
+              -webkit-backdrop-filter 250ms ease-out,
+              background-color 250ms ease-out !important;
+  will-change: width, box-shadow, transform, backdrop-filter, filter;
+  transform-origin: left center;
+  border-top-right-radius: 16px !important;
+  border-bottom-right-radius: 16px !important;
+  border-right: 1px solid rgba(255, 255, 255, 0.22) !important;
+  border-top: 1px solid rgba(255, 255, 255, 0.18) !important;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.12) !important;
+  box-shadow: 0 10px 30px -5px rgba(0, 0, 0, 0.4), inset 1px 1px 1px 0px rgba(255, 255, 255, 0.2) !important;
+  backdrop-filter: blur(14px) contrast(120%) saturate(180%);
+  -webkit-backdrop-filter: blur(14px) contrast(120%) saturate(180%);
+}
+
+#sidebar-panel-desktop.w-64,
+#sidebar-panel-desktop[data-expanded="true"] {
+  box-shadow: 0 12px 32px -5px rgba(0, 0, 0, 0.45), inset 1px 1px 1px 0px rgba(255, 255, 255, 0.22) !important;
+}
+
+#sidebar-panel-desktop:hover {
+  transform: scale(1.014) translateY(-2px);
+  box-shadow: 0 25px 50px -10px rgba(0, 0, 0, 0.72), 0 0 40px 4px rgba(59, 130, 246, 0.42), inset 1px 1px 2px 0px rgba(255, 255, 255, 0.35) !important;
+  filter: brightness(1.12) contrast(1.08);
+}
+
+/* Pin button touch area, absolute vertical centering & 45-degree fluid rotation */
+#sidebar-pin-btn {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  padding: 0.625rem !important;
+  min-width: 44px !important;
+  min-height: 44px !important;
+  align-self: center !important;
+  margin-top: auto !important;
+  margin-bottom: auto !important;
+  transition: transform 250ms cubic-bezier(0.4, 0, 0.2, 1), background-color 200ms ease, color 200ms ease !important;
+}
+
+#sidebar-pin-btn svg {
+  transition: transform 300ms ease-in-out !important;
+}
+
+#sidebar-pin-btn:active {
+  transform: scale(0.92) !important;
+}
+
+#sidebar-pin-btn:hover svg {
+  transform: rotate(45deg) scale(1.15) !important;
+}
+
+#sidebar-pin-btn[data-pinned="true"] svg {
+  transform: rotate(45deg) !important;
+}
+
+/* Icon scale transition on button hover */
+#sidebar-panel-desktop button svg,
+#sidebar-nav button svg {
+  transition: transform 200ms cubic-bezier(0.4, 0, 0.2, 1) !important;
+}
+
+#sidebar-panel-desktop button:hover svg,
+#sidebar-nav button:hover svg {
+  transform: scale(1.08) !important;
+}
+
+#sidebar-nav button {
+  transition: all 250ms cubic-bezier(0.16, 1, 0.3, 1) !important;
+}
+
+#sidebar-nav button:focus-visible {
+  opacity: 0.95;
+  filter: brightness(1.15);
+  outline: 2px solid #60a5fa !important;
+  outline-offset: 2px !important;
+  border-radius: 12px !important;
+}
+
+#sidebar-nav button[data-active="true"],
+#sidebar-nav button.active,
+#sidebar-nav button.bg-blue-600 {
+  border-left: 5px solid #60a5fa !important;
+  border-top-left-radius: 4px;
+  border-bottom-left-radius: 4px;
+  box-shadow: inset 0 -3px 12px rgba(96, 165, 250, 0.4), inset 0 0 16px rgba(147, 197, 253, 0.35), 0 4px 16px rgba(37, 99, 235, 0.45) !important;
+  background: linear-gradient(135deg, #2563eb, #1d4ed8) !important;
+  transition: all 250ms cubic-bezier(0.16, 1, 0.3, 1) !important;
+}
+
+#sidebar-nav button[data-active="true"]:hover,
+#sidebar-nav button.active:hover,
+#sidebar-nav button.bg-blue-600:hover {
+  background: linear-gradient(135deg, #3b82f6, #2563eb) !important;
+  box-shadow: inset 0 -3px 14px rgba(147, 197, 253, 0.5), inset 0 0 18px rgba(191, 219, 254, 0.5), 0 6px 20px rgba(37, 99, 235, 0.5) !important;
+  filter: brightness(1.1);
+}
+
+#sidebar-nav button:not([data-active="true"]):not(.active):not(.bg-blue-600) {
+  transition: all 250ms cubic-bezier(0.16, 1, 0.3, 1) !important;
+}
+
+#sidebar-nav button:not([data-active="true"]):not(.active):not(.bg-blue-600):hover {
+  border-left: 4px solid #60a5fa !important;
+  background-image: linear-gradient(135deg, rgba(255, 255, 255, 0.08) 0%, rgba(96, 165, 250, 0.15) 100%) !important;
+  background-color: rgba(30, 41, 59, 0.85) !important;
+  box-shadow: 0 4px 16px -2px rgba(59, 130, 246, 0.25), inset 0 1px 0 rgba(255, 255, 255, 0.15) !important;
+  color: #f8fafc !important;
+  transform: translateX(3px) !important;
+}
+
+/* Pulsing status indicator dot during background synchronization */
+#sidebar-nav[data-syncing="true"] button[data-active="true"] span[title="Entidade Ativa"],
+#sidebar-nav[data-syncing="true"] .status-dot-active {
+  animation: sidebar-status-pulse 1.3s cubic-bezier(0.4, 0, 0.6, 1) infinite !important;
+}
+
+@keyframes sidebar-status-pulse {
+  0%, 100% {
+    transform: scale(1);
+    opacity: 1;
+    box-shadow: 0 0 6px rgba(52, 211, 153, 0.9);
+  }
+  50% {
+    transform: scale(1.45);
+    opacity: 0.65;
+    box-shadow: 0 0 16px rgba(52, 211, 153, 1), 0 0 24px rgba(52, 211, 153, 0.6);
+  }
+}
+
+/* Keyboard Navigation focus accessibility */
+#sidebar-nav button:focus-visible {
+  outline: 2px solid #60a5fa !important;
+  outline-offset: 2px !important;
+  border-radius: 12px !important;
+}
+
+/* Chevron indicator rotation */
+#sidebar-bottom-chevron-btn svg {
+  transition: transform 300ms cubic-bezier(0.4, 0, 0.2, 1) !important;
+}
+
+/* Responsive bottom sheet styles for mobile modals */
+@media (max-width: 639px) {
+  .modal-bottom-sheet-mobile {
+    position: fixed !important;
+    bottom: 0 !important;
+    left: 0 !important;
+    right: 0 !important;
+    top: auto !important;
+    border-bottom-left-radius: 0 !important;
+    border-bottom-right-radius: 0 !important;
+    border-top-left-radius: 24px !important;
+    border-top-right-radius: 24px !important;
+    max-height: 88vh !important;
+    overflow-y: auto !important;
+    animation: slide-up-mobile 300ms cubic-bezier(0.16, 1, 0.3, 1) !important;
+  }
+}
+
+@keyframes slide-up-mobile {
+  from {
+    transform: translateY(100%);
+  }
+  to {
+    transform: translateY(0);
+  }
+}
+
+/* ==========================================================================
+   Design Tokens & Unified Dark Theme Support (html.dark)
+   ========================================================================== */
+
+:root {
+  --bg-base: #f8fafc;
+  --bg-surface: #ffffff;
+  --bg-surface-elevated: #f1f5f9;
+  --bg-sidebar: #0f172a;
+  --bg-topbar: #ffffff;
+  --border-subtle: rgba(226, 232, 240, 0.8);
+}
+
+html.dark {
+  --bg-base: #0F1929;             /* Fundo do chat */
+  --bg-surface: #0A1628;          /* Painel lateral de conversas */
+  --bg-surface-elevated: #1A2540; /* Barra de input / mensagens assistente */
+  --bg-sidebar: #0A1628;          /* Painel lateral de conversas */
+  --bg-topbar: #0A1628;           /* Topbar */
+  --border-subtle: rgba(255, 255, 255, 0.07);
+  color-scheme: dark;
+}
+
+html.dark,
+html.dark body,
+html.dark #root,
+html.dark #app-container,
+html.dark #workspace-scroll-area {
+  background-color: #0F1929 !important; /* Fundo do chat */
+  color: #E8EDF5 !important;
+}
+
+html.dark header,
+html.dark #header-panel {
+  background-color: #0A1628 !important;
+  border-color: rgba(255, 255, 255, 0.07) !important;
+}
+
+html.dark nav,
+html.dark aside,
+html.dark #sidebar-panel-desktop,
+html.dark #sidebar-panel-mobile,
+html.dark #sidebar-nav,
+html.dark .conversations-sidebar {
+  background-color: #0A1628 !important; /* Painel lateral de conversas */
+  color: #C8D4E8 !important;              /* Texto do painel lateral */
+  border-color: rgba(255, 255, 255, 0.07) !important;
+}
+
+html.dark .bg-white {
+  background-color: #0A1628 !important;
+  color: #E8EDF5 !important;
+  border-color: rgba(255, 255, 255, 0.07) !important;
+}
+
+html.dark .bg-slate-50,
+html.dark .bg-gray-50 {
+  background-color: #0F1929 !important; /* Fundo do chat */
+  color: #E8EDF5 !important;
+  border-color: rgba(255, 255, 255, 0.07) !important;
+}
+
+html.dark .bg-slate-100,
+html.dark .bg-gray-100 {
+  background-color: #1A2540 !important; /* Barra de input / elevação */
+  color: #E8EDF5 !important;
+  border-color: rgba(255, 255, 255, 0.07) !important;
+}
+
+html.dark .bg-slate-800,
+html.dark .bg-slate-900,
+html.dark .bg-slate-950,
+html.dark .bg-gray-800,
+html.dark .bg-gray-900 {
+  background-color: #0A1628 !important;
+  color: #E8EDF5 !important;
+  border-color: rgba(255, 255, 255, 0.07) !important;
+}
+
+/* Border standardization across all dark mode cards & containers */
+html.dark .border-slate-100,
+html.dark .border-slate-200,
+html.dark .border-slate-300,
+html.dark .border-slate-700,
+html.dark .border-slate-800,
+html.dark .border-gray-200,
+html.dark .border-gray-300,
+html.dark .border-gray-700,
+html.dark .border-gray-800,
+html.dark div[class*="border-"] {
+  border-color: rgba(255, 255, 255, 0.07) !important;
+}
+
+/* Typography contrast adjustments for WCAG AA in dark mode */
+html.dark .text-slate-900,
+html.dark .text-slate-800,
+html.dark .text-slate-700 {
+  color: #E8EDF5 !important;
+}
+
+html.dark .text-slate-600,
+html.dark .text-slate-500 {
+  color: #C8D4E8 !important;
+}
+
+html.dark .text-slate-400 {
+  color: #A8C4E8 !important;
+}
+
+/* Specific Chat Element Dark Mode Rules */
+/* 1. Mensagens do Assistente / Recebidas */
+html.dark .msg-assistant,
+html.dark .msg-received {
+  background-color: #1A2540 !important;
+  color: #E8EDF5 !important;
+  border-color: rgba(255, 255, 255, 0.07) !important;
+}
+
+/* 2. Mensagens do Utilizador / Enviadas */
+html.dark .msg-user,
+html.dark .msg-sent {
+  background-color: #1B3A6B !important;
+  color: #FFFFFF !important;
+}
+
+/* 3. Painel Lateral de Conversas */
+html.dark .sidebar-conversations {
+  background-color: #0A1628 !important;
+  color: #C8D4E8 !important;
+  border-color: rgba(255, 255, 255, 0.07) !important;
+}
+
+/* 4. Barra de Input */
+html.dark .chat-input-container,
+html.dark .chat-input-bar {
+  background-color: #1A2540 !important;
+  color: #E8EDF5 !important;
+  border-color: rgba(255, 255, 255, 0.07) !important;
+}
+
+/* 5. Botões de Ações Rápidas */
+html.dark .quick-action-btn,
+html.dark .btn-quick-action {
+  background-color: #1F3050 !important;
+  color: #E8EDF5 !important;
+  border-color: rgba(255, 255, 255, 0.07) !important;
+}
+
+/* Subtle 1px border on all surface cards */
+html.dark [class*="bg-surface"],
+html.dark .bg-white,
+html.dark .bg-slate-900\/60,
+html.dark .bg-slate-900\/40,
+html.dark .bg-slate-900 {
+  border: 1px solid rgba(255, 255, 255, 0.07) !important;
+}
+
+/* High contrast for code blocks, pre tags, practical example blocks and inner cards */
+html.dark code,
+html.dark pre,
+html.dark .font-mono {
+  background-color: #080d1a !important;
+  color: #38bdf8 !important;
+  border-color: rgba(255, 255, 255, 0.12) !important;
+}
+
+html.dark pre code {
+  color: #e2e8f0 !important;
+}
+
+/* Practical example cards & callouts in learning modules (Factos Patrimoniais, etc.) */
+html.dark .bg-blue-50,
+html.dark .bg-blue-50\/50,
+html.dark .bg-indigo-50,
+html.dark .bg-indigo-50\/50 {
+  background-color: rgba(30, 58, 138, 0.35) !important;
+  color: #f1f5f9 !important;
+  border-color: rgba(96, 165, 250, 0.3) !important;
+}
+
+html.dark .bg-emerald-50,
+html.dark .bg-emerald-50\/50 {
+  background-color: rgba(6, 78, 59, 0.35) !important;
+  color: #f1f5f9 !important;
+  border-color: rgba(52, 211, 153, 0.3) !important;
+}
+
+html.dark .bg-amber-50,
+html.dark .bg-amber-50\/50 {
+  background-color: rgba(120, 53, 15, 0.35) !important;
+  color: #f1f5f9 !important;
+  border-color: rgba(251, 191, 36, 0.3) !important;
+}
+
+html.dark .bg-rose-50,
+html.dark .bg-rose-50\/50,
+html.dark .bg-red-50,
+html.dark .bg-red-50\/50 {
+  background-color: rgba(136, 19, 55, 0.35) !important;
+  color: #f1f5f9 !important;
+  border-color: rgba(244, 63, 94, 0.3) !important;
+}
+
+html.dark input:not([type="checkbox"]):not([type="radio"]),
+html.dark select,
+html.dark textarea {
+  background-color: var(--bg-surface-elevated) !important;
+  color: #f8fafc !important;
+  border-color: var(--border-subtle) !important;
+}
+
+/* Header & Sidebar Specific Enhancements for Dark/Night Mode */
+html.dark #header-user-badge button,
+html.night-focus-mode #header-user-badge button {
+  color: #f1f5f9 !important;
+}
+
+html.dark #header-user-badge button:hover,
+html.night-focus-mode #header-user-badge button:hover {
+  background-color: rgba(255, 255, 255, 0.12) !important;
+  color: #ffffff !important;
+}
+
+/* Notification badge illumination in low-light/dark screens */
+#header-user-badge .bg-red-500 {
+  box-shadow: 0 0 10px rgba(239, 68, 68, 0.95) !important;
+}
+
+/* Sidebar navigation item smooth hover depth, scale and glow gradient */
+#sidebar-nav a,
+#sidebar-nav button {
+  transition: all 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+#sidebar-nav a:hover,
+#sidebar-nav button:hover {
+  transform: translateX(3px) scale(1.02);
+  background-image: linear-gradient(135deg, rgba(255, 255, 255, 0.12) 0%, rgba(59, 130, 246, 0.15) 100%);
+  box-shadow: 0 6px 20px -2px rgba(59, 130, 246, 0.25), inset 0 1px 0 rgba(255, 255, 255, 0.2);
+}
+
+/* Sidebar desktop header vertical alignment & pin button min-width */
+#sidebar-panel-desktop .p-3.flex.items-center.justify-between.border-b.border-slate-800.h-16.shrink-0.overflow-hidden {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+}
+
+#sidebar-panel-desktop .p-3.flex.items-center.justify-between.border-b.border-slate-800.h-16.shrink-0.overflow-hidden > div:first-child {
+  display: flex !important;
+  align-items: center !important;
+  min-width: 0 !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  white-space: nowrap !important;
+}
+
+#sidebar-pin-btn {
+  min-width: 44px !important;
+  min-height: 44px !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), background-color 0.2s, color 0.2s !important;
+}
+
+#sidebar-pin-btn:hover {
+  transform: scale(1.08);
+}
+
+#sidebar-pin-btn:active {
+  transform: scale(0.92);
+}
+
+#sidebar-pin-btn svg {
+  transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1), color 0.2s !important;
+}
+
+/* High-contrast focus-visible ring for desktop sidebar container */
+#sidebar-panel-desktop:focus-visible {
+  outline: 3px solid #60a5fa !important;
+  outline-offset: -3px !important;
+  box-shadow: 0 0 0 4px rgba(96, 165, 250, 0.7), inset 0 0 0 1px rgba(255, 255, 255, 0.3) !important;
+}
+
+/* Header panel search bar smooth expansion transition & focus-within glow */
+#header-panel .hidden.sm\:block {
+  transition: all 300ms ease-in-out !important;
+}
+
+#header-panel .hidden.sm\:block:focus-within {
+  max-width: 24rem !important; /* smooth expansion */
+}
+
+#header-panel .hidden.sm\:block:focus-within button,
+#header-panel .hidden.sm\:block button:focus {
+  border-color: #3b82f6 !important;
+  box-shadow: 0 0 16px rgba(59, 130, 246, 0.45), 0 0 0 2px rgba(59, 130, 246, 0.25) !important;
+  background-color: rgba(255, 255, 255, 0.95) !important;
+}
+
+html.dark #header-panel .hidden.sm\:block:focus-within button,
+html.dark #header-panel .hidden.sm\:block button:focus {
+  background-color: rgba(30, 41, 59, 0.95) !important;
+  border-color: #60a5fa !important;
+  box-shadow: 0 0 18px rgba(96, 165, 250, 0.5), 0 0 0 2px rgba(96, 165, 250, 0.3) !important;
+}
+
+/* ==========================================================================
+   Markdown Renderer Prose Styles (.prose-accountant)
+   ========================================================================== */
+
+.prose-accountant {
+  color: inherit;
+  font-size: 0.8125rem;
+  line-height: 1.65;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+}
+
+.prose-accountant p {
+  margin-top: 0.35rem;
+  margin-bottom: 0.6rem;
+}
+
+.prose-accountant p:last-child {
+  margin-bottom: 0;
+}
+
+.prose-accountant h1 {
+  font-size: 1.15rem;
+  font-weight: 900;
+  letter-spacing: -0.02em;
+  margin-top: 1rem;
+  margin-bottom: 0.5rem;
+  color: #0f172a;
+}
+
+html.dark .prose-accountant h1 {
+  color: #ffffff;
+}
+
+.prose-accountant h2 {
+  font-size: 1.05rem;
+  font-weight: 800;
+  letter-spacing: -0.015em;
+  margin-top: 0.85rem;
+  margin-bottom: 0.4rem;
+  color: #1e293b;
+}
+
+html.dark .prose-accountant h2 {
+  color: #f1f5f9;
+}
+
+.prose-accountant h3 {
+  font-size: 0.95rem;
+  font-weight: 700;
+  margin-top: 0.75rem;
+  margin-bottom: 0.35rem;
+  color: #1e293b;
+}
+
+html.dark .prose-accountant h3 {
+  color: #e2e8f0;
+}
+
+.prose-accountant ul {
+  list-style-type: disc;
+  padding-left: 1.25rem;
+  margin-top: 0.35rem;
+  margin-bottom: 0.6rem;
+}
+
+.prose-accountant ol {
+  list-style-type: decimal;
+  padding-left: 1.25rem;
+  margin-top: 0.35rem;
+  margin-bottom: 0.6rem;
+}
+
+.prose-accountant li {
+  margin-top: 0.15rem;
+  margin-bottom: 0.15rem;
+  line-height: 1.55;
+}
+
+.prose-accountant strong {
+  font-weight: 700;
+  color: #0f172a;
+}
+
+html.dark .prose-accountant strong {
+  color: #ffffff;
+}
+
+.prose-accountant em {
+  font-style: italic;
+}
+
+.prose-accountant blockquote {
+  border-left: 3px solid #3b82f6;
+  padding-left: 0.75rem;
+  margin-top: 0.5rem;
+  margin-bottom: 0.5rem;
+  font-style: italic;
+  background-color: rgba(59, 130, 246, 0.06);
+  border-radius: 0 0.5rem 0.5rem 0;
+  padding-top: 0.25rem;
+  padding-bottom: 0.25rem;
+}
+
+html.dark .prose-accountant blockquote {
+  border-left-color: #60a5fa;
+  background-color: rgba(37, 99, 235, 0.15);
+}
+
+.prose-accountant code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.75rem;
+  padding: 0.125rem 0.35rem;
+  border-radius: 0.375rem;
+  background-color: #e2e8f0;
+  color: #1e3a8a;
+  border: 1px solid #cbd5e1;
+}
+
+html.dark .prose-accountant code {
+  background-color: #0b1324;
+  color: #7dd3fc;
+  border-color: rgba(255, 255, 255, 0.12);
+}
+
+.prose-accountant pre {
+  margin-top: 0.5rem;
+  margin-bottom: 0.75rem;
+  padding: 0.75rem 1rem;
+  border-radius: 0.75rem;
+  background-color: #0f172a;
+  color: #f8fafc;
+  border: 1px solid #334155;
+  overflow-x: auto;
+}
+
+.prose-accountant pre code {
+  background-color: transparent !important;
+  border: none !important;
+  padding: 0 !important;
+  color: inherit !important;
+  font-size: 0.75rem;
+}
+
+.prose-accountant table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  margin-top: 0.6rem;
+  margin-bottom: 0.75rem;
+  font-size: 0.75rem;
+  border-radius: 0.5rem;
+  overflow: hidden;
+  border: 1px solid #e2e8f0;
+}
+
+html.dark .prose-accountant table {
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+.prose-accountant th {
+  font-weight: 700;
+  text-align: left;
+  padding: 0.5rem 0.625rem;
+  background-color: #f1f5f9;
+  color: #1e293b;
+  border-bottom: 1px solid #cbd5e1;
+  border-right: 1px solid #e2e8f0;
+}
+
+html.dark .prose-accountant th {
+  background-color: #131e33;
+  color: #f1f5f9;
+  border-bottom-color: rgba(255, 255, 255, 0.15);
+  border-right-color: rgba(255, 255, 255, 0.08);
+}
+
+.prose-accountant td {
+  padding: 0.45rem 0.625rem;
+  border-bottom: 1px solid #f1f5f9;
+  border-right: 1px solid #f1f5f9;
+  vertical-align: top;
+}
+
+html.dark .prose-accountant td {
+  border-bottom-color: rgba(255, 255, 255, 0.06);
+  border-right-color: rgba(255, 255, 255, 0.06);
+}
+
+.prose-accountant tr:last-child td {
+  border-bottom: none;
+}
+
+.prose-accountant th:last-child,
+.prose-accountant td:last-child {
+  border-right: none;
+}
+
+.prose-accountant tr:nth-child(even) td {
+  background-color: #f8fafc;
+}
+
+html.dark .prose-accountant tr:nth-child(even) td {
+  background-color: rgba(19, 30, 48, 0.4);
+}
+
+.prose-accountant a {
+  color: #2563eb;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+html.dark .prose-accountant a {
+  color: #60a5fa;
+}
+
+.prose-accountant hr {
+  border: 0;
+  border-top: 1px solid #e2e8f0;
+  margin-top: 0.75rem;
+  margin-bottom: 0.75rem;
+}
+
+html.dark .prose-accountant hr {
+  border-top-color: rgba(255, 255, 255, 0.1);
+}
+
+
+
+

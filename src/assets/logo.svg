@@ -1,0 +1,121 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 750 320" width="100%" height="100%">
+  <defs>
+    <style>
+      .serif-title { font-family: 'Times New Roman', Georgia, serif; font-weight: bold; fill: #1D3557; }
+      .mono-sub { font-family: 'Courier New', Courier, monospace; font-weight: bold; fill: #1D3557; letter-spacing: 2px; }
+      .tagline { font-family: system-ui, -apple-system, sans-serif; font-size: 17px; fill: #64748B; font-weight: 500; }
+      .badge-text { font-family: system-ui, -apple-system, sans-serif; font-size: 15px; font-weight: 700; }
+      .ledger-text { font-family: 'Courier New', Courier, monospace; font-size: 12px; font-weight: bold; fill: #E2E8F0; }
+      .ledger-yellow { font-family: 'Courier New', Courier, monospace; font-size: 13px; font-weight: 900; fill: #FACC15; }
+    </style>
+    <filter id="shadow" x="-5%" y="-5%" width="110%" height="110%">
+      <feDropShadow dx="0" dy="4" stdDeviation="6" flood-color="#000" flood-opacity="0.12"/>
+    </filter>
+  </defs>
+
+  <!-- GRAPHIC ICON: BOOK + GRADUATION CAP + PENCIL -->
+  <g transform="translate(10, 10)" filter="url(#shadow)">
+    <!-- Book Shadow Base -->
+    <path d="M 30,220 Q 120,240 180,225 Q 240,240 330,220 L 330,228 Q 240,248 180,233 Q 120,248 30,228 Z" fill="#0F172A" opacity="0.2"/>
+
+    <!-- Book Left Cover & Pages -->
+    <path d="M 35,80 Q 115,100 180,85 L 180,220 Q 115,230 35,210 Z" fill="#1E3A8A"/>
+    <path d="M 40,85 Q 115,103 175,89 L 175,215 Q 115,225 40,205 Z" fill="#2563EB"/>
+    
+    <!-- Left Page Text Lines -->
+    <line x1="55" y1="110" x2="155" y2="110" stroke="#93C5FD" stroke-width="3" stroke-linecap="round" opacity="0.7"/>
+    <line x1="55" y1="125" x2="155" y2="125" stroke="#93C5FD" stroke-width="3" stroke-linecap="round" opacity="0.7"/>
+    <line x1="55" y1="140" x2="155" y2="140" stroke="#93C5FD" stroke-width="3" stroke-linecap="round" opacity="0.7"/>
+    <line x1="55" y1="155" x2="140" y2="155" stroke="#93C5FD" stroke-width="3" stroke-linecap="round" opacity="0.7"/>
+    <line x1="55" y1="170" x2="155" y2="170" stroke="#93C5FD" stroke-width="3" stroke-linecap="round" opacity="0.7"/>
+    <line x1="55" y1="185" x2="155" y2="185" stroke="#93C5FD" stroke-width="3" stroke-linecap="round" opacity="0.7"/>
+
+    <!-- Book Spine -->
+    <path d="M 175,85 Q 180,84 185,85 L 185,220 Q 180,219 175,220 Z" fill="#1D4ED8"/>
+
+    <!-- Book Right Cover & Pages -->
+    <path d="M 185,85 Q 250,103 325,85 L 325,205 Q 250,225 185,215 Z" fill="#3B82F6"/>
+    <path d="M 185,88 Q 250,105 320,89 L 320,202 Q 250,222 185,212 Z" fill="#2563EB"/>
+
+    <!-- Right Page Ledger Table Header -->
+    <text x="195" y="108" class="ledger-text" font-size="13">D  C</text>
+    <line x1="192" y1="114" x2="310" y2="114" stroke="#60A5FA" stroke-width="1.5"/>
+    <line x1="222" y1="100" x2="222" y2="192" stroke="#60A5FA" stroke-width="1.5"/>
+
+    <!-- Ledger Table Content -->
+    <text x="195" y="130" class="ledger-text">1.200</text>
+    <text x="238" y="130" class="ledger-text">1.200</text>
+
+    <text x="195" y="148" class="ledger-text">3.400</text>
+    <text x="238" y="148" class="ledger-text">3.400</text>
+
+    <text x="195" y="166" class="ledger-text">850</text>
+    <text x="238" y="166" class="ledger-text">850</text>
+
+    <line x1="192" y1="172" x2="310" y2="172" stroke="#60A5FA" stroke-width="1.5"/>
+
+    <!-- Ledger Total Highlight -->
+    <rect x="193" y="176" x2="115" y2="18" fill="#1E3A8A" rx="4" opacity="0.6"/>
+    <text x="195" y="189" class="ledger-yellow">5.450</text>
+    <text x="238" y="189" class="ledger-yellow">5.450</text>
+
+    <!-- GRADUATION HAT ON TOP OF BOOK -->
+    <g transform="translate(85, 30)">
+      <!-- Hat Base Cap -->
+      <path d="M 20,40 Q 60,52 100,40 L 100,52 Q 60,64 20,52 Z" fill="#0F172A"/>
+      <!-- Hat Diamond Top -->
+      <polygon points="60,15 115,35 60,50 5,35" fill="#1E293B"/>
+      <polygon points="60,18 110,35 60,47 10,35" fill="#334155"/>
+      <!-- Hat Button & Tassel -->
+      <circle cx="60" cy="33" r="3.5" fill="#F59E0B"/>
+      <path d="M 60,33 Q 80,40 85,55" fill="none" stroke="#F59E0B" stroke-width="2.5" stroke-linecap="round"/>
+      <circle cx="85" cy="57" r="3" fill="#D97706"/>
+    </g>
+
+    <!-- PENCIL WITH STAR POINTING AT BOOK -->
+    <g transform="translate(260, 40) rotate(25)">
+      <!-- Star at top -->
+      <polygon points="12,0 15,8 24,9 17,15 19,24 12,19 5,24 7,15 0,9 9,8" fill="#F59E0B"/>
+      <!-- Eraser & Metal Band -->
+      <rect x="8" y="24" width="8" height="10" rx="1" fill="#E2E8F0"/>
+      <rect x="8" y="32" width="8" height="4" fill="#94A3B8"/>
+      <!-- Pencil Body -->
+      <rect x="8" y="36" width="8" height="65" fill="#D97706"/>
+      <rect x="12" y="36" width="4" height="65" fill="#F59E0B"/>
+      <!-- Pencil Tip -->
+      <polygon points="8,101 16,101 12,118" fill="#FED7AA"/>
+      <polygon points="10,111 14,111 12,118" fill="#1E293B"/>
+    </g>
+  </g>
+
+  <!-- BRAND NAME & TAGLINE & PILLS (RIGHT SIDE) -->
+  <g transform="translate(370, 75)">
+    <!-- Main Title: Contabilidade -->
+    <text x="0" y="55" class="serif-title" font-size="52">Contabilidade</text>
+    
+    <!-- Subtitle: Unificada -->
+    <text x="3" y="102" class="mono-sub" font-size="40">Unificada</text>
+
+    <!-- Decorative Underline Bar -->
+    <rect x="2" y="116" width="350" height="4" fill="#1D3557" rx="2"/>
+    <rect x="2" y="122" width="350" height="2" fill="#D97706" rx="1"/>
+
+    <!-- Tagline: Aprenda · Pratique · Certifique-se -->
+    <text x="4" y="152" class="tagline">Aprenda  •  Pratique  •  Certifique-se</text>
+
+    <!-- Category Pill Badges -->
+    <g transform="translate(0, 172)">
+      <!-- Pill 1: Contabilidade -->
+      <rect x="0" y="0" width="125" height="32" rx="16" fill="#EFF6FF" stroke="#BFDBFE" stroke-width="1"/>
+      <text x="62" y="21" text-anchor="middle" class="badge-text" fill="#1D4ED8">Contabilidade</text>
+
+      <!-- Pill 2: Câmbio -->
+      <rect x="135" y="0" width="85" height="32" rx="16" fill="#F0FDF4" stroke="#BBF7D0" stroke-width="1"/>
+      <text x="177" y="21" text-anchor="middle" class="badge-text" fill="#15803D">Câmbio</text>
+
+      <!-- Pill 3: Fiscalidade -->
+      <rect x="230" y="0" width="110" height="32" rx="16" fill="#FFF7ED" stroke="#FED7AA" stroke-width="1"/>
+      <text x="285" y="21" text-anchor="middle" class="badge-text" fill="#C2410C">Fiscalidade</text>
+    </g>
+  </g>
+</svg>

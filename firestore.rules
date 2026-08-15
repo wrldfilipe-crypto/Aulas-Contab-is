@@ -1,0 +1,68 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    // Perfis: leitura por qualquer autenticado (para pesquisa), escrita pelo próprio dono
+    match /users/{userId} {
+      allow read: if isAuthenticated();
+      allow create, update, delete: if isAuthenticated() && request.auth.uid == userId;
+
+      match /{subcollection=**} {
+        allow read, write: if isAuthenticated();
+      }
+    }
+
+    // Pedidos de amizade: visíveis para remetente e destinatário
+    match /friendRequests/{reqId} {
+      allow create: if isAuthenticated() && (
+        request.resource.data.from == request.auth.uid ||
+        request.resource.data.fromUserId == request.auth.uid
+      );
+      allow read, update, delete: if isAuthenticated() && (
+        resource == null ||
+        resource.data.from == request.auth.uid || resource.data.to == request.auth.uid ||
+        resource.data.fromUserId == request.auth.uid || resource.data.toUserId == request.auth.uid
+      );
+    }
+
+    // Amizades: visíveis e geridas pelos membros
+    match /friendships/{fId} {
+      allow read, update, delete: if isAuthenticated() && request.auth.uid in resource.data.members;
+      allow create: if isAuthenticated() && request.auth.uid in request.resource.data.members;
+    }
+
+    // Conversas 1:1 e subcoleção de mensagens: geridas pelos membros
+    match /conversations/{convId} {
+      allow read: if isAuthenticated() && (resource == null || request.auth.uid in resource.data.members);
+      allow create: if isAuthenticated() && request.auth.uid in request.resource.data.members;
+      allow update, delete: if isAuthenticated() && request.auth.uid in resource.data.members;
+
+      match /messages/{messageId} {
+        allow read, write: if isAuthenticated();
+      }
+    }
+
+    // Workspaces e subcoleções
+    match /workspaces/{workspaceId} {
+      allow read, write: if isAuthenticated();
+      match /{allSubcollections=**} {
+        allow read, write: if isAuthenticated();
+      }
+    }
+
+    // Audit logs
+    match /audit_logs/{logId} {
+      allow read, write: if isAuthenticated();
+    }
+
+    // Regra fallback
+    match /{document=**} {
+      allow read, write: if isAuthenticated();
+    }
+  }
+}
+

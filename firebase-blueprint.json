@@ -1,0 +1,79 @@
+{
+  "entities": {
+    "User": {
+      "title": "User Profile",
+      "description": "Authenticated user profile in the application",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Unique user ID" },
+        "email": { "type": "string", "description": "User email address" },
+        "name": { "type": "string", "description": "User full name" },
+        "nameLower": { "type": "string", "description": "Normalized lowercase name" },
+        "nomeLower": { "type": "string", "description": "Normalized lowercase name alias" },
+        "role": { "type": "string", "enum": ["admin", "user", "guest"] },
+        "country": { "type": "string" },
+        "language": { "type": "string" },
+        "profile": { "type": "string" },
+        "plan": { "type": "string" },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["id", "email", "name"]
+    },
+    "LegalEntity": {
+      "title": "Legal Entity",
+      "description": "Corporate or legal entity in a workspace",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "workspaceId": { "type": "string" },
+        "name": { "type": "string" },
+        "region": { "type": "string" },
+        "status": { "type": "string", "enum": ["Active", "Review", "Idle"] },
+        "lastSync": { "type": "string" },
+        "revenue": { "type": "number" },
+        "complianceScore": { "type": "number" },
+        "currency": { "type": "string" },
+        "taxId": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["id", "name", "taxId"]
+    },
+    "Transaction": {
+      "title": "Journal Transaction",
+      "description": "Accounting or ledger transaction for an entity",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "workspaceId": { "type": "string" },
+        "entityId": { "type": "string" },
+        "entityName": { "type": "string" },
+        "date": { "type": "string" },
+        "description": { "type": "string" },
+        "account": { "type": "string" },
+        "type": { "type": "string", "enum": ["Credit", "Debit"] },
+        "amount": { "type": "number" },
+        "currency": { "type": "string" },
+        "exchangeRate": { "type": "number" },
+        "baseAmount": { "type": "number" },
+        "status": { "type": "string", "enum": ["Reconciled", "Pending"] },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["id", "entityId", "description", "amount"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/User" },
+      "description": "User account documents"
+    },
+    "/workspaces/{workspaceId}/entities/{entityId}": {
+      "schema": { "$ref": "#/entities/LegalEntity" },
+      "description": "Legal entities inside workspace"
+    },
+    "/workspaces/{workspaceId}/transactions/{transactionId}": {
+      "schema": { "$ref": "#/entities/Transaction" },
+      "description": "Transactions inside workspace"
+    }
+  }
+}
