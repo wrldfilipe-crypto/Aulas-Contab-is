@@ -1,8 +1,10 @@
+import { construirPlano } from "./chartSeed";
 import type { Conta, PlanoContas, ResultadoConta, ResultadoLancamento } from "./types";
 
-function indice(plano: PlanoContas): Map<string, Conta> {
+function indice(plano?: PlanoContas | null): Map<string, Conta> {
   const m = new Map<string, Conta>();
-  for (const conta of plano.contas) m.set(conta.codigo, conta);
+  const contas = (plano && plano.contas && Array.isArray(plano.contas)) ? plano.contas : construirPlano().contas;
+  for (const conta of contas) m.set(conta.codigo, conta);
   return m;
 }
 
@@ -17,7 +19,7 @@ export function normalizarCodigo(input: string): string {
  * - Aceita código de classe (ex.: "4")
  * - Rejeita códigos inventados (ex.: "55.1" se não constar no documento)
  */
-export function validarConta(plano: PlanoContas, codigoInput: string): ResultadoConta {
+export function validarConta(plano: PlanoContas | null | undefined, codigoInput: string): ResultadoConta {
   const idx = indice(plano);
   const codigo = normalizarCodigo(codigoInput);
 
@@ -68,7 +70,7 @@ export function classeDe(codigo: string): string | null {
  * Regras: contas existem; débito total = crédito total.
  */
 export function validarLancamento(
-  plano: PlanoContas,
+  plano: PlanoContas | null | undefined,
   lancamento: { debito: { conta: string; valor: number }[]; credito: { conta: string; valor: number }[] }
 ): ResultadoLancamento {
   const erros: string[] = [];
@@ -98,9 +100,10 @@ export function validarLancamento(
 }
 
 /** Pesquisa textual por designação (para o seletor de contas da UI). */
-export function pesquisarConta(plano: PlanoContas, termo: string, limite = 10): Conta[] {
+export function pesquisarConta(plano: PlanoContas | null | undefined, termo: string, limite = 10): Conta[] {
   const t = termo.toLowerCase();
-  return plano.contas
+  const contas = (plano && plano.contas && Array.isArray(plano.contas)) ? plano.contas : construirPlano().contas;
+  return contas
     .filter((c) => c.designacao.toLowerCase().includes(t) || c.codigo.startsWith(t))
     .slice(0, limite);
 }

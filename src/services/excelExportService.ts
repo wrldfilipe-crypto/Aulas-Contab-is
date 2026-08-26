@@ -338,3 +338,234 @@ export async function exportPgcBalanceSheetToExcel(
   anchor.click();
   window.URL.revokeObjectURL(url);
 }
+
+export interface ExcelJournalEntryExport {
+  id: string;
+  number: string;
+  date: string;
+  description: string;
+  documentRef?: string;
+  totalDebit: number;
+  totalCredit: number;
+  status: string;
+  lines: Array<{
+    accountCode: string;
+    accountName: string;
+    debit: number;
+    credit: number;
+  }>;
+}
+
+/**
+ * Export filtered journal transactions to a structured Excel spreadsheet (.xlsx) using ExcelJS
+ */
+export async function exportTransactionsToExcel(
+  entries: ExcelJournalEntryExport[],
+  options: {
+    entityName?: string;
+    currency?: string;
+    filterPeriod?: string;
+    searchQuery?: string;
+  } = {}
+): Promise<void> {
+  const workbook = new ExcelJS.Workbook();
+  workbook.creator = 'GlobalAccount AI Studio - Angola PGC System';
+  workbook.lastModifiedBy = 'Contabilista Certificado';
+  workbook.created = new Date();
+
+  const entityName = options.entityName || 'Sociedade Comercial Angolana, Lda.';
+  const currency = options.currency || 'AOA';
+  const filterPeriod = options.filterPeriod || 'Todo o histórico';
+
+  const ws = workbook.addWorksheet('Diário e Transações', {
+    views: [{ showGridLines: true }]
+  });
+
+  // Column definitions
+  ws.columns = [
+    { header: '', key: 'date', width: 14 },
+    { header: '', key: 'number', width: 18 },
+    { header: '', key: 'docRef', width: 16 },
+    { header: '', key: 'description', width: 42 },
+    { header: '', key: 'accountCode', width: 16 },
+    { header: '', key: 'accountName', width: 34 },
+    { header: '', key: 'debit', width: 20 },
+    { header: '', key: 'credit', width: 20 },
+    { header: '', key: 'status', width: 18 }
+  ];
+
+  // TITLE ROWS
+  const titleRow = ws.addRow([entityName.toUpperCase()]);
+  titleRow.font = { name: 'Calibri', size: 14, bold: true, color: { argb: 'FF1B3A6B' } };
+
+  const subTitleRow = ws.addRow(['LIVRO DIÁRIO GERAL & TRANSAÇÕES CONTABILÍSTICAS (PGC ANGOLA)']);
+  subTitleRow.font = { name: 'Calibri', size: 11, bold: true, color: { argb: 'FF1A2540' } };
+
+  const metaRow = ws.addRow([
+    `Período Filtrado: ${filterPeriod} | Moeda: ${currency} | Total de Lançamentos: ${entries.length} | Exportado em: ${new Date().toLocaleDateString('pt-PT')} ${new Date().toLocaleTimeString('pt-PT', { hour: '2-digit', minute: '2-digit' })}`
+  ]);
+  metaRow.font = { name: 'Calibri', size: 9, italic: true, color: { argb: 'FF5A6A82' } };
+
+  ws.addRow([]); // Blank line
+
+  // TABLE HEADERS (Row 5)
+  const headerRow = ws.addRow([
+    'DATA',
+    'Nº LANÇAMENTO',
+    'REF. DOCUMENTO',
+    'DESCRIÇÃO DO LANÇAMENTO',
+    'CONTA PGC',
+    'NOME DA CONTA',
+    `DÉBITO (${currency})`,
+    `CRÉDITO (${currency})`,
+    'ESTADO RECONCILIAÇÃO'
+  ]);
+
+  headerRow.height = 26;
+  headerRow.eachCell((cell) => {
+    cell.fill = {
+      type: 'pattern',
+      pattern: 'solid',
+      fgColor: { argb: 'FF1B3A6B' } // Navy Blue #1B3A6B
+    };
+    cell.font = {
+      name: 'Calibri',
+      size: 10,
+      bold: true,
+      color: { argb: 'FFFFFFFF' }
+    };
+    cell.alignment = { vertical: 'middle', horizontal: 'center' };
+    cell.border = {
+      top: { style: 'medium', color: { argb: 'FF1B3A6B' } },
+      bottom: { style: 'medium', color: { argb: 'FF1B3A6B' } },
+      left: { style: 'thin', color: { argb: 'FFDDE3ED' } },
+      right: { style: 'thin', color: { argb: 'FFDDE3ED' } }
+    };
+  });
+
+  let rowIndex = 0;
+  let grandTotalDebit = 0;
+  let grandTotalCredit = 0;
+
+  // Render each journal entry with all its lines
+  entries.forEach((entry) => {
+    entry.lines.forEach((line, lineIdx) => {
+      rowIndex++;
+      const isOdd = rowIndex % 2 !== 0;
+      const rowBg = isOdd ? 'FFF8FAFC' : 'FFFFFFFF';
+
+      grandTotalDebit += Number(line.debit) || 0;
+      grandTotalCredit += Number(line.credit) || 0;
+
+      const isFirstLine = lineIdx === 0;
+      const row = ws.addRow([
+        isFirstLine ? entry.date : '',
+        isFirstLine ? entry.number : '',
+        isFirstLine ? (entry.documentRef || '—') : '',
+        isFirstLine ? entry.description : '',
+        line.accountCode,
+        line.accountName,
+        Number(line.debit) || 0,
+        Number(line.credit) || 0,
+        isFirstLine ? entry.status : ''
+      ]);
+
+      row.height = 20;
+
+      // Alignments
+      row.getCell(1).alignment = { vertical: 'middle', horizontal: 'center' };
+      row.getCell(2).alignment = { vertical: 'middle', horizontal: 'center' };
+      row.getCell(3).alignment = { vertical: 'middle', horizontal: 'center' };
+      row.getCell(4).alignment = { vertical: 'middle', horizontal: 'left' };
+      row.getCell(5).alignment = { vertical: 'middle', horizontal: 'center' };
+      row.getCell(6).alignment = { vertical: 'middle', horizontal: 'left' };
+      row.getCell(7).alignment = { vertical: 'middle', horizontal: 'right' };
+      row.getCell(8).alignment = { vertical: 'middle', horizontal: 'right' };
+      row.getCell(9).alignment = { vertical: 'middle', horizontal: 'center' };
+
+      // Number formatting
+      row.getCell(7).numFmt = '#,##0.00';
+      row.getCell(8).numFmt = '#,##0.00';
+
+      // Cell styles & borders
+      for (let c = 1; c <= 9; c++) {
+        const cell = row.getCell(c);
+        cell.fill = {
+          type: 'pattern',
+          pattern: 'solid',
+          fgColor: { argb: rowBg }
+        };
+        cell.font = {
+          name: 'Calibri',
+          size: 9.5,
+          color: { argb: 'FF1A2540' },
+          bold: c === 2 || c === 5
+        };
+        cell.border = {
+          bottom: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+          right: { style: 'thin', color: { argb: 'FFE2E8F0' } }
+        };
+      }
+
+      // Status pill coloring
+      if (isFirstLine) {
+        const isReconciled = entry.status === 'Reconciliado';
+        row.getCell(9).font = {
+          name: 'Calibri',
+          size: 9,
+          bold: true,
+          color: { argb: isReconciled ? 'FF059669' : 'FFD97706' }
+        };
+      }
+    });
+  });
+
+  // GRAND TOTAL ROW
+  const totalRow = ws.addRow([
+    'TOTAIS GERAIS',
+    '',
+    '',
+    `Total de ${entries.length} lançamentos contabilísticos`,
+    '',
+    '',
+    grandTotalDebit,
+    grandTotalCredit,
+    grandTotalDebit === grandTotalCredit ? 'EQUILIBRADO' : 'DESEQUILIBRADO'
+  ]);
+
+  totalRow.height = 24;
+  totalRow.eachCell((cell, colNumber) => {
+    cell.fill = {
+      type: 'pattern',
+      pattern: 'solid',
+      fgColor: { argb: 'FF0F172A' } // Dark Slate #0F172A
+    };
+    cell.font = {
+      name: 'Calibri',
+      size: 10,
+      bold: true,
+      color: { argb: 'FFFFFFFF' }
+    };
+    cell.border = {
+      top: { style: 'medium', color: { argb: 'FF1B3A6B' } },
+      bottom: { style: 'double', color: { argb: 'FF1B3A6B' } }
+    };
+  });
+
+  totalRow.getCell(7).numFmt = '#,##0.00';
+  totalRow.getCell(8).numFmt = '#,##0.00';
+  totalRow.getCell(7).alignment = { vertical: 'middle', horizontal: 'right' };
+  totalRow.getCell(8).alignment = { vertical: 'middle', horizontal: 'right' };
+  totalRow.getCell(9).alignment = { vertical: 'middle', horizontal: 'center' };
+
+  // Write and trigger download
+  const buffer = await workbook.xlsx.writeBuffer();
+  const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+  const url = window.URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  const todayStr = new Date().toISOString().split('T')[0];
+  anchor.download = `Diario_Transacoes_PGC_${todayStr}.xlsx`;
+  anchor.click();
+  window.URL.revokeObjectURL(url);
+}

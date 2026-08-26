@@ -12,30 +12,92 @@
     <link rel="apple-touch-icon" href="/logo_icone_192.png"/>
     <title>Contabilidade Unificada — Global Account</title>
     <script>
-      // Immediate theme initialization from localStorage to prevent flash of white
+      // Immediate theme & appearance initialization from localStorage to prevent flash of white (zero FOUC)
       (function() {
         try {
-          var theme = localStorage.getItem('app_theme') || 'auto';
-          var isDark = theme === 'dark' || (theme === 'auto' && window.matchMedia('(prefers-color-scheme: dark)').matches);
-          if (isDark) {
-            document.documentElement.classList.add('dark');
-          } else {
-            document.documentElement.classList.remove('dark');
+          var appearanceRaw = localStorage.getItem('ga:global:appearance') || localStorage.getItem('ga_appearance_preferences');
+          if (!appearanceRaw) {
+            // Check if there is any user-specific key
+            for (var i = 0; i < localStorage.length; i++) {
+              var k = localStorage.key(i);
+              if (k && k.startsWith('ga:') && k.endsWith(':appearance')) {
+                appearanceRaw = localStorage.getItem(k);
+                break;
+              }
+            }
           }
+
+          var baseTheme = 'navy-dark';
+          var accentHex = '#4A90E2';
+          var glassIntensity = 65;
+          var halosEnabled = true;
+
+          if (appearanceRaw) {
+            try {
+              var parsed = JSON.parse(appearanceRaw);
+              if (parsed.baseTheme) baseTheme = parsed.baseTheme;
+              if (parsed.accentHex) accentHex = parsed.accentHex;
+              if (typeof parsed.glassIntensity === 'number') glassIntensity = parsed.glassIntensity;
+              if (parsed.halosEnabled !== undefined) halosEnabled = parsed.halosEnabled;
+            } catch(e) {}
+          } else {
+            var oldTheme = localStorage.getItem('app_theme');
+            if (oldTheme === 'light') baseTheme = 'light-pro';
+          }
+
+          var root = document.documentElement;
+          if (baseTheme === 'light-pro') {
+            root.classList.remove('dark');
+            root.style.setProperty('--app-bg-gradient', '#F0F4FA');
+          } else {
+            root.classList.add('dark');
+            root.style.setProperty('--app-bg-gradient', 'linear-gradient(135deg, #0A1628 0%, #0F1929 40%, #1A1040 70%, #0A1628 100%)');
+          }
+
+          root.style.setProperty('--color-accent', accentHex);
+          var ratio = Math.max(0, Math.min(100, glassIntensity)) / 100;
+          root.style.setProperty('--glass-blur', Math.round(ratio * 30) + 'px');
+          root.style.setProperty('--glass-card-bg', 'rgba(255, 255, 255, ' + (0.02 + ratio * 0.07).toFixed(3) + ')');
+          root.style.setProperty('--glass-card-border', 'rgba(255, 255, 255, ' + (0.05 + ratio * 0.10).toFixed(3) + ')');
+          root.style.setProperty('--halo-display', halosEnabled ? 'block' : 'none');
         } catch (e) {}
       })();
     </script>
     <script>
-      // Service Worker Registration for PWA
+      // Registo e ativação do Service Worker ContaGlobal v5 (Modo Offline Cache API)
       if ('serviceWorker' in navigator) {
         window.addEventListener('load', function() {
           navigator.serviceWorker.register('/sw.js')
             .then(function(registration) {
-              console.log('[PWA] Service Worker registrado com sucesso no escopo:', registration.scope);
+              console.log('[SW Registration] Service Worker v5 registado:', registration.scope);
+              
+              // Se já estiver ativo, solicitar aquecimento de páginas offline
+              if (registration.active) {
+                registration.active.postMessage({ type: 'WARM_OFFLINE_PAGES' });
+              }
+
+              // Escutar atualizações de versão
+              registration.addEventListener('updatefound', function() {
+                var installingWorker = registration.installing;
+                if (installingWorker) {
+                  installingWorker.addEventListener('statechange', function() {
+                    if (installingWorker.state === 'installed' && navigator.serviceWorker.controller) {
+                      console.log('[SW Update] Nova versão disponível. A atualizar caches...');
+                      window.dispatchEvent(new CustomEvent('sw_update_ready'));
+                    }
+                  });
+                }
+              });
             })
-            .catch(function(error) {
-              console.warn('[PWA] Falha ao registrar Service Worker:', error);
+            .catch(function(err) {
+              console.debug('[SW Registration] Info no registo do Service Worker:', err);
             });
+
+          navigator.serviceWorker.addEventListener('controllerchange', function() {
+            if (navigator.serviceWorker.controller) {
+              navigator.serviceWorker.controller.postMessage({ type: 'WARM_OFFLINE_PAGES' });
+            }
+          });
         });
       }
     </script>
@@ -60,6 +122,57 @@
   </head>
   <body>
     <div id="root"></div>
+
+    <!-- Safety startup fallback for low-memory mobile devices if React fails to mount in 5s -->
+    <div id="app-startup-fallback" style="display: none; position: fixed; inset: 0; background: #0A1628; color: #E8EDF5; z-index: 99999; font-family: system-ui, -apple-system, sans-serif; padding: 24px; text-align: center; flex-direction: column; align-items: center; justify-content: center;">
+      <div style="max-width: 380px; width: 100%; background: #132238; border: 1px solid rgba(255,255,255,0.1); border-radius: 20px; padding: 28px; box-shadow: 0 20px 40px rgba(0,0,0,0.5);">
+        <div style="width: 54px; height: 54px; background: #1E3A8A; border-radius: 16px; margin: 0 auto 16px; display: flex; align-items: center; justify-content: center; font-size: 26px;">
+          🇦🇴
+        </div>
+        <h2 style="font-size: 17px; font-weight: 800; margin-bottom: 8px; color: #FFFFFF;">ContaGlobal — PGC Angola</h2>
+        <p style="font-size: 13px; color: #A8C4E8; line-height: 1.5; margin-bottom: 20px;">
+          O arranque do sistema está a demorar mais do que o previsto no seu dispositivo.
+        </p>
+        <div style="display: flex; flex-direction: column; gap: 10px;">
+          <button onclick="window.location.reload()" style="background: #2563EB; color: #FFFFFF; font-weight: 700; font-size: 13px; border: none; padding: 12px 18px; border-radius: 12px; cursor: pointer;">
+            🔄 Recarregar Aplicação
+          </button>
+          <button onclick="try { localStorage.clear(); sessionStorage.clear(); window.location.reload(); } catch(e){ window.location.reload(); }" style="background: rgba(255,255,255,0.08); color: #E8EDF5; font-weight: 600; font-size: 12px; border: 1px solid rgba(255,255,255,0.15); padding: 10px 16px; border-radius: 12px; cursor: pointer;">
+            🧹 Limpar Cache & Reiniciar
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      // Startup Safety Watchdog: If #root is empty after 5 seconds, show graceful fallback UI
+      (function() {
+        var timeoutId = setTimeout(function() {
+          var rootEl = document.getElementById('root');
+          var fallbackEl = document.getElementById('app-startup-fallback');
+          if (rootEl && (!rootEl.hasChildNodes() || rootEl.children.length === 0)) {
+            if (fallbackEl) {
+              fallbackEl.style.display = 'flex';
+            }
+          }
+        }, 5000);
+
+        // Hide fallback once root has rendered
+        var observer = new MutationObserver(function(mutations, obs) {
+          var rootEl = document.getElementById('root');
+          if (rootEl && rootEl.hasChildNodes() && rootEl.children.length > 0) {
+            clearTimeout(timeoutId);
+            var fallbackEl = document.getElementById('app-startup-fallback');
+            if (fallbackEl) fallbackEl.style.display = 'none';
+            obs.disconnect();
+          }
+        });
+        var target = document.getElementById('root');
+        if (target) {
+          observer.observe(target, { childList: true, subtree: true });
+        }
+      })();
+    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

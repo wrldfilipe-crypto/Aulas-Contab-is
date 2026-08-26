@@ -27,7 +27,7 @@ export function AppGuard({ children }: AppGuardProps) {
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
           transition={{ duration: 0.25, ease: "easeInOut" }}
-          className="min-h-screen w-full bg-[#F0F4FA] dark:bg-[#070D18] flex flex-col items-center justify-center p-4 text-center"
+          className="min-h-[100dvh] w-full bg-[#F0F4FA] dark:bg-[#070D18] flex flex-col items-center justify-center p-4 text-center"
           id="app-guard-loading"
         >
           <div className="relative mb-5">
@@ -55,7 +55,7 @@ export function AppGuard({ children }: AppGuardProps) {
           animate={{ opacity: 1, y: 0 }}
           exit={{ opacity: 0, y: -6 }}
           transition={{ duration: 0.3, ease: "easeOut" }}
-          className="min-h-screen w-full"
+          className="min-h-[100dvh] w-full"
         >
           <LoginPage />
         </motion.div>

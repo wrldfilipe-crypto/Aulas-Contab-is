@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState, ReactNode } from "react";
+import React, { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 import { carregarPlano, ingestarDocumentoOficial } from "./pgcRag";
 import { validarConta, pesquisarConta } from "./pgcValidator";
 import type { PlanoContas, NormaSelecionada } from "./types";
@@ -35,8 +35,8 @@ export function PGCProvider({ children }: { children: ReactNode }) {
       plano,
       norma,
       setNorma,
-      validarConta: (c: string) => validarConta(plano!, c),
-      pesquisarConta: (t: string, limite?: number) => pesquisarConta(plano!, t, limite),
+      validarConta: (c: string) => validarConta(plano, c),
+      pesquisarConta: (t: string, limite?: number) => pesquisarConta(plano, t, limite),
       ingestar,
     }}>
       {children}

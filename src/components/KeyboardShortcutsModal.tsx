@@ -10,14 +10,14 @@ interface KeyboardShortcutsModalProps {
 
 const SHORTCUT_GROUPS = [
   {
-    title: 'Navegação Rápida entre Abas (Alt + Número)',
+    title: 'Navegação Rápida entre Abas (Alt + Tecla / Alt + Número)',
     shortcuts: [
       { key: 'Alt + 1', label: 'Painel Principal (Dashboard)', tab: 'dashboard' },
       { key: 'Alt + 2', label: 'AI Accountant (Consultor IA)', tab: 'assistant' },
       { key: 'Alt + 3', label: 'Aprendizados (Biblioteca)', tab: 'learning' },
       { key: 'Alt + 4', label: 'Quizzes & Duelo Contábil', tab: 'quizzes' },
-      { key: 'Alt + 5', label: 'Contabilidade (PGC Angola)', tab: 'accounting' },
-      { key: 'Alt + 6', label: 'Faturação ERP', tab: 'faturacao' },
+      { key: 'Alt + A / Alt + 5', label: 'Contabilidade (PGC Angola)', tab: 'accounting' },
+      { key: 'Alt + N / Alt + 6', label: 'Notas & Anotações', tab: 'notes' },
       { key: 'Alt + 7', label: 'Recursos Humanos (RH)', tab: 'rh' },
       { key: 'Alt + 8', label: 'Taxas de Câmbio BNA', tab: 'exchange_rates' },
     ]
@@ -143,3 +143,5 @@ export const KeyboardShortcutsModal: React.FC<KeyboardShortcutsModalProps> = ({
     </AnimatePresence>
   );
 };
+
+export default KeyboardShortcutsModal;

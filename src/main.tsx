@@ -1,10 +1,10 @@
-import {StrictMode} from 'react';
-import {createRoot} from 'react-dom/client';
-import App from './App.tsx';
-import { AppGuard } from './AppGuard.tsx';
-import { ErrorBoundary } from './components/ErrorBoundary.tsx';
-import { PGCProvider } from './lib/pgc/usePGC.tsx';
-import { instalarWatchdogFirestore } from './lib/watchdog.ts';
+import React, { StrictMode } from 'react';
+import { createRoot } from 'react-dom/client';
+import App from './App';
+import { AppGuard } from './AppGuard';
+import { ErrorBoundary } from './components/ErrorBoundary';
+import { PGCProvider } from './lib/pgc/usePGC';
+import { instalarWatchdogFirestore } from './lib/watchdog';
 import './index.css';
 
 // Ativar Watchdog de proteção contra quota excedida e mutações presas

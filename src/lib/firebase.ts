@@ -10,7 +10,7 @@ import {
   User as FirebaseUser 
 } from 'firebase/auth';
 import { 
-  getFirestore, initializeFirestore, memoryLocalCache,
+  getFirestore, initializeFirestore, memoryLocalCache, setLogLevel,
   collection, doc, setDoc, getDoc, getDocs, deleteDoc, getDocFromServer,
   query, where, orderBy, onSnapshot, writeBatch, runTransaction, serverTimestamp, waitForPendingWrites 
 } from 'firebase/firestore';
@@ -27,6 +27,11 @@ import firebaseConfig from '../../firebase-applet-config.json';
 // Initialize Firebase App & Services
 export const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
 export const auth = getAuth(app);
+
+// Suppress internal Firestore connection/retry noise in development & offline environments
+try {
+  setLogLevel('silent');
+} catch (_) {}
 
 // Configurar persistência de sessão local no browser
 setPersistence(auth, browserLocalPersistence).catch((err) => {
@@ -59,6 +64,30 @@ let lastHealthCheckTime = 0;
 let lastHealthCheckResult = true;
 const HEALTH_CACHE_TTL = 4000; // 4s TTL para evitar múltiplos pings em rajadas de cliques
 
+let ultimoAvisoFirestore = '';
+let ultimoAvisoFirestoreEm = 0;
+
+export function notificarFirestoreLog(online: boolean, detalhe?: string) {
+  const agora = Date.now();
+  const mensagem = online
+    ? 'Conectividade Firestore restaurada.'
+    : `Conectividade Firestore indisponível (modo offline ativo)${detalhe ? `: ${detalhe}` : '.'}`;
+
+  const mudou = lastHealthCheckResult !== online;
+  const repetidoRecentemente = ultimoAvisoFirestore === mensagem && agora - ultimoAvisoFirestoreEm < 10_000;
+
+  if (!mudou && repetidoRecentemente) return;
+
+  ultimoAvisoFirestore = mensagem;
+  ultimoAvisoFirestoreEm = agora;
+
+  if (online) {
+    console.info(`[Firestore] ${mensagem}`);
+  } else {
+    console.warn(`[Firestore] ${mensagem}`);
+  }
+}
+
 type FirestoreStatusListener = (disponivel: boolean) => void;
 const firestoreStatusListeners = new Set<FirestoreStatusListener>();
 
@@ -73,6 +102,7 @@ export function onFirestoreStatusChanged(listener: FirestoreStatusListener): () 
 function notificarStatusFirestore(disponivel: boolean) {
   if (lastHealthCheckResult !== disponivel) {
     lastHealthCheckResult = disponivel;
+    notificarFirestoreLog(disponivel);
     firestoreStatusListeners.forEach((fn) => {
       try { fn(disponivel); } catch (_) {}
     });
@@ -131,7 +161,6 @@ export async function firestoreDisponivel(forcar = false): Promise<boolean> {
       return true;
     }
 
-    console.warn('[Firestore] Conectividade à nuvem indisponível (modo offline ativo):', msg);
     lastHealthCheckTime = agora;
     notificarStatusFirestore(false);
     return false;
@@ -407,7 +436,18 @@ export async function registerDeviceSession(userId: string) {
     await setDoc(sessionRef, sessionData, { merge: true });
     return sessionData;
   } catch (err: any) {
-    console.warn('[Sessions] Erro ao registar sessão no Firestore:', err?.message || err);
+    const code = String(err?.code || '');
+    const msg = String(err?.message || '');
+    const esperadoOffline =
+      code.includes('unavailable') ||
+      code.includes('offline') ||
+      /client is offline|network|timeout/i.test(msg);
+
+    if (esperadoOffline) {
+      notificarFirestoreLog(false, 'sessão local ativa');
+    } else {
+      console.warn('[Sessions] Erro ao registar sessão no Firestore:', msg || err);
+    }
     return null;
   }
 }
@@ -1321,4 +1361,186 @@ export function iniciarSyncAutomatico(uid: string) {
     window.removeEventListener("online", handleOnline);
   };
 }
+
+// ── SINCRONIZAÇÃO DE NOTAS NO FIRESTORE (users/{UID}/notas/{ID_DA_NOTA}) ────────
+/**
+ * Salva ou atualiza uma nota no Firestore na subcoleção do utilizador.
+ */
+export async function salvarNotaNoFirestore(uid: string, nota: Record<string, any>): Promise<void> {
+  if (!uid || uid === 'guest' || !nota || !nota.id) return;
+  try {
+    const notaRef = doc(db, 'users', uid, 'notas', String(nota.id));
+    const payload = {
+      ...nota,
+      atualizadaEm: nota.updatedAt || nota.atualizadaEm || Date.now(),
+      updatedAt: nota.updatedAt || nota.atualizadaEm || Date.now()
+    };
+    await setDoc(notaRef, payload, { merge: true });
+  } catch (err: any) {
+    console.warn(`[Firestore Notas] Erro ao gravar nota ${nota.id}:`, err?.message || err);
+    throw err;
+  }
+}
+
+/**
+ * Remove uma nota do Firestore.
+ */
+export async function apagarNotaNoFirestore(uid: string, idNota: string): Promise<void> {
+  if (!uid || uid === 'guest' || !idNota) return;
+  try {
+    const notaRef = doc(db, 'users', uid, 'notas', String(idNota));
+    await deleteDoc(notaRef);
+  } catch (err: any) {
+    console.warn(`[Firestore Notas] Erro ao apagar nota ${idNota}:`, err?.message || err);
+    throw err;
+  }
+}
+
+/**
+ * Escuta alterações em tempo real nas notas do utilizador no Firestore.
+ */
+export function ouvirNotasDoFirestore(
+  uid: string,
+  onNotasAtualizadas: (notas: any[]) => void,
+  onError?: (err: any) => void
+): () => void {
+  if (!uid || uid === 'guest') {
+    return () => {};
+  }
+
+  try {
+    const notasCollRef = collection(db, 'users', uid, 'notas');
+    return onSnapshot(
+      notasCollRef,
+      (snapshot) => {
+        const lista: any[] = [];
+        snapshot.forEach((docSnap) => {
+          const data = docSnap.data();
+          if (data && (data.id || docSnap.id)) {
+            lista.push({
+              id: data.id || docSnap.id,
+              ...data
+            });
+          }
+        });
+        onNotasAtualizadas(lista);
+      },
+      (error) => {
+        console.warn('[Firestore Notas] Erro ou modo offline no listener:', error?.message || error);
+        if (onError) onError(error);
+      }
+    );
+  } catch (err) {
+    console.warn('[Firestore Notas] Falha ao registar listener:', err);
+    if (onError) onError(err);
+    return () => {};
+  }
+}
+
+// ── SINCRONIZAÇÃO DE CONVERSAS IA NO FIRESTORE (users/{UID}/ai_conversations/{ID}) ──
+/**
+ * Salva ou atualiza uma conversa de IA no Firestore na subcoleção do utilizador.
+ */
+export async function salvarConversaNoFirestore(uid: string, conversa: Record<string, any>): Promise<void> {
+  if (!uid || uid === 'guest' || !conversa || !conversa.id) return;
+  try {
+    const convRef = doc(db, 'users', uid, 'ai_conversations', String(conversa.id));
+    const payload = {
+      ...conversa,
+      updatedAt: conversa.updatedAt || Date.now(),
+      atualizadaEm: conversa.updatedAt || Date.now(),
+      uid
+    };
+    await setDoc(convRef, payload, { merge: true });
+    console.log(`[Firestore AI Chat] Conversa ${conversa.id} salva com sucesso para o utilizador ${uid}`);
+  } catch (err: any) {
+    console.warn(`[Firestore AI Chat] Erro ao gravar conversa ${conversa.id}:`, err?.message || err);
+    throw err;
+  }
+}
+
+/**
+ * Remove uma conversa de IA do Firestore.
+ */
+export async function apagarConversaNoFirestore(uid: string, idConversa: string): Promise<void> {
+  if (!uid || uid === 'guest' || !idConversa) return;
+  try {
+    const convRef = doc(db, 'users', uid, 'ai_conversations', String(idConversa));
+    await deleteDoc(convRef);
+    console.log(`[Firestore AI Chat] Conversa ${idConversa} apagada para o utilizador ${uid}`);
+  } catch (err: any) {
+    console.warn(`[Firestore AI Chat] Erro ao apagar conversa ${idConversa}:`, err?.message || err);
+    throw err;
+  }
+}
+
+/**
+ * Carrega todas as conversas do utilizador a partir do Firestore.
+ */
+export async function carregarConversasDoFirestore(uid: string): Promise<any[]> {
+  if (!uid || uid === 'guest') return [];
+  try {
+    const convCollRef = collection(db, 'users', uid, 'ai_conversations');
+    const q = query(convCollRef, orderBy('updatedAt', 'desc'));
+    const snapshot = await getDocs(q);
+    const lista: any[] = [];
+    snapshot.forEach((docSnap) => {
+      const data = docSnap.data();
+      if (data) {
+        lista.push({
+          id: docSnap.id,
+          ...data
+        });
+      }
+    });
+    return lista;
+  } catch (err: any) {
+    console.warn('[Firestore AI Chat] Falha ao carregar conversas:', err?.message || err);
+    return [];
+  }
+}
+
+/**
+ * Escuta alterações em tempo real nas conversas de IA do utilizador no Firestore.
+ */
+export function ouvirConversasDoFirestore(
+  uid: string,
+  onConversasAtualizadas: (conversas: any[]) => void,
+  onError?: (err: any) => void
+): () => void {
+  if (!uid || uid === 'guest') {
+    return () => {};
+  }
+
+  try {
+    const convCollRef = collection(db, 'users', uid, 'ai_conversations');
+    return onSnapshot(
+      convCollRef,
+      (snapshot) => {
+        const lista: any[] = [];
+        snapshot.forEach((docSnap) => {
+          const data = docSnap.data();
+          if (data && (data.id || docSnap.id)) {
+            lista.push({
+              id: data.id || docSnap.id,
+              ...data
+            });
+          }
+        });
+        // Ordenar por updatedAt desc
+        lista.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+        onConversasAtualizadas(lista);
+      },
+      (error) => {
+        console.warn('[Firestore AI Chat] Erro ou modo offline no listener:', error?.message || error);
+        if (onError) onError(error);
+      }
+    );
+  } catch (err) {
+    console.warn('[Firestore AI Chat] Falha ao registar listener de conversas:', err);
+    if (onError) onError(err);
+    return () => {};
+  }
+}
+
 

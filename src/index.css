@@ -1,5 +1,61 @@
 @import "tailwindcss";
 
+html, body, #root {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+}
+
+.app-container {
+  display: flex;
+  flex-direction: column;
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+}
+
+.topbar {
+  flex-shrink: 0;
+  height: 52px;
+  width: 100%;
+  z-index: 200;
+}
+
+.main-layout {
+  display: flex;
+  flex-direction: row;
+  flex: 1;
+  overflow: hidden;
+  height: calc(100vh - 52px);
+}
+
+.sidebar {
+  flex-shrink: 0;
+  width: 260px;
+  height: 100%;
+  overflow-y: auto;
+  z-index: 100;
+}
+
+.page-content {
+  flex: 1;
+  height: 100%;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+.ai-accountant-page {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
+  position: relative;
+  max-height: 100%;
+}
+
 /* Modo Foco Noturno - Tons Pastéis Escuros para menor fadiga ocular */
 html.night-focus-mode,
 html.night-focus-mode body {
@@ -900,3 +956,541 @@ html.dark .prose-accountant hr {
 
 
 
+
+/* ========================================================================
+   App backgrounds: applied globally through #app-container[data-app-background]
+   ======================================================================== */
+#app-container[data-app-background] {
+  position: relative;
+  isolation: isolate;
+  background-color: #f1f5f9 !important;
+  background-attachment: fixed;
+  transition: background 420ms ease, color 280ms ease;
+}
+
+#app-container[data-app-background]::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: -1;
+  opacity: 0.9;
+  transition: opacity 420ms ease, background 420ms ease;
+}
+
+#app-container[data-app-background="dots"] {
+  background-color: #f8fafc !important;
+}
+#app-container[data-app-background="dots"]::before {
+  background-image: radial-gradient(rgba(30, 64, 175, 0.16) 1px, transparent 1px);
+  background-size: 22px 22px;
+}
+
+#app-container[data-app-background="grid"] {
+  background-color: #eef2f7 !important;
+}
+#app-container[data-app-background="grid"]::before {
+  background-image: linear-gradient(rgba(30, 64, 175, 0.08) 1px, transparent 1px), linear-gradient(90deg, rgba(30, 64, 175, 0.08) 1px, transparent 1px);
+  background-size: 26px 26px;
+}
+
+#app-container[data-app-background="solid"] {
+  background: #dce5f0 !important;
+}
+#app-container[data-app-background="solid"]::before {
+  background: linear-gradient(135deg, rgba(255,255,255,0.35), transparent 48%);
+}
+
+#app-container[data-app-background="cosmic"] {
+  background: linear-gradient(135deg, #070b1e 0%, #11134a 48%, #25104a 100%) !important;
+  color: #eef2ff;
+}
+#app-container[data-app-background="cosmic"]::before {
+  background-image: radial-gradient(circle at 18% 18%, rgba(59,130,246,0.28), transparent 28%), radial-gradient(circle at 82% 12%, rgba(168,85,247,0.28), transparent 26%), radial-gradient(circle at 68% 82%, rgba(14,165,233,0.16), transparent 30%);
+}
+
+#app-container[data-app-background="emerald"] {
+  background: linear-gradient(135deg, #061b1a 0%, #063c36 52%, #0b5a4d 100%) !important;
+  color: #ecfdf5;
+}
+#app-container[data-app-background="emerald"]::before {
+  background-image: radial-gradient(circle at 15% 20%, rgba(52,211,153,0.26), transparent 30%), radial-gradient(circle at 90% 75%, rgba(16,185,129,0.2), transparent 32%);
+}
+
+#app-container[data-app-background="dark-slate"] {
+  background: linear-gradient(135deg, #111827 0%, #1e293b 100%) !important;
+  color: #f1f5f9;
+}
+#app-container[data-app-background="dark-slate"]::before {
+  background-image: linear-gradient(120deg, rgba(148,163,184,0.08), transparent 45%);
+}
+
+#app-container[data-app-background="warm-cream"] {
+  background: linear-gradient(135deg, #fffaf0 0%, #f7ead1 100%) !important;
+}
+#app-container[data-app-background="warm-cream"]::before {
+  background-image: radial-gradient(rgba(180,83,9,0.08) 1px, transparent 1px);
+  background-size: 18px 18px;
+}
+
+#app-container[data-app-background="minimalist"] {
+  background: #ffffff !important;
+}
+#app-container[data-app-background="minimalist"]::before {
+  background: linear-gradient(135deg, rgba(226,232,240,0.42), transparent 42%);
+}
+
+#app-container[data-app-background="matrix"] {
+  background: #020604 !important;
+  color: #d1fae5;
+}
+#app-container[data-app-background="matrix"]::before {
+  opacity: 0.42;
+  background-image: linear-gradient(rgba(34,197,94,0.12) 1px, transparent 1px), linear-gradient(90deg, rgba(34,197,94,0.12) 1px, transparent 1px);
+  background-size: 24px 24px;
+}
+
+#app-container[data-app-background="executive"] {
+  background: linear-gradient(135deg, #061229 0%, #0c2853 54%, #123d77 100%) !important;
+  color: #eff6ff;
+}
+#app-container[data-app-background="executive"]::before {
+  background-image: linear-gradient(115deg, rgba(96,165,250,0.18) 0 1px, transparent 1px 48px), radial-gradient(circle at 86% 15%, rgba(56,189,248,0.22), transparent 28%);
+  background-size: 48px 48px, auto;
+}
+
+#app-container[data-app-background="custom"] {
+  background: linear-gradient(var(--custom-bg-angle, 135deg), var(--custom-bg-base, #07111f), var(--custom-bg-accent, #123d68)) !important;
+  color: #eef6ff;
+}
+#app-container[data-app-background="custom"]::before {
+  background: radial-gradient(circle at 12% 12%, rgba(255,255,255,0.14), transparent 25%), radial-gradient(circle at 88% 78%, rgba(56,189,248,0.16), transparent 30%);
+}
+
+/* Shared internal surfaces: glassmorphism with readable contrast on every preset. */
+#app-container #header-panel,
+#app-container > aside,
+#app-container .app-glass-surface {
+  background: linear-gradient(135deg, rgba(8, 18, 35, 0.78), rgba(17, 35, 61, 0.58)) !important;
+  border-color: rgba(148, 197, 255, 0.16) !important;
+  box-shadow: 0 18px 48px rgba(2, 8, 23, 0.22), inset 0 1px 0 rgba(255,255,255,0.08) !important;
+  backdrop-filter: blur(22px) saturate(135%);
+  -webkit-backdrop-filter: blur(22px) saturate(135%);
+}
+#app-container main .rounded-2xl,
+#app-container main .rounded-xl {
+  border-color: color-mix(in srgb, rgba(148,197,255,0.22), transparent 35%);
+}
+html:not(.dark) #app-container #header-panel,
+html:not(.dark) #app-container > aside,
+html:not(.dark) #app-container .app-glass-surface {
+  background: linear-gradient(135deg, rgba(255,255,255,0.78), rgba(241,247,255,0.62)) !important;
+  color: #0f172a;
+}
+html.night-focus-mode #app-container #header-panel,
+html.night-focus-mode #app-container > aside,
+html.night-focus-mode #app-container .app-glass-surface {
+  box-shadow: 0 0 0 1px rgba(103,232,249,0.18), 0 20px 60px rgba(0,0,0,0.42), 0 0 34px rgba(34,211,238,0.08) !important;
+}
+
+
+/* Dark mode: deeper visual hierarchy, luminous edges and a more cinematic workspace. */
+html.dark #app-container {
+  background: radial-gradient(circle at 78% 8%, rgba(37,99,235,0.18), transparent 28%), linear-gradient(135deg, #020617 0%, #071426 48%, #0b1730 100%) !important;
+  color: #eef6ff !important;
+}
+html.dark #app-container::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: -1;
+  background: radial-gradient(circle at 14% 20%, rgba(34,211,238,0.08), transparent 25%), radial-gradient(circle at 88% 78%, rgba(124,58,237,0.12), transparent 30%);
+}
+html.dark #app-container header,
+html.dark #app-container #header-panel {
+  background: linear-gradient(90deg, rgba(5,15,32,0.98), rgba(10,22,40,0.94)) !important;
+  box-shadow: 0 1px 0 rgba(125,211,252,0.12), 0 10px 34px rgba(0,0,0,0.24) !important;
+}
+html.dark #app-container .rounded-2xl,
+html.dark #app-container .rounded-xl {
+  box-shadow: 0 12px 32px rgba(0,0,0,0.2), inset 0 1px 0 rgba(255,255,255,0.035);
+}
+html.dark #app-container input:focus,
+html.dark #app-container select:focus,
+html.dark #app-container textarea:focus {
+  box-shadow: 0 0 0 3px rgba(56,189,248,0.18), 0 0 22px rgba(59,130,246,0.12) !important;
+}
+html.dark #app-container button:hover {
+  filter: brightness(1.08);
+}
+
+/* Night-focus palettes add a visible ambient tint rather than only changing flat colors. */
+html.night-focus-mode #app-container::before {
+  opacity: 1;
+}
+html.night-focus-mode.night-theme-ocean #app-container {
+  background: radial-gradient(circle at 82% 10%, rgba(14,165,233,0.2), transparent 30%), linear-gradient(135deg, #06111f, #0b2035 55%, #101b38) !important;
+}
+html.night-focus-mode.night-theme-forest #app-container {
+  background: radial-gradient(circle at 82% 10%, rgba(16,185,129,0.18), transparent 30%), linear-gradient(135deg, #04120f, #0b2a23 55%, #102d28) !important;
+}
+html.night-focus-mode.night-theme-twilight #app-container {
+  background: radial-gradient(circle at 82% 10%, rgba(192,132,252,0.2), transparent 30%), linear-gradient(135deg, #0d0719, #24133d 55%, #321a4c) !important;
+}
+html.dark #app-container[data-app-background="custom"],
+html.night-focus-mode #app-container[data-app-background="custom"] {
+  background: linear-gradient(var(--custom-bg-angle, 135deg), var(--custom-bg-base, #07111f), var(--custom-bg-accent, #123d68)) !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #app-container[data-app-background],
+  #app-container[data-app-background]::before {
+    transition: none !important;
+  }
+}
+
+
+/* ========================================================================
+   Responsive density: telefone, tablet e ecrãs compactos
+   ======================================================================== */
+
+/* Evita que o viewport móvel introduza uma altura artificial e respeita áreas
+   seguras de aparelhos com recorte ou barra de navegação. */
+html,
+body,
+#root {
+  min-height: 100%;
+}
+
+@supports (height: 100dvh) {
+  #app-container {
+    height: 100dvh !important;
+    min-height: 100dvh;
+  }
+}
+
+button,
+a,
+input,
+select,
+textarea {
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Tablet: reduz a largura ocupada pela navegação expandida e os vazios do
+   cabeçalho, mantendo alvos de toque confortáveis. */
+@media (min-width: 768px) and (max-width: 1100px) {
+  #sidebar-panel-desktop[data-expanded="true"] {
+    width: min(250px, 27vw) !important;
+  }
+
+  #header-panel {
+    padding-left: 0.75rem !important;
+    padding-right: 0.75rem !important;
+    gap: 0.5rem !important;
+  }
+
+  #workspace-scroll-area {
+    padding: 1rem !important;
+  }
+
+  #workspace-scroll-area > * {
+    max-width: 100% !important;
+  }
+}
+
+/* Telefone: utiliza cada pixel disponível, evita overflow horizontal e
+   transforma grelhas rígidas em uma coluna quando necessário. */
+@media (max-width: 767px) {
+  #app-container {
+    min-width: 0;
+    overflow-x: hidden !important;
+  }
+
+  #main-content-panel,
+  #workspace-scroll-area {
+    min-width: 0;
+    width: 100%;
+  }
+
+  #header-panel {
+    height: 3.5rem !important;
+    min-height: 3.5rem;
+    padding-left: max(0.5rem, env(safe-area-inset-left)) !important;
+    padding-right: max(0.5rem, env(safe-area-inset-right)) !important;
+    gap: 0.35rem !important;
+  }
+
+  #workspace-scroll-area {
+    padding: 0.75rem !important;
+    padding-bottom: max(1rem, env(safe-area-inset-bottom)) !important;
+    overflow-x: hidden !important;
+  }
+
+  #sidebar-panel-mobile {
+    width: min(18rem, calc(100vw - 2rem));
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+
+  #sidebar-panel-mobile nav {
+    padding-left: 0.75rem;
+    padding-right: 0.75rem;
+    padding-top: 0.75rem;
+    padding-bottom: 0.75rem;
+  }
+
+  #sidebar-panel-mobile nav button {
+    min-height: 2.75rem;
+    padding-top: 0.65rem;
+    padding-bottom: 0.65rem;
+  }
+
+  /* Cartões e superfícies ocupam a largura disponível sem margens internas
+     excessivas. */
+  #workspace-scroll-area .max-w-7xl,
+  #workspace-scroll-area .max-w-6xl,
+  #workspace-scroll-area .max-w-5xl,
+  #workspace-scroll-area .max-w-4xl,
+  #workspace-scroll-area .max-w-3xl {
+    max-width: 100% !important;
+  }
+
+  #workspace-scroll-area .p-8,
+  #workspace-scroll-area .px-8,
+  #workspace-scroll-area .py-8 {
+    padding: 1rem !important;
+  }
+
+  #workspace-scroll-area .p-6,
+  #workspace-scroll-area .px-6,
+  #workspace-scroll-area .py-6 {
+    padding: 0.875rem !important;
+  }
+
+  #workspace-scroll-area .gap-8 {
+    gap: 1rem !important;
+  }
+
+  #workspace-scroll-area .gap-6 {
+    gap: 0.875rem !important;
+  }
+
+  /* Grelhas de duas ou mais colunas passam a empilhar-se apenas quando o
+     conteúdo já não teria largura confortável. */
+  #workspace-scroll-area .grid-cols-4,
+  #workspace-scroll-area .grid-cols-3 {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+
+  #workspace-scroll-area .grid-cols-2 {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+
+  #workspace-scroll-area table {
+    min-width: 38rem;
+  }
+
+  #workspace-scroll-area .overflow-x-auto {
+    max-width: 100%;
+    overscroll-behavior-x: contain;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  /* Formulários e ações ficam empilhados para não forçar zoom ou cortes. */
+  #workspace-scroll-area form .flex.justify-end,
+  #workspace-scroll-area .flex.justify-end {
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+
+  #workspace-scroll-area input,
+  #workspace-scroll-area select,
+  #workspace-scroll-area textarea {
+    max-width: 100%;
+    font-size: 16px;
+  }
+
+  /* Apenas modais de conteúdo usam a altura real disponível do telefone.
+     Drawers de navegação/perfil têm de permanecer full-screen e não podem
+     receber padding ou alinhamento de modal. */
+  #app-container .app-modal-overlay {
+    padding: 0.75rem !important;
+    align-items: flex-start;
+    overflow-y: auto;
+  }
+
+  #app-container .app-modal-overlay > .w-full,
+  #app-container .app-modal-overlay > .max-w-md,
+  #app-container .app-modal-overlay > .max-w-lg,
+  #app-container .app-modal-overlay > .max-w-2xl,
+  #app-container .app-modal-overlay > .max-w-4xl {
+    width: 100% !important;
+    max-width: 100% !important;
+    max-height: calc(100dvh - 1.5rem);
+    overflow-y: auto;
+  }
+
+  /* O shell superior é uma área fixa de navegação, não informação auxiliar. */
+  #app-container #main-content-panel,
+  #app-container #workspace-scroll-area {
+    min-height: 0 !important;
+  }
+
+  #app-container #header-panel {
+    display: flex !important;
+    position: relative;
+    z-index: 70 !important;
+    flex: 0 0 4rem !important;
+    height: 4rem !important;
+    min-height: 4rem !important;
+    max-height: 4rem !important;
+    visibility: visible !important;
+    opacity: 1 !important;
+    transform: none !important;
+  }
+
+  #app-container #header-panel .mobile-header-action {
+    display: flex !important;
+    visibility: visible !important;
+    opacity: 1 !important;
+    position: relative;
+    z-index: 71;
+  }
+
+  /* O Contador IA fica limitado ao espaço interior sem transbordar para outros componentes */
+  .ai-accountant-page {
+    position: relative !important;
+    display: flex;
+    flex: 1 1 0% !important;
+    min-height: 0 !important;
+    width: 100%;
+    overflow: hidden !important;
+  }
+
+  .ai-accountant-page > #suite_subtab_header {
+    flex: 0 0 auto;
+  }
+
+  .ai-accountant-page > .flex-1 {
+    min-height: 0;
+  }
+
+  /* Esconde apenas informação auxiliar, nunca ações essenciais. */
+  #header-panel kbd,
+  #header-panel [class~="sm:block"] {
+    display: none !important;
+  }
+}
+
+/* Telefones muito estreitos: uma coluna para cartões e botões de ação em
+   largura total, evitando desperdício e truncamento. */
+@media (max-width: 390px) {
+  #workspace-scroll-area .grid-cols-4,
+  #workspace-scroll-area .grid-cols-3,
+  #workspace-scroll-area .grid-cols-2 {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+
+  #header-panel .font-black {
+    max-width: 8.5rem;
+  }
+
+  #workspace-scroll-area .text-4xl {
+    font-size: 1.75rem;
+    line-height: 2.1rem;
+  }
+}
+
+/* Tablets em modo paisagem podem usar duas colunas, mas com margens menores. */
+@media (min-width: 768px) and (max-width: 1100px) and (orientation: landscape) {
+  #workspace-scroll-area .grid-cols-4,
+  #workspace-scroll-area .grid-cols-3 {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #app-container *,
+  #app-container *::before,
+  #app-container *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+  }
+}
+
+
+/* Refinamento por proporção: em aparelhos baixos, a altura disponível é mais
+   escassa do que a largura e o layout deve priorizar o conteúdo. */
+@media (max-width: 1100px) and (max-height: 760px) {
+  /* A altura do cabeçalho é global e não pode variar conforme o separador ativo. */
+  #app-container #header-panel {
+    height: 4rem !important;
+    min-height: 4rem !important;
+    max-height: 4rem !important;
+    flex-basis: 4rem !important;
+  }
+  #workspace-scroll-area {
+    padding-top: 0.65rem !important;
+    padding-bottom: 0.75rem !important;
+  }
+
+  #workspace-scroll-area .space-y-8 > :not([hidden]) ~ :not([hidden]) {
+    margin-top: 1rem !important;
+  }
+
+  #workspace-scroll-area .space-y-6 > :not([hidden]) ~ :not([hidden]) {
+    margin-top: 0.75rem !important;
+  }
+}
+
+/* Tablet portrait: a barra lateral retraída economiza largura sem esconder o
+   acesso às páginas, que continuam disponíveis pelos ícones. */
+@media (min-width: 768px) and (max-width: 900px) and (orientation: portrait) {
+  #sidebar-panel-desktop[data-expanded="true"] {
+    width: 4rem !important;
+  }
+
+  #sidebar-panel-desktop[data-expanded="true"] #sidebar-nav-label,
+  #sidebar-panel-desktop[data-expanded="true"] #sidebar-footer span,
+  #sidebar-panel-desktop[data-expanded="true"] #sidebar-pin-btn,
+  #sidebar-panel-desktop[data-expanded="true"] .group\/pin {
+    display: none !important;
+  }
+
+  #sidebar-panel-desktop[data-expanded="true"] nav button {
+    justify-content: center;
+    padding-left: 0.65rem !important;
+    padding-right: 0.65rem !important;
+  }
+
+  #sidebar-panel-desktop[data-expanded="true"] nav button svg {
+    margin-right: 0 !important;
+  }
+
+  #workspace-scroll-area {
+    padding: 0.85rem !important;
+  }
+}
+
+/* Desativa margens horizontais desnecessárias de elementos que tenham sido
+   definidos com largura total dentro de cartões móveis. */
+@media (max-width: 767px) {
+  #workspace-scroll-area .mx-auto {
+    margin-left: 0 !important;
+    margin-right: 0 !important;
+  }
+
+  #workspace-scroll-area .w-screen {
+    width: 100% !important;
+  }
+
+  #workspace-scroll-area .rounded-3xl {
+    border-radius: 1rem !important;
+  }
+
+  #workspace-scroll-area .rounded-2xl {
+    border-radius: 0.875rem !important;
+  }
+}

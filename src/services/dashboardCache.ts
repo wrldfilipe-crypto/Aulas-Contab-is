@@ -1,4 +1,5 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { recordSyncHistory } from '../lib/offlineDb';
 
 const DASHBOARD_CACHE_KEY = "dashboard_cache";
 const QUIZ_PROGRESS_CACHE_KEY = "quiz_progress_cache";
@@ -18,36 +19,100 @@ const IDB_VERSION = 1;
 const QUEUE_STORE = "offlineQueue";
 const MODULES_STORE = "learningModules";
 
-function openIDB(): Promise<IDBDatabase> {
-  return new Promise((resolve, reject) => {
-    if (typeof window === 'undefined' || !window.indexedDB) {
-      return reject(new Error("IndexedDB não suportado neste ambiente"));
+let cachedIDB: IDBDatabase | null = null;
+let idbOpenPromise: Promise<IDBDatabase> | null = null;
+
+function resetIDBConnection() {
+  if (cachedIDB) {
+    try { cachedIDB.close(); } catch (_) {}
+    cachedIDB = null;
+  }
+  idbOpenPromise = null;
+}
+
+export function openIDB(): Promise<IDBDatabase> {
+  if (typeof window === 'undefined' || !window.indexedDB) {
+    return Promise.reject(new Error("IndexedDB não suportado neste ambiente"));
+  }
+
+  if (cachedIDB) {
+    return Promise.resolve(cachedIDB);
+  }
+
+  if (idbOpenPromise) {
+    return idbOpenPromise;
+  }
+
+  idbOpenPromise = new Promise((resolve, reject) => {
+    try {
+      const request = indexedDB.open(IDB_NAME, IDB_VERSION);
+      request.onupgradeneeded = () => {
+        const db = request.result;
+        if (!db.objectStoreNames.contains(QUEUE_STORE)) {
+          db.createObjectStore(QUEUE_STORE, { keyPath: "id" });
+        }
+        if (!db.objectStoreNames.contains(MODULES_STORE)) {
+          db.createObjectStore(MODULES_STORE, { keyPath: "id" });
+        }
+      };
+      request.onsuccess = () => {
+        const db = request.result;
+        cachedIDB = db;
+        db.onversionchange = () => resetIDBConnection();
+        db.onclose = () => resetIDBConnection();
+        resolve(db);
+      };
+      request.onerror = () => {
+        resetIDBConnection();
+        reject(request.error);
+      };
+      request.onblocked = () => resetIDBConnection();
+    } catch (e) {
+      resetIDBConnection();
+      reject(e);
     }
-    const request = indexedDB.open(IDB_NAME, IDB_VERSION);
-    request.onupgradeneeded = (event) => {
-      const db = request.result;
-      if (!db.objectStoreNames.contains(QUEUE_STORE)) {
-        db.createObjectStore(QUEUE_STORE, { keyPath: "id" });
-      }
-      if (!db.objectStoreNames.contains(MODULES_STORE)) {
-        db.createObjectStore(MODULES_STORE, { keyPath: "id" });
-      }
-    };
-    request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error);
   });
+
+  return idbOpenPromise;
+}
+
+async function runWithIDBStore<T>(
+  storeName: string,
+  mode: IDBTransactionMode,
+  fn: (store: IDBObjectStore, tx: IDBTransaction) => Promise<T>
+): Promise<T> {
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const db = await openIDB();
+      const tx = db.transaction(storeName, mode);
+      const store = tx.objectStore(storeName);
+      return await fn(store, tx);
+    } catch (err: any) {
+      const msg = err?.message || String(err);
+      if (
+        attempt === 0 &&
+        (msg.includes('closing') ||
+          msg.includes('closed') ||
+          err?.name === 'InvalidStateError')
+      ) {
+        resetIDBConnection();
+        continue;
+      }
+      throw err;
+    }
+  }
+  throw new Error('Falha ao executar operação IndexedDB.');
 }
 
 // ── INDEXEDDB QUEUE OPERATIONS ─────────────────────────────────
 export async function enqueueOfflineActionIDB(action: OfflineSyncAction): Promise<void> {
   try {
-    const db = await openIDB();
-    const tx = db.transaction(QUEUE_STORE, "readwrite");
-    const store = tx.objectStore(QUEUE_STORE);
-    store.put(action);
-    await new Promise((res, rej) => {
-      tx.oncomplete = res;
-      tx.onerror = rej;
+    await runWithIDBStore(QUEUE_STORE, "readwrite", async (store, tx) => {
+      store.put(action);
+      await new Promise((res, rej) => {
+        tx.oncomplete = res;
+        tx.onerror = rej;
+      });
     });
     console.log(`[IndexedDB Queue] Ação ${action.type} guardada no IndexedDB:`, action.id);
   } catch (err) {
@@ -57,13 +122,12 @@ export async function enqueueOfflineActionIDB(action: OfflineSyncAction): Promis
 
 export async function getPendingOfflineActionsIDB(): Promise<OfflineSyncAction[]> {
   try {
-    const db = await openIDB();
-    const tx = db.transaction(QUEUE_STORE, "readonly");
-    const store = tx.objectStore(QUEUE_STORE);
-    const request = store.getAll();
-    return new Promise((resolve) => {
-      request.onsuccess = () => resolve(request.result || []);
-      request.onerror = () => resolve([]);
+    return await runWithIDBStore(QUEUE_STORE, "readonly", (store) => {
+      return new Promise((resolve) => {
+        const request = store.getAll();
+        request.onsuccess = () => resolve(request.result || []);
+        request.onerror = () => resolve([]);
+      });
     });
   } catch {
     return [];
@@ -72,10 +136,9 @@ export async function getPendingOfflineActionsIDB(): Promise<OfflineSyncAction[]
 
 export async function clearPendingOfflineActionsIDB(): Promise<void> {
   try {
-    const db = await openIDB();
-    const tx = db.transaction(QUEUE_STORE, "readwrite");
-    const store = tx.objectStore(QUEUE_STORE);
-    store.clear();
+    await runWithIDBStore(QUEUE_STORE, "readwrite", async (store) => {
+      store.clear();
+    });
   } catch (err) {
     console.warn("[IndexedDB Queue] Falha ao limpar fila do IndexedDB:", err);
   }
@@ -84,17 +147,16 @@ export async function clearPendingOfflineActionsIDB(): Promise<void> {
 // ── INDEXEDDB LEARNING MODULE STORAGE ─────────────────────────
 export async function saveModuleToIDB(moduleItem: any): Promise<void> {
   try {
-    const db = await openIDB();
-    const tx = db.transaction(MODULES_STORE, "readwrite");
-    const store = tx.objectStore(MODULES_STORE);
-    store.put({
-      ...moduleItem,
-      isOfflineAvailable: true,
-      savedOfflineAt: new Date().toISOString()
-    });
-    await new Promise((res, rej) => {
-      tx.oncomplete = res;
-      tx.onerror = rej;
+    await runWithIDBStore(MODULES_STORE, "readwrite", async (store, tx) => {
+      store.put({
+        ...moduleItem,
+        isOfflineAvailable: true,
+        savedOfflineAt: new Date().toISOString()
+      });
+      await new Promise((res, rej) => {
+        tx.oncomplete = res;
+        tx.onerror = rej;
+      });
     });
     console.log(`[IndexedDB Learning] Módulo "${moduleItem.title || moduleItem.id}" guardado para acesso offline.`);
   } catch (err) {
@@ -104,10 +166,9 @@ export async function saveModuleToIDB(moduleItem: any): Promise<void> {
 
 export async function removeModuleFromIDB(moduleId: string): Promise<void> {
   try {
-    const db = await openIDB();
-    const tx = db.transaction(MODULES_STORE, "readwrite");
-    const store = tx.objectStore(MODULES_STORE);
-    store.delete(moduleId);
+    await runWithIDBStore(MODULES_STORE, "readwrite", async (store) => {
+      store.delete(moduleId);
+    });
   } catch (err) {
     console.warn("[IndexedDB Learning] Erro ao remover módulo do IndexedDB:", err);
   }
@@ -115,13 +176,12 @@ export async function removeModuleFromIDB(moduleId: string): Promise<void> {
 
 export async function getOfflineModulesIDB(): Promise<any[]> {
   try {
-    const db = await openIDB();
-    const tx = db.transaction(MODULES_STORE, "readonly");
-    const store = tx.objectStore(MODULES_STORE);
-    const request = store.getAll();
-    return new Promise((resolve) => {
-      request.onsuccess = () => resolve(request.result || []);
-      request.onerror = () => resolve([]);
+    return await runWithIDBStore(MODULES_STORE, "readonly", (store) => {
+      return new Promise((resolve) => {
+        const request = store.getAll();
+        request.onsuccess = () => resolve(request.result || []);
+        request.onerror = () => resolve([]);
+      });
     });
   } catch {
     return [];
@@ -332,9 +392,24 @@ export async function syncOfflineDataWithServer(): Promise<{ success: boolean; s
     clearPendingOfflineActions();
     await clearPendingOfflineActionsIDB();
     console.log(`[Sync Engine] Sincronização concluída com sucesso! (${itemsCount} itens sincronizados com o servidor)`);
+    
+    recordSyncHistory({
+      success: true,
+      syncedCount: itemsCount,
+      message: `${itemsCount} item(ns) de dados e progresso sincronizados com o servidor.`,
+      type: 'auto'
+    });
+
     return { success: true, syncedCount: itemsCount };
-  } catch (err) {
+  } catch (err: any) {
     console.warn("[Sync Engine] Falha na comunicação online. A reter dados para nova tentativa:", err);
+    recordSyncHistory({
+      success: false,
+      syncedCount: 0,
+      message: 'Falha na comunicação com o servidor.',
+      type: 'auto',
+      errorDetails: err?.message || 'Erro de rede'
+    });
     return { success: false, syncedCount: 0 };
   }
 }
@@ -411,12 +486,14 @@ export function useDashboardData(fetchFn?: () => Promise<any>) {
   const [fromCache, setFromCache] = useState<boolean>(false);
   const [cacheAge,  setCacheAge]  = useState<number | null>(null);
   const [loading,   setLoading]   = useState<boolean>(true);
+  const fetchFnRef = useRef(fetchFn);
+  fetchFnRef.current = fetchFn;
 
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
     setLoading(true);
     clearStaleCache();
 
-    if (!navigator.onLine) {
+    if (typeof navigator !== 'undefined' && !navigator.onLine) {
       const cached = getDashboardCache();
       if (cached) {
         setData(cached.data);
@@ -429,8 +506,8 @@ export function useDashboardData(fetchFn?: () => Promise<any>) {
 
     try {
       let result: any = null;
-      if (fetchFn) {
-        result = await fetchFn();
+      if (fetchFnRef.current) {
+        result = await fetchFnRef.current();
       } else {
         const res = await fetch("/api/dashboard").catch(() => null);
         if (res && res.ok) {
@@ -460,33 +537,29 @@ export function useDashboardData(fetchFn?: () => Promise<any>) {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
     loadData();
 
     // Inscrição reativa direta ao EventBus Pub/Sub
     const unsubscribeBus = subscribeToDashboardChanges(() => {
-      console.log("[useDashboardData] EventBus Pub/Sub notificou alteração. Recarregando dados...");
       loadData();
     });
 
     const handleInvalidate = () => {
-      console.log("[useDashboardData] Evento de invalidação de janela recebido. Recarregando estatísticas...");
       loadData();
     };
 
     window.addEventListener('dashboard_cache_invalidated', handleInvalidate);
     window.addEventListener('workspace_updated', handleInvalidate);
-    window.addEventListener('storage', handleInvalidate);
 
     return () => {
       unsubscribeBus();
       window.removeEventListener('dashboard_cache_invalidated', handleInvalidate);
       window.removeEventListener('workspace_updated', handleInvalidate);
-      window.removeEventListener('storage', handleInvalidate);
     };
-  }, [fetchFn]);
+  }, [loadData]);
 
   return { data, fromCache, cacheAge, loading, refresh: loadData };
 }

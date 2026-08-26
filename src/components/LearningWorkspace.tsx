@@ -1335,13 +1335,13 @@ export const LearningWorkspace: React.FC<{
           </div>
 
           {/* User Level Adaptability Selector */}
-          <div className="bg-slate-800/80 backdrop-blur-md p-4 rounded-2xl border border-slate-700 space-y-2 shrink-0">
+          <div className="bg-slate-800/80 backdrop-blur-md p-4 rounded-2xl border border-slate-700 space-y-2 shrink-0 max-w-full">
             <div className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
               <GraduationCap className="w-4 h-4 text-blue-400" />
               <span>Nível de Enquadramento Didático</span>
             </div>
             
-            <div className="flex bg-slate-900/90 p-1 rounded-xl border border-slate-700">
+            <div className="flex flex-wrap sm:flex-nowrap gap-1 bg-slate-900/90 p-1 rounded-xl border border-slate-700 max-w-full overflow-x-auto no-scrollbar">
               <button
                 onClick={() => setInputLevel('Auto-Detetar')}
                 className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
@@ -1392,7 +1392,7 @@ export const LearningWorkspace: React.FC<{
 
       {/* Main Tabs Navigation */}
       <div className="flex flex-col sm:flex-row items-center justify-between gap-4 border-b border-slate-200 pb-3">
-        <div className="flex items-center gap-2 w-full sm:w-auto overflow-x-auto">
+        <div className="flex items-center gap-2 w-full sm:w-auto overflow-x-auto no-scrollbar pb-1 max-w-full">
           <button
             onClick={() => setActiveSubTab('library')}
             className={`px-4 py-2.5 rounded-xl font-bold text-xs sm:text-sm flex items-center gap-2 transition-all cursor-pointer ${

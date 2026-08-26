@@ -18,7 +18,7 @@ import {
   sincronizarFila,
   iniciarSyncAutomatico
 } from './firebase';
-import { signInWithEmailAndPassword as firebaseSignIn } from 'firebase/auth';
+import { entrarConta } from './auth/authService';
 import { hashPassword, generateSalt, isValidEmail, validatePasswordRequirements } from './authCrypto';
 
 let dbSearchDebounceTimer: ReturnType<typeof setTimeout> | null = null;
@@ -87,17 +87,17 @@ export async function signInWithEmailAndPassword(authOrEmail: any, emailOrPass: 
   // Verificação de integridade antes do login: verificar se existe UID persistido
   const persistentUid = verificarIntegridadeInicioApp(email);
   if (persistentUid) {
-    console.log('[db.signInWithEmailAndPassword] UID persistido no localStorage forçado para continuidade de sessão:', persistentUid);
+    console.log('[db.signInWithEmailAndPassword] UID persistido no localStorage validado:', persistentUid);
   }
 
-  // Realizar autenticação com o Firebase Auth
-  const userCredential = await firebaseSignIn(auth, email, password);
-  const uid = userCredential.user.uid;
+  // Realizar autenticação local segura
+  const user = await entrarConta(email, password);
+  const uid = user.uid || user.id;
 
   // Preservar continuidade da sessão guardando o UID no localStorage
   setPersistentUid(email, uid);
 
-  return userCredential;
+  return { user };
 }
 
 export {

@@ -9,35 +9,45 @@ type RouteKey =
   | 'ai_accountant' 
   | 'learning' 
   | 'quizzes' 
-  | 'admin' 
   | 'erp_accounting';
 
 // Prediction matrix for next probable routes
 const NEXT_ROUTES_PREDICTION: Record<RouteKey, RouteKey[]> = {
-  dashboard: ['ai_accountant', 'learning', 'erp_accounting'],
-  ai_accountant: ['learning', 'admin', 'erp_accounting'],
-  learning: ['quizzes', 'ai_accountant', 'erp_accounting'],
-  quizzes: ['learning', 'dashboard', 'ai_accountant'],
-  admin: ['dashboard', 'ai_accountant'],
-  erp_accounting: ['admin', 'dashboard', 'ai_accountant']
+  dashboard: ['ai_accountant', 'learning'],
+  ai_accountant: ['learning', 'quizzes'],
+  learning: ['quizzes', 'ai_accountant'],
+  quizzes: ['learning', 'dashboard'],
+  erp_accounting: ['dashboard', 'ai_accountant']
 };
 
 // Map of route keys to their dynamic import functions
 const COMPONENT_IMPORTS: Record<RouteKey, () => Promise<any>> = {
-  dashboard: () => Promise.resolve(), // Main dashboard component is in App or StudentDashboardView
+  dashboard: () => Promise.resolve(),
   ai_accountant: () => import('../components/AiAccountantSuite'),
   learning: () => import('../components/LearningWorkspace'),
   quizzes: () => import('../components/QuizWorkspace'),
-  admin: () => import('../components/AdminDashboard'),
   erp_accounting: () => import('../components/ErpAccountingWorkspace')
 };
 
 const preloadedRoutes = new Set<RouteKey>();
 
+function podePrecarregar(): boolean {
+  if (typeof window === 'undefined') return false;
+  if (!navigator.onLine) return false;
+
+  const connection = (navigator as Navigator & {
+    connection?: { saveData?: boolean; effectiveType?: string };
+  }).connection;
+
+  return !connection?.saveData && connection?.effectiveType !== 'slow-2g';
+}
+
 /**
  * Trigger background preloading for target routes based on current active route.
  */
 export function preloadNextLikelyRoutes(currentRoute: string): void {
+  if (!podePrecarregar()) return;
+
   const normKey = currentRoute.toLowerCase() as RouteKey;
   const nextTargets = NEXT_ROUTES_PREDICTION[normKey] || ['learning', 'ai_accountant'];
 
@@ -47,10 +57,14 @@ export function preloadNextLikelyRoutes(currentRoute: string): void {
         preloadedRoutes.add(target);
         COMPONENT_IMPORTS[target]()
           .then(() => {
-            console.log(`[PreloadService] Preloaded bundle silently for: ${target}`);
+            if (import.meta.env.DEV) {
+              console.debug(`[PreloadService] bundle pré-carregado: ${target}`);
+            }
           })
           .catch(err => {
-            console.warn(`[PreloadService] Silent preload failed for ${target}:`, err);
+            if (import.meta.env.DEV) {
+              console.debug(`[PreloadService] Silent preload failed for ${target}:`, err);
+            }
             preloadedRoutes.delete(target); // Allow retry later
           });
       }

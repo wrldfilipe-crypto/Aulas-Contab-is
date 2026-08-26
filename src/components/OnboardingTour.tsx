@@ -361,3 +361,5 @@ export const OnboardingTour: React.FC<OnboardingTourProps> = ({
     </AnimatePresence>
   );
 };
+
+export default OnboardingTour;

@@ -50,3 +50,5 @@ export const SmartSuggestionsWidget: React.FC<SmartSuggestionsWidgetProps> = ({ 
     </div>
   );
 };
+
+export default SmartSuggestionsWidget;

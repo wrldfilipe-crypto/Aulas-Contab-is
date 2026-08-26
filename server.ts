@@ -23,6 +23,10 @@ async function startServer() {
     next();
   });
 
+  app.get('/api/health', (req, res) => {
+    res.json({ status: 'ok', timestamp: new Date().toISOString() });
+  });
+
   // Initialize Google GenAI
   // Falls back to a placeholder key if GEMINI_API_KEY is not defined yet, to prevent startup crashes.
   const apiKey = process.env.GEMINI_API_KEY || 'MOCK_KEY';
@@ -35,51 +39,188 @@ async function startServer() {
     }
   });
 
+  // Track model cooldowns for quota (429) or high-demand (503) spikes
+  const modelCooldownMap = new Map<string, number>();
+
+  function isQuotaExhaustedError(err: any): boolean {
+    if (!err) return false;
+    const status = err?.status || err?.code || 0;
+    if (status === 429) return true;
+    const errString = typeof err === 'string' ? err : (err?.message || JSON.stringify(err) || '');
+    return (
+      errString.includes('429') ||
+      errString.includes('RESOURCE_EXHAUSTED') ||
+      errString.includes('Quota exceeded') ||
+      errString.includes('quota') ||
+      errString.includes('rate-limits')
+    );
+  }
+
+  function isHighDemandError(err: any): boolean {
+    if (!err) return false;
+    const status = err?.status || err?.code || 0;
+    if (status === 503 || status === 500 || status === 504 || status === 502) return true;
+    const errString = typeof err === 'string' ? err : (err?.message || JSON.stringify(err) || '');
+    return (
+      errString.includes('503') ||
+      errString.includes('UNAVAILABLE') ||
+      errString.includes('high demand') ||
+      errString.includes('temporarily unavailable') ||
+      errString.includes('overloaded') ||
+      errString.includes('Service Unavailable')
+    );
+  }
+
+  function isTemporaryDemandError(err: any): boolean {
+    return isQuotaExhaustedError(err) || isHighDemandError(err);
+  }
+
+  function getOrderedCandidateModels(primaryModel: string): string[] {
+    const now = Date.now();
+    const baseCandidates = [
+      primaryModel,
+      'gemini-3.1-flash-lite',
+      'gemini-flash-latest',
+      'gemini-3.7-flash',
+      'gemini-3.1-pro-preview'
+    ].filter((m, idx, self) => Boolean(m) && self.indexOf(m) === idx);
+
+    // Sort available models first, cooled-down models last
+    return baseCandidates.sort((a, b) => {
+      const coolA = (modelCooldownMap.get(a) || 0) > now ? 1 : 0;
+      const coolB = (modelCooldownMap.get(b) || 0) > now ? 1 : 0;
+      return coolA - coolB;
+    });
+  }
+
   // Helper function to handle model fallback when a model experiences high demand (503) or rate limits (429)
   async function generateContentWithFallback(primaryModel: string, contents: any, config: any) {
-    const validCandidates = [primaryModel, 'gemini-3.7-flash', 'gemini-3.1-flash-lite'];
-    const fallbackList = validCandidates.filter((m, idx, self) => Boolean(m) && self.indexOf(m) === idx);
+    const candidateModels = getOrderedCandidateModels(primaryModel);
     let lastError: any = null;
 
-    for (const modelName of fallbackList) {
-      const maxAttempts = 2;
-      for (let attempt = 0; attempt < maxAttempts; attempt++) {
-        try {
-          const currentConfig = { ...config };
-          // If falling back away from gemini-3.1-pro-preview, remove thinkingConfig to avoid parameter incompatibility
-          if (modelName !== 'gemini-3.1-pro-preview' && currentConfig.thinkingConfig) {
-            delete currentConfig.thinkingConfig;
-          }
-
-          const res = await ai.models.generateContent({
-            model: modelName,
-            contents: contents,
-            config: currentConfig
-          });
-          return { response: res, modelUsed: modelName };
-        } catch (err: any) {
-          lastError = err;
-          const status = err?.status || err?.code || 0;
-          const is429 = status === 429 || err?.message?.includes('429') || err?.message?.includes('RESOURCE_EXHAUSTED') || err?.message?.includes('quota');
-          const is503 = status === 503 || err?.message?.includes('503') || err?.message?.includes('UNAVAILABLE') || err?.message?.includes('high demand');
-
-          if (is429) {
-            console.log(`[Gemini API] Model ${modelName} quota limit (429). Proceeding with fallback...`);
-            break; // Immediately move to next candidate model without tight retries
-          }
-
-          if (is503 && attempt < maxAttempts - 1) {
-            console.log(`[Gemini API] Model ${modelName} temporary 503 high demand. Retrying (attempt ${attempt + 1})...`);
-            await new Promise(resolve => setTimeout(resolve, 1000));
-            continue;
-          }
-
-          console.log(`[Gemini API] Model ${modelName} status ${status}. Moving to next fallback.`);
-          break; // Move to next model candidate
+    for (const modelName of candidateModels) {
+      try {
+        const currentConfig = { ...config };
+        // If model is not gemini-3.1-pro-preview, remove thinkingConfig to avoid parameter incompatibility
+        if (modelName !== 'gemini-3.1-pro-preview' && currentConfig.thinkingConfig) {
+          delete currentConfig.thinkingConfig;
         }
+
+        const res = await ai.models.generateContent({
+          model: modelName,
+          contents: contents,
+          config: currentConfig
+        });
+
+        // Clear cooldown on success
+        modelCooldownMap.delete(modelName);
+        return { response: res, modelUsed: modelName };
+      } catch (err: any) {
+        lastError = err;
+        const isQuota = isQuotaExhaustedError(err);
+        const isHighDemand = isHighDemandError(err);
+
+        if (isQuota) {
+          // Put model in cooldown for 5 minutes and immediately try next model without retrying
+          modelCooldownMap.set(modelName, Date.now() + 5 * 60 * 1000);
+          console.log(`[Gemini API] Model ${modelName} quota limit reached (429). Switching immediately to alternative model...`);
+          continue;
+        }
+
+        if (isHighDemand) {
+          // Put model in short cooldown for 30 seconds
+          modelCooldownMap.set(modelName, Date.now() + 30 * 1000);
+          console.log(`[Gemini API] Model ${modelName} high demand (503). Switching to alternative model...`);
+          continue;
+        }
+
+        console.log(`[Gemini API] Model ${modelName} error (${err?.message?.substring(0, 80) || 'unknown'}). Trying next candidate...`);
       }
     }
     throw lastError;
+  }
+
+  // Helper function to stream content with model fallback and mid-stream error recovery
+  async function streamContentWithFallback(res: any, primaryModel: string, contents: any, baseConfig: any) {
+    const candidateModels = getOrderedCandidateModels(primaryModel);
+
+    let chunksEmitted = 0;
+    let lastError: any = null;
+
+    for (const modelName of candidateModels) {
+      if (chunksEmitted > 0) {
+        break; // If tokens were already sent to client, cannot switch models mid-stream
+      }
+
+      try {
+        const currentConfig = { ...baseConfig };
+        if (modelName !== 'gemini-3.1-pro-preview' && currentConfig.thinkingConfig) {
+          delete currentConfig.thinkingConfig;
+        }
+
+        const stream = await ai.models.generateContentStream({
+          model: modelName,
+          contents: contents,
+          config: currentConfig
+        });
+
+        for await (const chunk of stream) {
+          const chunkText = chunk.text;
+          if (chunkText) {
+            chunksEmitted++;
+            res.write(`data: ${JSON.stringify({ text: chunkText, modelUsed: modelName })}\n\n`);
+          }
+        }
+
+        // Successfully completed stream
+        modelCooldownMap.delete(modelName);
+        res.write(`data: [DONE]\n\n`);
+        res.end();
+        return;
+      } catch (err: any) {
+        lastError = err;
+        const isQuota = isQuotaExhaustedError(err);
+        const isHighDemand = isHighDemandError(err);
+
+        if (isQuota) {
+          modelCooldownMap.set(modelName, Date.now() + 5 * 60 * 1000);
+          console.log(`[Gemini API Stream] Model ${modelName} quota limit reached. Switching to next model in pool...`);
+        } else if (isHighDemand) {
+          modelCooldownMap.set(modelName, Date.now() + 30 * 1000);
+          console.log(`[Gemini API Stream] Model ${modelName} high demand. Switching to next model in pool...`);
+        } else {
+          console.log(`[Gemini API Stream] Model ${modelName} stream issue. Trying next candidate...`);
+        }
+
+        if (chunksEmitted > 0) {
+          res.write(`data: ${JSON.stringify({ error: err?.message || 'Stream generation interrupted' })}\n\n`);
+          res.write(`data: [DONE]\n\n`);
+          res.end();
+          return;
+        }
+      }
+    }
+
+    if (chunksEmitted === 0) {
+      console.warn('[Gemini API Stream] All stream candidate models busy or exhausted. Emitting friendly fallback notice.');
+      const friendlyNotice = "⚠️ **Servidores de IA com Alta Procura Temporária (503)**\n\nOs servidores do Gemini estão a registar picos de tráfego elevados neste momento. Por favor, aguarde alguns segundos e volte a enviar a sua mensagem.";
+      res.write(`data: ${JSON.stringify({ text: friendlyNotice, modelUsed: 'system-fallback' })}\n\n`);
+      res.write(`data: [DONE]\n\n`);
+      res.end();
+    }
+  }
+
+  // Sanitizer to strip introductory / concluding standard citation boilerplate
+  function cleanStandardPreambles(text: string): string {
+    if (!text) return '';
+    let cleaned = text;
+    // Remove introductory decree/standard sentences at the start
+    cleaned = cleaned.replace(/^(?:(?:\*\*|\*|_)?(?:De acordo com|Segundo|Com base no|Nos termos do|À luz do|Conforme o|Tendo em conta o|Em conformidade com o)\s+(?:o\s+)?(?:Plano Geral de Contabilidade de Angola|PGC(?:\s+Angola)?|Decreto(?:\s+(?:Presidencial|Executivo|n\.º))?\s*(?:82\/2001|82\/01)[^,.:\n]*)[,.:]?(?:\*\*|\*|_)?\s*(?:[-–—:]\s*)?)/i, '');
+    
+    // Remove standalone preamble lines
+    cleaned = cleaned.replace(/^(?:(?:\*\*|\*|_)?(?:De acordo com|Segundo|Com base no|Nos termos do|À luz do|Conforme o)\s+.*?(?:Decreto\s+n\.º\s*82\/01|Decreto\s+82\/2001|PGC\s+Angola).*?[:.]\s*(?:\*\*|\*|_)?\n+)/im, '');
+
+    return cleaned.trim();
   }
 
   // Helper function to safely clean, repair and parse JSON responses from AI models
@@ -373,7 +514,11 @@ LANGUAGE REQUIREMENT: ${langInstruction}
 
 ${memoryPrompt}
 
-CRITICAL MEMORY RULE: Use any background knowledge about the user organically — NEVER say "I remember that...", "According to my memory...", "Based on our previous conversations", or announce that you have memory. Just USE it naturally, the way a professor who knows their student would.`;
+CRITICAL MEMORY RULE: Use any background knowledge about the user organically — NEVER say "I remember that...", "According to my memory...", "Based on our previous conversations", or announce that you have memory. Just USE it naturally, the way a professor who knows their student would.
+
+CRITICAL RULE — NO STANDARD / DECREE PREAMBLES:
+NEVER include introductory, middle, or concluding phrases mentioning the accounting standard or legal decree (e.g. NEVER write "De acordo com o Plano Geral de Contabilidade de Angola (Decreto n.º 82/2001, de 16 de Novembro)", "Segundo o PGC Angola", "Com base no PGC Angola (Decreto 82/01)", "Nos termos do Decreto n.º 82/2001", "À luz do PGC Angola", etc.).
+The user already knows the active standard configured in the application topbar. Answer DIRECTLY without preambles, exactly as a teacher answers a student. If you need to cite a specific account or article, integrate it smoothly and naturally into the sentence (e.g. "A Conta 72.1 regista os custos com pessoal").`;
 
       const config: any = {
         systemInstruction: baseSystemInstruction,
@@ -388,6 +533,19 @@ CRITICAL MEMORY RULE: Use any background knowledge about the user organically �
         config.thinkingConfig = { thinkingLevel: ThinkingLevel.HIGH };
       }
 
+      // Handle Streaming if requested by client (ReadableStream / SSE)
+      if (req.body?.stream || req.query?.stream === 'true') {
+        res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
+        res.setHeader('Cache-Control', 'no-cache, no-transform');
+        res.setHeader('Connection', 'keep-alive');
+        if (typeof (res as any).flushHeaders === 'function') {
+          (res as any).flushHeaders();
+        }
+
+        await streamContentWithFallback(res, modelToUse, contents, config);
+        return;
+      }
+
       const { response, modelUsed } = await generateContentWithFallback(modelToUse, contents, config);
 
       // Extract Grounding Chunks if Search Grounding was active
@@ -397,23 +555,44 @@ CRITICAL MEMORY RULE: Use any background knowledge about the user organically �
         uri: chunk.web?.uri || ''
       })).filter((s: any) => s.uri) || [];
 
+      const rawText = response.text || "No response received.";
+      const cleanedText = cleanStandardPreambles(rawText);
+
       res.json({
-        text: response.text || "No response received.",
+        text: cleanedText,
         groundingSources: groundingSources,
         modelUsed: modelUsed
       });
     } catch (error: any) {
-      console.error('Gemini API Error:', error);
+      console.error('Gemini API Error in /api/chat:', error?.message || error);
       const isUnavailable = error?.status === 503 || error?.code === 503 || error?.message?.includes('503') || error?.message?.includes('high demand') || error?.message?.includes('UNAVAILABLE');
       const isQuotaExceeded = error?.status === 429 || error?.code === 429 || error?.message?.includes('429') || error?.message?.includes('quota') || error?.message?.includes('RESOURCE_EXHAUSTED');
 
       if (isUnavailable || isQuotaExceeded) {
         return res.status(200).json({
-          text: "⚠️ **Servidores do Gemini com alta procura ou limite de taxa temporário.**\n\nOs modelos de IA do Google estão temporariamente sobrecarregados. Por favor, aguarde alguns segundos e tente enviar a sua mensagem novamente.",
-          groundingSources: []
+          text: "⚠️ **Servidores do Gemini com alta procura temporária.**\n\nOs modelos de IA do Google estão a registar tráfego elevado. As diretrizes normativas (partidas dobradas, regras fiscais da AGT e conferência documental) continuam disponíveis no modo local.",
+          groundingSources: [],
+          modelUsed: 'system-fallback',
+          offline: true
         });
       }
-      res.status(500).json({ error: error.message || 'Error communicating with Gemini AI.' });
+
+      // Safe smart accounting fallback response instead of failing with 500
+      const promptLower = (req.body?.message || '').toLowerCase();
+      let fallbackText = "### 💡 Diretrizes Contabilísticas e Fiscais\n\nO registo e tratamento da operação devem observar o **método das partidas dobradas** e a devida conformidade documental (faturas com requisitos AGT / NIF das partes).\n\n**Estrutura de Lançamento:**\n```text\n[D] Débito  : Conta de Destino / Aplicação de Recursos (Aumento de Ativo / Gasto)\n[C] Crédito : Conta de Origem / Fonte de Financiamento (Meios Financeiros / Passivo)\n```\n\n*Nota: Resposta fornecida pelo sistema local de conformidade contabilística.*";
+
+      if (promptLower.includes('iva') || promptLower.includes('imposto')) {
+        fallbackText = "### 🏛️ Enquadramento Fiscal (IVA / AGT)\n\n• **Taxa Geral do IVA:** 14% (Lei n.º 7/19).\n• **Conta 34.5.2:** IVA Dedutível em compras elegíveis.\n• **Conta 34.5.3:** IVA Liquidado em vendas e serviços.\n• **Retenção na Fonte:** 6,5% na prestação de serviços por pessoas singulares ou coletivas sem dispensa expressa.";
+      } else if (promptLower.includes('salário') || promptLower.includes('irt') || promptLower.includes('pessoal')) {
+        fallbackText = "### 💼 Processamento Salarial (PGC Angola)\n\n• **Conta 72.1:** Remunerações dos Órgãos Sociais / Pessoal (Gasto Bruto).\n• **Conta 72.8:** Encargos Sociais Patronais (8% INSS Empresa).\n• **Conta 34.2:** Estado — IRT Retido na Fonte.\n• **Conta 34.3:** Estado — Segurança Social (11% Global = 3% Trabalhador + 8% Empresa).\n• **Conta 36.1:** Pessoal — Remunerações Líquidas a Pagar.";
+      }
+
+      return res.status(200).json({
+        text: fallbackText,
+        groundingSources: [],
+        modelUsed: 'local-knowledge-engine',
+        offline: true
+      });
     }
   });
 
@@ -514,7 +693,7 @@ Responda ESTRITAMENTE em formato JSON com a seguinte estrutura válida:
       };
 
       try {
-        const { response } = await generateContentWithFallback('gemini-3.6-flash', contents, config);
+        const { response } = await generateContentWithFallback('gemini-3.7-flash', contents, config);
         const text = response.text || '';
         const parsed = cleanAndParseJSON(text);
         return res.json({ success: true, data: parsed });
@@ -701,7 +880,7 @@ Format response strictly as a JSON object matching this schema:
 }
 Respond ONLY with raw JSON without markdown formatting.`;
 
-      const { response } = await generateContentWithFallback('gemini-3.6-flash', {
+      const { response } = await generateContentWithFallback('gemini-3.7-flash', {
         parts: [
           {
             inlineData: {
@@ -868,7 +1047,7 @@ Respond ONLY with raw JSON without markdown formatting.`;
         }
       ];
 
-      const { response } = await generateContentWithFallback('gemini-3.6-flash', contents, {
+      const { response } = await generateContentWithFallback('gemini-3.7-flash', contents, {
         temperature: 0.1
       });
 
@@ -1068,7 +1247,7 @@ Gera exatamente 5 perguntas relevantes com variação de dificuldade, incluindo 
 `;
 
       const { response } = await generateContentWithFallback(
-        'gemini-3.6-flash',
+        'gemini-3.7-flash',
         prompt,
         { temperature: 0.3 }
       );
@@ -1256,7 +1435,7 @@ Follow this exact structural layout:
 }
 Respond ONLY with raw JSON without markdown formatting.`;
 
-      const { response } = await generateContentWithFallback('gemini-3.6-flash', {
+      const { response } = await generateContentWithFallback('gemini-3.7-flash', {
         parts: [{ text: lessonPrompt }]
       }, { responseMimeType: 'application/json' });
 
@@ -1315,7 +1494,7 @@ Evaluate and output JSON:
 }
 Respond ONLY with raw JSON without markdown.`;
 
-      const { response } = await generateContentWithFallback('gemini-3.6-flash', {
+      const { response } = await generateContentWithFallback('gemini-3.7-flash', {
         parts: [{ text: evalPrompt }]
       }, { responseMimeType: 'application/json' });
 
@@ -1378,6 +1557,100 @@ Respond ONLY with raw JSON without markdown.`;
     } catch (error: any) {
       console.error('Fast summary error:', error);
       res.status(500).json({ error: error.message || 'Error generating fast summary.' });
+    }
+  });
+
+  // AI NOTES ASSISTANT (Resumir, Corrigir, Expandir)
+  app.post('/api/ai/notes-assist', async (req, res) => {
+    try {
+      const { text, action, context, category } = req.body || {};
+      if (!text || !text.trim()) {
+        return res.status(400).json({ error: 'O texto para processamento é obrigatório.' });
+      }
+
+      const validAction = action || 'summarize'; // 'summarize' | 'correct' | 'expand'
+
+      const systemPrompt = `Você é um assistente de IA especialista em contabilidade angolana (PGC Angola / Decreto 82/01, Código do IVA, Imposto Industrial), auditoria e organização de estudos e apontamentos.
+O utilizador está a trabalhar numa nota da categoria "${category || 'Geral'}".
+Sua tarefa é processar o texto selecionado de acordo com a ação solicitada:
+
+- Se a ação for "summarize" ou "resumir": Crie um resumo conciso, claro e estruturado (em pontos-chave ou síntese direta), mantendo os conceitos contabilísticos essenciais sem perdas conceituais.
+- Se a ação for "correct" ou "corrigir": Corrija erros gramaticais, ortográficos, de pontuação e terminologia técnica contabilística (ex: contas PGC, débito/crédito, partidas dobradas, apuramentos fiscais), mantendo o tom profissional e sem adicionar conversas introdutórias ou saudações. Retorne o texto corrigido pronto para substituição.
+- Se a ação for "expand" ou "expandir": Aprofunde e enriqueça o conteúdo com fundamentação técnica, boas práticas do PGC Angola, exemplos práticos de lançamentos ou desdobramento de conceitos quando relevante, de forma fluida e bem formatada.
+
+IMPORTANTE:
+- Responda em Português claro e profissional.
+- Não inclua preâmbulos desnecessários como "Aqui está o seu texto" ou "Com certeza!".
+- Devolva diretamente o conteúdo formatado em texto/Markdown pronto a ser inserido nas notas.`;
+
+      let userPrompt = '';
+      if (validAction === 'summarize' || validAction === 'resumir') {
+        userPrompt = `Resuma de forma concisa e estruturada o seguinte excerto de texto:\n\n"""\n${text}\n"""`;
+      } else if (validAction === 'correct' || validAction === 'corrigir') {
+        userPrompt = `Corrija a gramática, ortografia e terminologia técnica do seguinte texto, retornando apenas o texto corrigido:\n\n"""\n${text}\n"""`;
+      } else if (validAction === 'expand' || validAction === 'expandir') {
+        userPrompt = `Expanda e aprofunde o seguinte conteúdo com conceitos técnicos, detalhes práticos e clareza estrutural:\n\n"""\n${text}\n"""${context ? `\n\nContexto geral da nota:\n${context}` : ''}`;
+      } else {
+        userPrompt = `Melhore o seguinte texto com clareza e precisão:\n\n"""\n${text}\n"""`;
+      }
+
+      if (!process.env.GEMINI_API_KEY || process.env.GEMINI_API_KEY === 'MY_GEMINI_API_KEY' || process.env.GEMINI_API_KEY === 'MOCK_KEY') {
+        let mockResult = text;
+        if (validAction === 'summarize' || validAction === 'resumir') {
+          mockResult = `• ${text.slice(0, 80)}...\n• Conceito contabilístico sintetizado com sucesso.`;
+        } else if (validAction === 'correct' || validAction === 'corrigir') {
+          mockResult = text.trim();
+        } else if (validAction === 'expand' || validAction === 'expandir') {
+          mockResult = `${text}\n\nDetalhamento adicional conforme as normas do PGC Angola:\n1. Aplicação do princípio da prudência e da consistência.\n2. Verificação de suporte documental e conciliação de saldos.`;
+        }
+        return res.json({
+          result: mockResult,
+          action: validAction,
+          modelUsed: 'offline-preview'
+        });
+      }
+
+      try {
+        const { response, modelUsed } = await generateContentWithFallback('gemini-3.1-flash-lite', userPrompt, {
+          systemInstruction: systemPrompt
+        });
+
+        const outputText = cleanStandardPreambles(response.text || '');
+        return res.json({
+          result: outputText.trim(),
+          action: validAction,
+          modelUsed
+        });
+      } catch (geminiErr: any) {
+        console.warn('Gemini API call failed for notes assist, using rule-based engine:', geminiErr?.message || geminiErr);
+        
+        let fallbackResult = text;
+        if (validAction === 'summarize' || validAction === 'resumir') {
+          fallbackResult = `**Resumo dos Apontamentos (${category || 'Contabilidade'}):**\n\n• ${text.split('\n')[0] || text.slice(0, 100)}\n• Princípio da Continuidade e Especialização dos Exercícios aplicáveis.\n• Regularização documental e registo das partidas dobradas.`;
+        } else if (validAction === 'correct' || validAction === 'corrigir') {
+          fallbackResult = text
+            .replace(/\bdebito\b/gi, 'Débito')
+            .replace(/\bcredito\b/gi, 'Crédito')
+            .replace(/\bpgc\b/gi, 'PGC Angola')
+            .replace(/\biva\b/gi, 'IVA')
+            .replace(/\birt\b/gi, 'IRT')
+            .replace(/\bagt\b/gi, 'AGT')
+            .replace(/\bsaft\b/gi, 'SAF-T (AO)')
+            .trim();
+        } else if (validAction === 'expand' || validAction === 'expandir') {
+          fallbackResult = `${text}\n\n### 📌 Fundamentação e Enquadramento Técnico (PGC Angola):\n1. **Tratamento Contabilístico**: Cumprimento estrito do Decreto Presidencial n.º 82/01.\n2. **Conferência Documental**: Verificação de faturas/recibos com requisitos da AGT.\n3. **Lançamento Padrão**:\n\`\`\`text\n[D] Débito  : Conta de Destino / Aplicação\n[C] Crédito : Conta de Origem / Meios Financeiros\n\`\`\``;
+        }
+
+        return res.json({
+          result: fallbackResult,
+          action: validAction,
+          modelUsed: 'rule-based-fallback',
+          offline: true
+        });
+      }
+    } catch (error: any) {
+      console.error('Notes Assist Error:', error);
+      res.status(500).json({ error: error.message || 'Erro ao processar assistência de notas por IA.' });
     }
   });
 
@@ -1522,7 +1795,7 @@ Instruções para a resposta:
       }
     } else {
       try {
-        const { response } = await generateContentWithFallback('gemini-3.6-flash', [{
+        const { response } = await generateContentWithFallback('gemini-3.7-flash', [{
           role: 'user',
           parts: [{ text: userContextPrompt }]
         }], {});
@@ -1867,18 +2140,37 @@ Instruções para a resposta:
         });
       }
 
-      const response = await ai.models.generateContent({
-        model: 'gemini-3.1-flash-image',
-        contents: {
-          parts: [{ text: prompt }]
-        },
-        config: {
-          imageConfig: {
-            aspectRatio: validRatio,
-            imageSize: validSize
+      let response: any;
+      const imageModels = ['gemini-3.1-flash-image', 'gemini-3.1-flash-lite-image'];
+      let lastImgError: any = null;
+
+      for (const imgModel of imageModels) {
+        try {
+          const imgConfig: any = {
+            imageConfig: {
+              aspectRatio: validRatio
+            }
+          };
+          if (imgModel === 'gemini-3.1-flash-image') {
+            imgConfig.imageConfig.imageSize = validSize;
           }
+          response = await ai.models.generateContent({
+            model: imgModel,
+            contents: {
+              parts: [{ text: prompt }]
+            },
+            config: imgConfig
+          });
+          if (response) break;
+        } catch (err: any) {
+          lastImgError = err;
+          console.warn(`[Gemini API Image] ${imgModel} failed, trying fallback:`, err?.message || err);
         }
-      });
+      }
+
+      if (!response) {
+        throw lastImgError || new Error('Image generation models unavailable.');
+      }
 
       let imageUrl = '';
       const candidates = response.candidates?.[0]?.content?.parts || [];
@@ -2095,7 +2387,7 @@ Please apply the edit request to the document. Return the complete updated docum
       }
 
       try {
-        const { response } = await generateContentWithFallback('gemini-3.6-flash', userContent, {
+        const { response } = await generateContentWithFallback('gemini-3.7-flash', userContent, {
           systemInstruction: systemInstruction,
           responseMimeType: 'application/json'
         });
@@ -2215,7 +2507,7 @@ Please apply the edit request to the sheet. Return the complete updated spreadsh
       }
 
       try {
-        const { response } = await generateContentWithFallback('gemini-3.6-flash', userContent, {
+        const { response } = await generateContentWithFallback('gemini-3.7-flash', userContent, {
           systemInstruction: systemInstruction,
           responseMimeType: 'application/json'
         });
@@ -2324,7 +2616,7 @@ interface SlideDeckJSON {
 Respond strictly with valid, minified, parseable JSON without markdown block fences.`;
 
       try {
-        const { response } = await generateContentWithFallback('gemini-3.6-flash', `User Request / Presentation Description: "${userPromptText}".
+        const { response } = await generateContentWithFallback('gemini-3.7-flash', `User Request / Presentation Description: "${userPromptText}".
 Create a complete presentation slide deck matching the user's description. Include 4 to 6 slides with various appropriate layouts.`, {
           systemInstruction: systemInstruction,
           responseMimeType: 'application/json'
@@ -2413,7 +2705,7 @@ interface VisualizationJSON {
 Respond strictly with valid, minified, parseable JSON without markdown block fences.`;
 
       try {
-        const { response } = await generateContentWithFallback('gemini-3.6-flash', `User Request / Visualization Description: "${userPromptText}".
+        const { response } = await generateContentWithFallback('gemini-3.7-flash', `User Request / Visualization Description: "${userPromptText}".
 Generate a complete, high-quality, self-contained SVG graphic markup inside svgMarkup matching the user's description.`, {
           systemInstruction: systemInstruction,
           responseMimeType: 'application/json'
@@ -2493,7 +2785,7 @@ interface TaxReviewJSON {
 Respond strictly with valid, minified, parseable JSON. Do not include markdown fences.`;
 
       try {
-        const { response } = await generateContentWithFallback('gemini-3.6-flash', `Review the following financial document data for ${selectedCountry} tax compliance.
+        const { response } = await generateContentWithFallback('gemini-3.7-flash', `Review the following financial document data for ${selectedCountry} tax compliance.
 Document Name: "${fileName || 'Uploaded Doc'}"
 Document Content/Context: "${fileText || 'No plain text extracted'}"`, {
           systemInstruction: systemInstruction,
@@ -2947,7 +3239,7 @@ Retorna APENAS um array JSON válido sem markdown ou texto explicativo:
   }
 ]`;
 
-        const { response } = await generateContentWithFallback('gemini-3.6-flash', [{
+        const { response } = await generateContentWithFallback('gemini-3.7-flash', [{
           role: 'user',
           parts: [{ text: prompt }]
         }], {

@@ -25,12 +25,39 @@ interface CacheRecord<T = any> {
 // In-Memory Fast Cache for instant zero-latency return
 const memoryCache = new Map<string, CacheRecord>();
 
-// AbortControllers map for canceling pending API requests when route changes
-const pendingAbortControllers = new Map<string, AbortController>();
+// Mapa global de controllers para cancelar pedidos pendentes
+const pendingControllers = new Map<string, AbortController>();
+
+export const cancelPendingRequests = (key?: string): void => {
+  if (key) {
+    // Cancelar apenas o pedido com esta chave
+    const controller = pendingControllers.get(key);
+    if (controller) {
+      controller.abort();
+      pendingControllers.delete(key);
+    }
+  } else {
+    // Cancelar todos os pedidos pendentes
+    pendingControllers.forEach((controller) => controller.abort());
+    pendingControllers.clear();
+  }
+};
+
+export const createRequest = (key: string): AbortSignal => {
+  // Cancelar pedido anterior com a mesma chave se existir
+  cancelPendingRequests(key);
+  const controller = new AbortController();
+  pendingControllers.set(key, controller);
+  return controller.signal;
+};
 
 /**
- * Gets cached item from memory or localStorage if valid.
+ * Creates or gets an AbortSignal for a specific route / API key.
+ * If an active request exists for this key, it aborts the previous request.
  */
+export function getAbortSignal(requestKey: string): AbortSignal {
+  return createRequest(requestKey);
+}
 export function getCacheItem<T = any>(key: string): T | null {
   const now = Date.now();
 
@@ -121,42 +148,82 @@ export function invalidateAppCache(keyOrPrefix?: string): void {
 }
 
 /**
- * Creates or gets an AbortSignal for a specific route / API key.
- * If an active request exists for this key, it aborts the previous request.
+ * Estimates the size and count of resources cached in 'contaglobal-runtime-v5'.
  */
-export function getAbortSignal(requestKey: string): AbortSignal {
-  cancelPendingRequests(requestKey);
-  const controller = new AbortController();
-  pendingAbortControllers.set(requestKey, controller);
-  return controller.signal;
-}
+export async function estimateCacheUsage(): Promise<{ count: number; bytes: number; formattedSize: string }> {
+  try {
+    let count = 0;
+    let totalBytes = 0;
 
-/**
- * Cancels pending requests for a specific key or all pending requests.
- */
-export function cancelPendingRequests(requestKey?: string): void {
-  if (requestKey) {
-    const controller = pendingAbortControllers.get(requestKey);
-    if (controller) {
-      controller.abort();
-      pendingAbortControllers.delete(requestKey);
+    if (typeof window !== 'undefined' && 'caches' in window) {
+      const cacheExists = await caches.has('contaglobal-runtime-v5');
+      if (cacheExists) {
+        const cache = await caches.open('contaglobal-runtime-v5');
+        const requests = await cache.keys();
+        count = requests.length;
+
+        // Estimate size by inspecting responses in parallel
+        const responsePromises = requests.map(async (req) => {
+          try {
+            const resp = await cache.match(req);
+            if (resp) {
+              const blob = await resp.clone().blob();
+              return blob.size;
+            }
+          } catch {
+            return 0;
+          }
+          return 0;
+        });
+
+        const sizes = await Promise.all(responsePromises);
+        totalBytes = sizes.reduce((acc, curr) => acc + (curr || 0), 0);
+      }
     }
-  } else {
-    pendingAbortControllers.forEach(controller => controller.abort());
-    pendingAbortControllers.clear();
+
+    // Format human-readable size
+    let formattedSize = '0 KB';
+    if (totalBytes > 1024 * 1024) {
+      formattedSize = `${(totalBytes / (1024 * 1024)).toFixed(1)} MB`;
+    } else if (totalBytes > 0) {
+      formattedSize = `${Math.max(1, Math.round(totalBytes / 1024))} KB`;
+    }
+
+    return {
+      count,
+      bytes: totalBytes,
+      formattedSize
+    };
+  } catch (error) {
+    console.warn('[appCacheService] Could not estimate cache usage:', error);
+    return { count: 0, bytes: 0, formattedSize: '0 KB' };
   }
 }
 
 /**
- * Debounce helper with default 300ms delay.
+ * Specifically deletes the runtime cache 'contaglobal-runtime-v5' using the Cache API
+ * and notifies the Service Worker.
  */
-export function createDebounce<T extends (...args: any[]) => any>(
-  fn: T,
-  delay: number = 300
-): (...args: Parameters<T>) => void {
-  let timeoutId: ReturnType<typeof setTimeout> | null = null;
-  return (...args: Parameters<T>) => {
-    if (timeoutId) clearTimeout(timeoutId);
-    timeoutId = setTimeout(() => fn(...args), delay);
-  };
+export async function clearRuntimeCache(): Promise<{ success: boolean; deletedCount: number; error?: string }> {
+  try {
+    let deletedCount = 0;
+    if (typeof window !== 'undefined' && 'caches' in window) {
+      const cacheExists = await caches.has('contaglobal-runtime-v5');
+      if (cacheExists) {
+        const runtimeCache = await caches.open('contaglobal-runtime-v5');
+        const keys = await runtimeCache.keys();
+        deletedCount = keys.length;
+        await caches.delete('contaglobal-runtime-v5');
+      }
+    }
+
+    if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator && navigator.serviceWorker.controller) {
+      navigator.serviceWorker.controller.postMessage({ type: 'CLEAR_RUNTIME_CACHE' });
+    }
+
+    return { success: true, deletedCount };
+  } catch (error: any) {
+    console.error('[appCacheService] Error clearing contaglobal-runtime-v5:', error);
+    return { success: false, deletedCount: 0, error: error?.message || 'Error deleting cache' };
+  }
 }

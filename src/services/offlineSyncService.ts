@@ -3,7 +3,8 @@ import {
   deletePendingAction,
   markInvoiceSynced,
   markAccountingEntrySynced,
-  PendingAction
+  PendingAction,
+  recordSyncHistory
 } from '../lib/offlineDb';
 
 export interface SyncStatus {
@@ -150,8 +151,25 @@ class OfflineSyncManager {
       if (errors.length > 0) {
         this.status.lastSyncError = `${errors.length} item(ns) não puderam ser sincronizados.`;
       }
+
+      recordSyncHistory({
+        success: errors.length === 0,
+        syncedCount,
+        message: errors.length === 0 
+          ? (syncedCount > 0 ? `${syncedCount} item(ns) sincronizado(s) com sucesso.` : 'Sincronizado. Nenhuma pendência.')
+          : `Falha parcial: ${errors.length} erro(s).`,
+        type: 'manual',
+        errorDetails: errors.length > 0 ? errors.join(', ') : undefined
+      });
     } catch (e: any) {
       this.status.lastSyncError = e?.message || 'Erro durante a sincronização.';
+      recordSyncHistory({
+        success: false,
+        syncedCount: 0,
+        message: 'Erro durante a sincronização.',
+        type: 'manual',
+        errorDetails: e?.message || 'Erro desconhecido'
+      });
     } finally {
       this.status.isSyncing = false;
       await this.refreshPendingCount();

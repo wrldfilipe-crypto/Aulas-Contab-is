@@ -1,21 +1,9 @@
-import React, { useState, useMemo, useEffect, Suspense } from 'react';
+import React, { useState, useMemo, useEffect, useRef, Suspense } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { i18n } from './translations';
-import LanguageSelector from './components/LanguageSelector';
-import ThemeSelector from './components/ThemeSelector';
-import AuthScreen from './components/AuthScreen';
-import { LoginPage } from './pages/Login/LoginPage';
 import { sairConta } from './lib/auth/authService';
-import GlobalSearchPanel from './components/GlobalSearchPanel';
-import UserProfilePanel from './components/UserProfilePanel';
-import { SmartSuggestionsWidget } from './components/SmartSuggestionsWidget';
-import { OnboardingTour } from './components/OnboardingTour';
 import { formatCurrency, SUPPORTED_CURRENCIES, convertCurrency } from './lib/currencyUtils';
 import { getStoredSessionContext, SessionContext } from './lib/accountingStandards';
-import { StudentDashboardView } from './components/StudentDashboardView';
-import { KeyboardShortcutsModal } from './components/KeyboardShortcutsModal';
-import OfflineStatusBanner from './components/OfflineStatusBanner';
-import OfflineBlockedView from './components/OfflineBlockedView';
 import AppLogo from './components/AppLogo';
 import { PageSkeleton } from './components/PageSkeleton';
 import { ErrorBoundary } from './components/ErrorBoundary';
@@ -24,43 +12,24 @@ import { preloadNextLikelyRoutes } from './services/preloadService';
 import { cancelPendingRequests } from './services/appCacheService';
 import { getPendingOfflineActions, syncOfflineDataWithServer, clearStaleCache, getQuizProgress, notifyDataChanged } from './services/dashboardCache';
 import { processOfflineQueue } from './services/offlineQueue';
-
-// Helper for lazy loading with retry on dynamic chunk load failure
-function lazyWithRetry<T extends React.ComponentType<any>>(
-  componentImport: () => Promise<{ default: T }>
-) {
-  return React.lazy(async () => {
-    try {
-      return await componentImport();
-    } catch (error) {
-      console.warn('[App] Dynamic import failed, retrying...', error);
-      try {
-        return await componentImport();
-      } catch (retryError) {
-        const reloadKey = 'ais_dynamic_import_reloaded';
-        const hasReloaded = sessionStorage.getItem(reloadKey);
-        if (!hasReloaded) {
-          sessionStorage.setItem(reloadKey, 'true');
-          window.location.reload();
-        } else {
-          sessionStorage.removeItem(reloadKey);
-        }
-        throw retryError;
-      }
-    }
-  });
-}
-
-// Lazy loaded heavy components to optimize memory & prevent browser crash on initial load
-const AiAccountantSuite = lazyWithRetry(() => import('./components/AiAccountantSuite'));
-const LearningWorkspace = lazyWithRetry(() => import('./components/LearningWorkspace'));
-const QuizWorkspace = lazyWithRetry(() => import('./components/QuizWorkspace'));
-const AdminDashboard = lazyWithRetry(() => import('./components/AdminDashboard'));
-const ErpAccountingWorkspace = lazyWithRetry(() => import('./components/ErpAccountingWorkspace'));
-import ConversasPage from './components/Conversas/ConversasPage';
+import LanguageSelector from './components/LanguageSelector';
+import ThemeSelector from './components/ThemeSelector';
+import ThemeCustomizerFloatingButton from './components/ThemeCustomizerFloatingButton';
+import { loadAppearance, applyAppearanceToDOM } from './lib/themeAppearance';
 import SyncBanner from './components/SyncBanner';
-import OfflineSyncManagerModal from './components/OfflineSyncManagerModal';
+import OfflineStatusBanner from './components/OfflineStatusBanner';
+import OfflineBlockedView from './components/OfflineBlockedView';
+import { OnboardingTour } from './components/OnboardingTour';
+import { KeyboardShortcutsModal } from './components/KeyboardShortcutsModal';
 import { FirestoreStatusModal } from './components/FirestoreStatusModal';
+import OfflineSyncManagerModal from './components/OfflineSyncManagerModal';
+import { SmartSuggestionsWidget } from './components/SmartSuggestionsWidget';
+import { 
+  trackUserPresence 
+} from './lib/supabase/supabaseRealtime';
+import { 
+  registerDeviceSession as registerSupabaseSession 
+} from './lib/supabase/supabaseAuth';
 import { 
   registerDeviceSession, 
   subscribeUserSessions, 
@@ -84,6 +53,47 @@ import {
   ensureDemoUsers,
   isWithinWorkHours
 } from './lib/db';
+import { loadUserProfileMultiStore } from './lib/userProfiles';
+
+// Helper for lazy loading with progressive retry on dynamic chunk load failure
+function lazyWithRetry<T extends React.ComponentType<any>>(
+  componentImport: () => Promise<{ default: T } | T>,
+  retries = 3,
+  interval = 400
+) {
+  return React.lazy(async () => {
+    let lastError: any = null;
+    for (let i = 0; i < retries; i++) {
+      try {
+        const mod = await componentImport();
+        return (mod && 'default' in mod) ? mod : { default: mod as T };
+      } catch (error) {
+        lastError = error;
+        console.warn(`[App] Dynamic import attempt ${i + 1}/${retries} failed, retrying in ${interval * (i + 1)}ms...`, error);
+        await new Promise(resolve => setTimeout(resolve, interval * (i + 1)));
+      }
+    }
+    console.error('[App] All dynamic import attempts failed:', lastError);
+    throw lastError;
+  });
+}
+
+// Lazy loaded page components and modals for code-splitting
+const AuthScreen = lazyWithRetry(() => import('./components/AuthScreen'));
+const LoginPage = lazyWithRetry(() => import('./pages/Login/LoginPage').then(m => ({ default: m.LoginPage })));
+const SupabaseSyncManagerModal = lazyWithRetry(() => import('./components/SupabaseSyncManagerModal'));
+
+// Lazy loaded heavy components to optimize memory & prevent browser crash on initial load
+const AiAccountantSuite = lazyWithRetry(() => import('./components/AiAccountantSuite'));
+const LearningWorkspace = lazyWithRetry(() => import('./components/LearningWorkspace'));
+const QuizWorkspace = lazyWithRetry(() => import('./components/QuizWorkspace'));
+const AdminDashboard = lazyWithRetry(() => import('./components/AdminDashboard'));
+const ErpAccountingWorkspace = lazyWithRetry(() => import('./components/ErpAccountingWorkspace'));
+const NotasPage = lazyWithRetry(() => import('./components/NotasPage'));
+const StudentDashboardView = lazyWithRetry(() => import('./components/StudentDashboardView').then(m => ({ default: m.StudentDashboardView })));
+const UserProfilePanel = lazyWithRetry(() => import('./components/UserProfilePanel'));
+const GlobalSearchPanel = lazyWithRetry(() => import('./components/GlobalSearchPanel'));
+
 import { 
   LayoutDashboard, 
   Building2, 
@@ -128,8 +138,39 @@ import {
   ChevronRight,
   Compass,
   MoreVertical,
-  MessageSquare
+  MessageSquare,
+  StickyNote,
+  Database,
+  Wifi
 } from 'lucide-react';
+
+// Strict allowlist for application tabs
+export type AppTab = 
+  | 'dashboard' 
+  | 'assistant' 
+  | 'learning' 
+  | 'quizzes' 
+  | 'profile' 
+  | 'admin' 
+  | 'accounting' 
+  | 'notes' 
+  | 'find-users';
+
+export const ACTIVE_TABS = new Set<string>([
+  'dashboard',
+  'assistant',
+  'learning',
+  'quizzes',
+  'profile',
+  'admin',
+  'accounting',
+  'notes',
+  'find-users'
+]);
+
+export function isAppTab(tab: string): tab is AppTab {
+  return ACTIVE_TABS.has(tab);
+}
 
 // Interfaces
 interface LegalEntity {
@@ -202,11 +243,14 @@ export default function App({ firebaseUser, firebaseUid }: { firebaseUser?: any;
   const [workspaces, setWorkspaces] = useState<any[]>([]);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [isNotifOpen, setIsNotifOpen] = useState(false);
+  const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
+  const [isToolsMenuOpen, setIsToolsMenuOpen] = useState(false);
   const [notifications, setNotifications] = useState<any[]>([]);
   const [currentLang, setCurrentLang] = useState(i18n.currentLang);
   const [sessionContext, setSessionContext] = useState<SessionContext>(() => getStoredSessionContext());
   const [isOfflineModalOpen, setIsOfflineModalOpen] = useState(false);
   const [isFirestoreModalOpen, setIsFirestoreModalOpen] = useState(false);
+  const [isSupabaseModalOpen, setIsSupabaseModalOpen] = useState(false);
   const [hasOnboarded, setHasOnboarded] = useState<boolean>(true);
 
   // Retractable & Responsive Sidebar State
@@ -215,6 +259,16 @@ export default function App({ firebaseUser, firebaseUid }: { firebaseUser?: any;
   });
   const [isSidebarHovered, setIsSidebarHovered] = useState<boolean>(false);
   const [isMobileOpen, setIsMobileOpen] = useState<boolean>(false);
+
+  // Supabase Realtime Presence & Device registration
+  useEffect(() => {
+    if (!currentUser?.id) return;
+    registerSupabaseSession(currentUser.id);
+    const unsubPresence = trackUserPresence(currentUser.id, currentUser.name || 'Utilizador', false);
+    return () => {
+      unsubPresence();
+    };
+  }, [currentUser?.id, currentUser?.name]);
 
   // Custom Sidebar Width & Drag Resize State
   const [sidebarWidth, setSidebarWidth] = useState<number>(() => {
@@ -240,7 +294,18 @@ export default function App({ firebaseUser, firebaseUid }: { firebaseUser?: any;
     };
   }, []);
 
+  // Global visual theme & appearance initialization
+  useEffect(() => {
+    const appearance = loadAppearance(currentUser?.id || 'global');
+    applyAppearanceToDOM(appearance);
+  }, [currentUser?.id]);
+
   const handleNavClick = (tabId: string) => {
+    if (!isAppTab(tabId)) {
+      console.warn(`[Navigation] Disallowed tab identifier: ${tabId}, defaulting to dashboard.`);
+      setActiveTab('dashboard');
+      return;
+    }
     setActiveTab(tabId);
     setIsMobileOpen(false);
     // Auto-collapse if on tablet screen size (768px - 1024px)
@@ -372,17 +437,26 @@ export default function App({ firebaseUser, firebaseUid }: { firebaseUser?: any;
   const isSidebarExpanded = isSidebarPinned || isSidebarHovered;
 
   // Verify user and workspace on mount & sync with Firebase Auth
+  const lastSyncedUserRef = useRef<string>('');
   useEffect(() => {
     ensureDemoUsers();
     if (firebaseUid && firebaseUser) {
+      const savedProfile = loadUserProfileMultiStore(firebaseUid) || 
+        (firebaseUser.email ? loadUserProfileMultiStore(firebaseUser.email.toLowerCase().trim()) : null);
+
+      const userKey = `${firebaseUid}:${firebaseUser.email || ''}:${savedProfile?.name || firebaseUser.nome || firebaseUser.displayName || ''}:${savedProfile?.roleTitle || savedProfile?.profile || firebaseUser.role || ''}`;
+      if (lastSyncedUserRef.current === userKey) return;
+      lastSyncedUserRef.current = userKey;
+
       const authUser: any = {
         userId: firebaseUid,
         uid: firebaseUid,
-        email: firebaseUser.email || '',
-        name: firebaseUser.nome || firebaseUser.displayName || 'Utilizador',
-        role: firebaseUser.role || 'Senior Accountant',
-        avatar: firebaseUser.avatar || firebaseUser.photoURL || firebaseUser.fotoUrl,
-        fotoUrl: firebaseUser.fotoUrl || firebaseUser.photoURL,
+        id: firebaseUid,
+        email: savedProfile?.email || firebaseUser.email || '',
+        name: savedProfile?.name || firebaseUser.nome || firebaseUser.displayName || 'Utilizador',
+        role: savedProfile?.roleTitle || savedProfile?.profile || firebaseUser.role || 'Senior Accountant',
+        avatar: savedProfile?.fotoUrl || savedProfile?.photoUrl || savedProfile?.avatar || firebaseUser.avatar || firebaseUser.photoURL || firebaseUser.fotoUrl,
+        fotoUrl: savedProfile?.fotoUrl || firebaseUser.fotoUrl || firebaseUser.photoURL,
         status: 'online'
       };
       setCurrentUser(authUser);
@@ -394,14 +468,59 @@ export default function App({ firebaseUser, firebaseUid }: { firebaseUser?: any;
     } else {
       const user = getCurrentUser();
       if (user) {
-        setCurrentUser(user);
-        const ws = getActiveWorkspace();
-        setActiveWorkspace(ws);
-        setWorkspaces(getUserWorkspaces(user.userId));
-        setNotifications(getNotifications());
+        const uid = user.userId || (user as any).id || (user.email ? user.email.toLowerCase().trim() : '');
+        const savedProfile = uid ? loadUserProfileMultiStore(uid) : null;
+        
+        const effectiveName = savedProfile?.name || user.name || 'Utilizador';
+        const effectiveRole = savedProfile?.roleTitle || savedProfile?.profile || user.role || 'Senior Accountant';
+
+        const userKey = `${user.userId}:${user.email || ''}:${effectiveName}:${effectiveRole}`;
+        if (lastSyncedUserRef.current !== userKey) {
+          lastSyncedUserRef.current = userKey;
+          const mergedUser = {
+            ...user,
+            name: effectiveName,
+            role: effectiveRole,
+            avatar: savedProfile?.fotoUrl || savedProfile?.photoUrl || (user as any).avatar,
+            fotoUrl: savedProfile?.fotoUrl || (user as any).fotoUrl
+          };
+          setCurrentUser(mergedUser);
+          const ws = getActiveWorkspace();
+          setActiveWorkspace(ws);
+          setWorkspaces(getUserWorkspaces(user.userId));
+          setNotifications(getNotifications());
+        }
       }
     }
-  }, [firebaseUid, firebaseUser]);
+  }, [firebaseUid, firebaseUser?.email, firebaseUser?.nome, firebaseUser?.displayName, firebaseUser?.role]);
+
+  // Real-time listener for profile changes across components and browser storage
+  useEffect(() => {
+    const handleProfileUpdate = (e?: any) => {
+      const profileData = e?.detail;
+      setCurrentUser((prev: any) => {
+        if (!prev) return prev;
+        const uid = prev.userId || prev.id || firebaseUid || (prev.email ? prev.email.toLowerCase().trim() : '');
+        const saved = profileData || (uid ? loadUserProfileMultiStore(uid) : null);
+        if (!saved) return prev;
+        return {
+          ...prev,
+          name: saved.name || prev.name,
+          email: saved.email || prev.email,
+          role: saved.roleTitle || saved.profile || prev.role,
+          avatar: saved.fotoUrl || saved.photoUrl || saved.avatar || prev.avatar,
+          fotoUrl: saved.fotoUrl || prev.fotoUrl
+        };
+      });
+    };
+
+    window.addEventListener('user_profile_updated', handleProfileUpdate);
+    window.addEventListener('storage', handleProfileUpdate);
+    return () => {
+      window.removeEventListener('user_profile_updated', handleProfileUpdate);
+      window.removeEventListener('storage', handleProfileUpdate);
+    };
+  }, [firebaseUid]);
 
   // Update workspaces and notifications dynamically
   const refreshWorkspaceState = () => {
@@ -416,7 +535,6 @@ export default function App({ firebaseUser, firebaseUid }: { firebaseUser?: any;
 
   const [logoutMessage, setLogoutMessage] = useState<string | null>(null);
   const [isLogoutModalOpen, setIsLogoutModalOpen] = useState(false);
-  const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
   const [isMoreOptionsOpen, setIsMoreOptionsOpen] = useState(false);
   const [isMobileDrawerOpen, setIsMobileDrawerOpen] = useState(false);
   const [isStatsCollapsed, setIsStatsCollapsed] = useState(true);
@@ -493,37 +611,139 @@ export default function App({ firebaseUser, firebaseUid }: { firebaseUser?: any;
 
   // Online / Offline tracking & Sync
   const [isAppOnline, setIsAppOnline] = useState<boolean>(typeof navigator !== 'undefined' ? navigator.onLine : true);
+  const wasOfflineRef = useRef<boolean>(false);
   const [isSyncingOfflineData, setIsSyncingOfflineData] = useState<boolean>(false);
   const [syncSuccess, setSyncSuccess] = useState<boolean>(false);
-  const [pendingSyncCount, setPendingSyncCount] = useState<number>(0);
+  const [pendingSyncCount, setPendingSyncCount] = useState<number>(() => {
+    const pending = getPendingOfflineActions();
+    const quizProgress = getQuizProgress();
+    return pending.length + (quizProgress ? 1 : 0);
+  });
 
-  const triggerAutoSync = async () => {
+  // Online restore non-intrusive toast state
+  const [onlineRestoreToast, setOnlineRestoreToast] = useState<{
+    show: boolean;
+    title: string;
+    message: string;
+    isSyncing: boolean;
+    syncedCount?: number;
+    success?: boolean;
+  } | null>(null);
+
+  const toastTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  const triggerAutoSync = async (isNetworkReconnected: boolean = false) => {
     clearStaleCache();
     const pending = getPendingOfflineActions();
     const quizProgress = getQuizProgress();
     const count = pending.length + (quizProgress ? 1 : 0);
+    setPendingSyncCount(count);
 
     if (count > 0) {
-      setPendingSyncCount(count);
       setIsSyncingOfflineData(true);
+      
+      if (isNetworkReconnected) {
+        setOnlineRestoreToast({
+          show: true,
+          title: 'Ligação à Internet Restaurada',
+          message: `A sincronização pendente foi iniciada automaticamente (${count} registo${count > 1 ? 's' : ''} a sincronizar).`,
+          isSyncing: true,
+          syncedCount: count
+        });
+      }
+
       console.log(`[App] A iniciar sincronização automática de ${count} item(s) pendente(s)...`);
       const res = await syncOfflineDataWithServer();
       setIsSyncingOfflineData(false);
+      
+      const newPending = getPendingOfflineActions();
+      const newQuiz = getQuizProgress();
+      setPendingSyncCount(newPending.length + (newQuiz ? 1 : 0));
+
       if (res.success) {
         setSyncSuccess(true);
+        if (isNetworkReconnected) {
+          setOnlineRestoreToast({
+            show: true,
+            title: 'Sincronização Concluída',
+            message: `${count} registo${count > 1 ? 's' : ''} sincronizado${count > 1 ? 's' : ''} com sucesso com a nuvem.`,
+            isSyncing: false,
+            success: true,
+            syncedCount: count
+          });
+        }
         setTimeout(() => setSyncSuccess(false), 5000);
+      } else {
+        if (isNetworkReconnected) {
+          setOnlineRestoreToast({
+            show: true,
+            title: 'Sincronização Parcial',
+            message: 'Alguns registos permanecem em fila para tentativa posterior.',
+            isSyncing: false,
+            success: false
+          });
+        }
       }
+    } else if (isNetworkReconnected) {
+      setOnlineRestoreToast({
+        show: true,
+        title: 'Ligação à Internet Restaurada',
+        message: 'O sistema está online e todas as alterações estão sincronizadas.',
+        isSyncing: false,
+        success: true
+      });
+    }
+
+    if (isNetworkReconnected) {
+      if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+      toastTimerRef.current = setTimeout(() => {
+        setOnlineRestoreToast(null);
+      }, 5500);
     }
   };
+
+  // Monitor pendingSyncCount changes and trigger autoSync with 2-second stability delay if online
+  useEffect(() => {
+    if (isAppOnline && pendingSyncCount > 0 && !isSyncingOfflineData) {
+      const timer = setTimeout(() => {
+        if (navigator.onLine) {
+          triggerAutoSync(false);
+        }
+      }, 2000);
+      return () => clearTimeout(timer);
+    }
+  }, [pendingSyncCount, isAppOnline]);
 
   useEffect(() => {
     const handleOnline = () => {
       setIsAppOnline(true);
-      triggerAutoSync();
+      const pending = getPendingOfflineActions();
+      const quizProgress = getQuizProgress();
+      const count = pending.length + (quizProgress ? 1 : 0);
+      setPendingSyncCount(count);
+
+      // Immediately display non-intrusive restore notification with exact item count
+      if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+      setOnlineRestoreToast({
+        show: true,
+        title: 'Ligação à Internet Restaurada',
+        message: count > 0 
+          ? `A sincronização pendente foi iniciada automaticamente (${count} registo${count > 1 ? 's' : ''} a sincronizar).`
+          : 'O sistema está online e todas as alterações estão sincronizadas.',
+        isSyncing: count > 0,
+        syncedCount: count,
+        success: count === 0
+      });
+
+      triggerAutoSync(true);
+      wasOfflineRef.current = false;
     };
 
     const handleOffline = () => {
       setIsAppOnline(false);
+      wasOfflineRef.current = true;
+      setOnlineRestoreToast(null);
+      if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
     };
 
     window.addEventListener('online', handleOnline);
@@ -531,12 +751,13 @@ export default function App({ firebaseUser, firebaseUid }: { firebaseUser?: any;
 
     // Initial check on load
     if (navigator.onLine) {
-      triggerAutoSync();
+      triggerAutoSync(false);
     }
 
     return () => {
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('offline', handleOffline);
+      if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
     };
   }, []);
   const [isTourOpen, setIsTourOpen] = useState<boolean>(false);
@@ -648,18 +869,20 @@ export default function App({ firebaseUser, firebaseUid }: { firebaseUser?: any;
         setIsShortcutsHelpOpen(false);
       }
 
-      // Alt + 1..9 tab navigation shortcuts
+      // Alt + 1..9, Alt+A, Alt+N tab navigation shortcuts
       if (e.altKey && !e.ctrlKey && !e.metaKey) {
-        const key = e.key;
+        const key = e.key.toLowerCase();
         const navMap: Record<string, string> = {
           '1': 'dashboard',
           '2': 'assistant',
           '3': 'learning',
           '4': 'quizzes',
           '5': 'accounting',
-          '6': 'conversas',
-          'c': 'conversas',
-          'C': 'conversas'
+          'a': 'accounting',
+          '6': 'notes',
+          'n': 'notes',
+          '7': 'rh',
+          '8': 'exchange_rates'
         };
         if (navMap[key]) {
           e.preventDefault();
@@ -711,8 +934,46 @@ export default function App({ firebaseUser, firebaseUid }: { firebaseUser?: any;
     return list;
   }, [activeWorkspace, refreshCount]);
 
-  const [activeTab, setActiveTab] = useState<string>('dashboard');
-  const [visitedTabs, setVisitedTabs] = useState<Set<string>>(() => new Set(['dashboard']));
+  const [activeTab, setActiveTab] = useState<string>(() => {
+    if (typeof window !== 'undefined') {
+      const path = window.location.pathname.toLowerCase();
+      const hash = window.location.hash.toLowerCase();
+      if (path.includes('assistente') || path.includes('assistant') || path.includes('ai_accountant') || hash.includes('assistant') || hash.includes('contador-ia')) {
+        return 'assistant';
+      }
+      if (path.includes('estudos') || path.includes('learning') || hash.includes('learning') || hash.includes('estudos')) {
+        return 'learning';
+      }
+      if (path.includes('quizzes') || hash.includes('quizzes')) {
+        return 'quizzes';
+      }
+      if (path.includes('contabilidade') || path.includes('accounting') || hash.includes('accounting') || hash.includes('contabilidade')) {
+        return 'accounting';
+      }
+      if (path.includes('notas') || path.includes('notes') || hash.includes('notes') || hash.includes('notas')) {
+        return 'notes';
+      }
+      if (hash.includes('find-users')) {
+        return 'find-users';
+      }
+      if (path.includes('perfil') || path.includes('profile') || hash.includes('profile')) {
+        return 'profile';
+      }
+      if (path.includes('admin') || hash.includes('admin')) {
+        return 'admin';
+      }
+    }
+    return 'dashboard';
+  });
+  const [visitedTabs, setVisitedTabs] = useState<Set<string>>(() => {
+    const initial = typeof window !== 'undefined' ? (
+      window.location.pathname.toLowerCase().includes('estudos') ? 'learning' :
+      window.location.pathname.toLowerCase().includes('quizzes') ? 'quizzes' :
+      window.location.pathname.toLowerCase().includes('contabilidade') ? 'accounting' :
+      window.location.pathname.toLowerCase().includes('assistente') ? 'assistant' : 'dashboard'
+    ) : 'dashboard';
+    return new Set([initial, 'dashboard']);
+  });
 
   useEffect(() => {
     // Cancel pending API requests from the previous route
@@ -731,17 +992,34 @@ export default function App({ firebaseUser, firebaseUid }: { firebaseUser?: any;
   }, [activeTab]);
 
   useEffect(() => {
-    const handleHashChange = () => {
-      const hash = window.location.hash;
+    const handleLocationChange = () => {
+      const path = window.location.pathname.toLowerCase();
+      const hash = window.location.hash.toLowerCase();
       if (hash === '#/find-users' || hash === '#find-users') {
         setActiveTab('find-users');
-      } else if (hash === '#/learning' || hash === '#learning') {
+      } else if (path.includes('assistente') || path.includes('assistant') || path.includes('ai_accountant') || hash === '#/assistant' || hash === '#assistant' || hash.includes('contador-ia')) {
+        setActiveTab('assistant');
+      } else if (path.includes('estudos') || path.includes('learning') || hash === '#/learning' || hash === '#learning' || hash.includes('estudos')) {
         setActiveTab('learning');
+      } else if (path.includes('quizzes') || hash === '#/quizzes' || hash === '#quizzes') {
+        setActiveTab('quizzes');
+      } else if (path.includes('contabilidade') || path.includes('accounting') || hash === '#/accounting' || hash === '#accounting') {
+        setActiveTab('accounting');
+      } else if (path.includes('notas') || path.includes('notes') || hash === '#/notes' || hash === '#notes' || hash.includes('notas')) {
+        setActiveTab('notes');
+      } else if (path.includes('perfil') || path.includes('profile') || hash.includes('profile')) {
+        setActiveTab('profile');
+      } else if (path.includes('admin') || hash.includes('admin')) {
+        setActiveTab('admin');
       }
     };
-    handleHashChange();
-    window.addEventListener('hashchange', handleHashChange);
-    return () => window.removeEventListener('hashchange', handleHashChange);
+    handleLocationChange();
+    window.addEventListener('hashchange', handleLocationChange);
+    window.addEventListener('popstate', handleLocationChange);
+    return () => {
+      window.removeEventListener('hashchange', handleLocationChange);
+      window.removeEventListener('popstate', handleLocationChange);
+    };
   }, []);
   
   // Custom tax overrides saved by the user via the tax calculator
@@ -825,7 +1103,7 @@ export default function App({ firebaseUser, firebaseUid }: { firebaseUser?: any;
         return prev;
       });
     }
-  }, [entities]);
+  }, [entities?.length, activeWorkspace?.id]);
 
   const currentSelectedEntity = useMemo(() => {
     if (!entities || entities.length === 0) return null;
@@ -1203,7 +1481,9 @@ export default function App({ firebaseUser, firebaseUid }: { firebaseUser?: any;
       const errorMsg: ChatMessage = {
         id: 'msg_err_' + Date.now(),
         role: 'assistant',
-        content: '⚠️ I had trouble reaching the AI consultant backend. Please ensure the GEMINI_API_KEY is properly saved in **Settings > Secrets** in the AI Studio UI.\n\nSimulated consultation for your query: Regional accounting standards require distinct treatment of transfer pricing margins between US entities and global subsidiaries under IFRS Section 15. Standard margins must correspond to arm\'s-length principles.',
+        content: currentLang.startsWith('pt') 
+          ? '⚠️ Não foi possível contactar o serviço de IA autónomo neste momento. Tenta novamente em alguns instantes; não é necessário configurar uma chave Google no dispositivo.' 
+          : '⚠️ The autonomous AI service is temporarily unavailable. Please try again shortly; no Google key is required on your device.',
         timestamp: new Date()
       };
       setChatMessages(prev => [...prev, errorMsg]);
@@ -1237,17 +1517,71 @@ export default function App({ firebaseUser, firebaseUid }: { firebaseUser?: any;
 
   if (!currentUser) {
     return (
-      <LoginPage />
+      <motion.div
+        key="app-login-view"
+        initial={{ opacity: 0, y: 6 }}
+        animate={{ opacity: 1, y: 0 }}
+        exit={{ opacity: 0, y: -6 }}
+        transition={{ duration: 0.3, ease: "easeOut" }}
+        className="w-full min-h-[100dvh] relative z-10 pointer-events-auto select-auto"
+        style={{ pointerEvents: 'auto', touchAction: 'pan-y' }}
+      >
+        <Suspense fallback={<PageSkeleton />}>
+          <LoginPage />
+        </Suspense>
+      </motion.div>
     );
   }
 
   return (
-    <div 
-      className="flex h-screen w-full bg-[#F1F5F9] font-sans text-slate-900 overflow-hidden" 
+    <motion.div 
+      key="app-main-container"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      transition={{ duration: 0.35, ease: "easeOut" }}
+      className="flex h-[100dvh] min-h-0 w-full max-w-full font-sans text-slate-100 overflow-hidden relative" 
+      style={{
+        background: 'var(--app-bg-gradient)',
+        backgroundImage: 'var(--app-bg-pattern)'
+      }}
       id="app-container"
       onTouchStart={handleTouchStart}
       onTouchEnd={handleTouchEnd}
     >
+      {/* Decorative Halo 1: Blue in top-left */}
+      <div 
+        className="absolute pointer-events-none"
+        style={{
+          top: '-10%',
+          left: '-10%',
+          width: '560px',
+          height: '560px',
+          borderRadius: '50%',
+          background: 'var(--halo-primary-color, rgba(74, 144, 226, 0.15))',
+          filter: 'blur(80px)',
+          zIndex: 0,
+          display: 'var(--halo-display, block)'
+        }}
+        aria-hidden="true"
+      />
+
+      {/* Decorative Halo 2: Violet in bottom-right */}
+      <div 
+        className="absolute pointer-events-none"
+        style={{
+          bottom: '-10%',
+          right: '-10%',
+          width: '560px',
+          height: '560px',
+          borderRadius: '50%',
+          background: 'var(--halo-secondary-color, rgba(139, 92, 246, 0.12))',
+          filter: 'blur(80px)',
+          zIndex: 0,
+          display: 'var(--halo-display, block)'
+        }}
+        aria-hidden="true"
+      />
       
       {/* Edge Hover Sensor for Desktop (Left 20px edge) */}
       <div 
@@ -1258,14 +1592,14 @@ export default function App({ firebaseUser, firebaseUid }: { firebaseUser?: any;
       {/* MOBILE DRAWER BACKDROP OVERLAY */}
       {isMobileOpen && (
         <div 
-          className="md:hidden fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-50 animate-in fade-in duration-200"
+          className="mobile-menu-overlay md:hidden fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-[1050] animate-in fade-in duration-200"
           onClick={() => setIsMobileOpen(false)}
         />
       )}
 
       {/* MOBILE OFF-CANVAS SIDEBAR (<768px) */}
       <aside 
-        className={`md:hidden fixed inset-y-0 left-0 z-50 w-72 bg-slate-900 dark:bg-[var(--bg-sidebar)] flex flex-col text-slate-300 shadow-2xl transition-transform duration-300 ease-in-out ${
+        className={`mobile-menu-drawer md:hidden fixed inset-y-0 left-0 z-[1051] w-72 bg-slate-900 dark:bg-[var(--bg-sidebar)] flex flex-col text-slate-300 shadow-2xl transition-transform duration-300 ease-in-out ${
           isMobileOpen ? 'translate-x-0' : '-translate-x-full'
         }`}
         id="sidebar-panel-mobile"
@@ -1293,15 +1627,15 @@ export default function App({ firebaseUser, firebaseUid }: { firebaseUser?: any;
           </button>
 
           <button 
-            onClick={() => { setActiveTab('conversas'); setIsMobileOpen(false); }}
+            onClick={() => { setActiveTab('notes'); setIsMobileOpen(false); }}
             className={`w-full flex items-center px-4 py-3.5 text-sm font-medium rounded-xl transition-all ${
-              activeTab === 'conversas' ? 'bg-blue-600 text-white shadow-md' : 'text-slate-400 hover:bg-slate-800 hover:text-white'
+              activeTab === 'notes' ? 'bg-blue-600 text-white shadow-md' : 'text-slate-400 hover:bg-slate-800 hover:text-white'
             }`}
           >
-            <MessageSquare className="mr-3 w-5 h-5 shrink-0" />
-            Conversas
+            <StickyNote className="mr-3 w-5 h-5 shrink-0" />
+            Notas
             <span className="ml-auto bg-blue-500/20 text-blue-400 text-[10px] uppercase font-bold px-2 py-0.5 rounded">
-              CHAT
+              LOCAL
             </span>
           </button>
 
@@ -1315,6 +1649,19 @@ export default function App({ firebaseUser, firebaseUid }: { firebaseUser?: any;
             {i18n.t('nav.aiAccountant')}
             <span className="ml-auto bg-blue-500/20 text-blue-400 text-[10px] uppercase font-bold px-2 py-0.5 rounded">
               {i18n.t('extra.active')}
+            </span>
+          </button>
+
+          <button 
+            onClick={() => { setActiveTab('accounting'); setIsMobileOpen(false); }}
+            className={`w-full flex items-center px-4 py-3.5 text-sm font-medium rounded-xl transition-all ${
+              activeTab === 'accounting' ? 'bg-blue-600 text-white shadow-md' : 'text-slate-400 hover:bg-slate-800 hover:text-white'
+            }`}
+          >
+            <Calculator className="mr-3 w-5 h-5 shrink-0" />
+            Contabilidade
+            <span className="ml-auto bg-blue-500/20 text-blue-400 text-[10px] uppercase font-bold px-2 py-0.5 rounded">
+              PGC
             </span>
           </button>
 
@@ -1366,7 +1713,7 @@ export default function App({ firebaseUser, firebaseUid }: { firebaseUser?: any;
         data-expanded={isSidebarExpanded}
         className={`hidden md:flex bg-slate-900/95 dark:bg-[var(--bg-sidebar)] backdrop-blur-md rounded-r-2xl flex-col shrink-0 text-slate-300 ${
           isResizingSidebar ? 'transition-none select-none cursor-col-resize' : 'transition-all duration-300 ease-in-out'
-        } relative z-40 border-r border-slate-800/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-900 ${
+        } relative z-40 border-r border-slate-800/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-900 hover:scale-[1.02] focus-within:scale-[1.02] hover:[filter:brightness(1.05)] focus-within:[filter:brightness(1.05)] origin-left ${
           isSidebarPulse ? 'ring-2 ring-blue-500/80 shadow-[0_0_20px_rgba(59,130,246,0.6)] animate-pulse' : ''
         } ${
           isSidebarExpanded ? '' : 'w-16'
@@ -1428,7 +1775,7 @@ export default function App({ firebaseUser, firebaseUid }: { firebaseUser?: any;
                     toggleSidebarPin();
                   }
                 }}
-                className="min-w-[44px] min-h-[44px] flex items-center justify-center p-2.5 text-slate-400 hover:text-white hover:bg-slate-800/80 rounded-xl transition-all duration-200 ease-out cursor-pointer shrink-0 focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+                className="min-w-[44px] min-h-[44px] flex items-center justify-center p-2.5 text-slate-300 hover:text-white hover:bg-slate-800/90 rounded-xl transition-all duration-200 ease-out cursor-pointer shrink-0 focus:outline-none focus:ring-2 focus:ring-blue-500/50"
                 title={isSidebarPinned ? "Desafixar barra lateral (auto-retrair ao afastar o cursor)" : "Fixar barra lateral sempre expandida (mantém o painel visível)"}
                 aria-label={isSidebarPinned ? "Desafixar barra lateral (auto-retrair)" : "Fixar barra lateral (sempre visível)"}
               >
@@ -1439,7 +1786,7 @@ export default function App({ firebaseUser, firebaseUid }: { firebaseUser?: any;
                 )}
               </button>
               {/* Tooltip explaining functionality on hover */}
-              <div className="absolute right-0 top-full mt-1.5 hidden group-hover/pin:flex items-center gap-1.5 bg-slate-900 border border-slate-700/80 text-slate-200 text-[11px] font-medium py-1.5 px-2.5 rounded-lg shadow-xl whitespace-nowrap z-50 pointer-events-none transition-all">
+              <div className="absolute right-0 top-full mt-1.5 hidden group-hover/pin:flex items-center gap-1.5 bg-slate-900 border border-slate-700/90 text-slate-100 text-[11px] font-medium py-1.5 px-2.5 rounded-lg shadow-xl whitespace-nowrap z-50 pointer-events-none transition-all">
                 <span>{isSidebarPinned ? "Desafixar barra lateral (auto-retrair)" : "Fixar barra lateral (sempre visível)"}</span>
               </div>
             </div>
@@ -1448,7 +1795,7 @@ export default function App({ firebaseUser, firebaseUid }: { firebaseUser?: any;
 
         {/* Sidebar Navigation */}
         <nav 
-          className={`flex-1 px-2.5 py-6 space-y-1 ${isSidebarExpanded ? 'overflow-y-auto overflow-x-hidden' : 'overflow-visible'}`} 
+          className={`flex-1 px-2.5 py-6 space-y-1.5 ${isSidebarExpanded ? 'overflow-y-auto overflow-x-hidden' : 'overflow-visible'}`} 
           id="sidebar-nav"
           data-entity-active={isSelectedEntityActive}
           data-syncing={isSyncing || refreshCount % 2 === 1}
@@ -1457,210 +1804,318 @@ export default function App({ firebaseUser, firebaseUid }: { firebaseUser?: any;
           role="navigation"
           aria-label="Navegação Principal"
         >
-          
           {/* Dashboard */}
-          <button 
-            id="nav-btn-dashboard"
-            onClick={() => handleNavClick('dashboard')}
-            title={undefined}
-            data-active={activeTab === 'dashboard'}
-            className={`w-full flex items-center ${isSidebarExpanded ? 'px-3.5 py-2.5 justify-start' : 'p-2.5 justify-center relative group'} text-sm font-medium rounded-xl transition-all duration-200 ease-out hover:translate-x-1 hover:shadow-md hover:shadow-black/20 ${
-              activeTab === 'dashboard' 
-                ? 'bg-blue-600 text-white shadow-md shadow-blue-600/20 active border-l-4 border-l-blue-400 scale-[1.01]' 
-                : 'text-slate-400 hover:bg-slate-800/90 hover:text-slate-100 border-l-4 border-l-transparent'
-            }`}
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95, x: -6 }}
+            animate={{ opacity: 1, scale: 1, x: 0 }}
+            transition={{ duration: 0.22, delay: 0.02, ease: [0.16, 1, 0.3, 1] }}
+            className="w-full relative group"
           >
-            <LayoutDashboard className={`w-4 h-4 shrink-0 ${isSidebarExpanded ? 'mr-3' : ''}`} />
-            {isSidebarExpanded ? (
-              <div className="w-full flex items-center justify-between min-w-0">
-                <span className="truncate">{i18n.t('nav.dashboard')}</span>
-                <div className="flex items-center gap-1.5 ml-auto shrink-0">
-                  <span className="text-[10px] font-mono text-slate-400/90 bg-slate-800/80 px-1.5 py-0.5 rounded border border-slate-700/60">
-                    Alt+1
-                  </span>
-                  {isSelectedEntityActive && (
-                    <span className="w-2 h-2 rounded-full bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.8)] shrink-0 ml-1" title="Entidade Ativa" />
-                  )}
+            <button 
+              id="nav-btn-dashboard"
+              onClick={() => handleNavClick('dashboard')}
+              aria-label={i18n.t('nav.dashboard')}
+              data-active={activeTab === 'dashboard'}
+              className={`w-full flex items-center ${isSidebarExpanded ? 'px-3.5 py-2.5 justify-start' : 'p-2.5 justify-center relative'} text-sm font-medium rounded-xl transition-all duration-200 ease-out hover:translate-x-1 hover:shadow-md hover:shadow-black/20 ${
+                activeTab === 'dashboard' 
+                  ? 'text-white shadow-md shadow-blue-600/20 active border-l-4 border-l-blue-300 scale-[1.01]' 
+                  : 'text-slate-300 hover:bg-slate-800/90 hover:text-white border-l-4 border-l-transparent'
+              }`}
+            >
+              <LayoutDashboard className={`w-4 h-4 shrink-0 text-slate-300 group-hover:text-blue-300 ${isSidebarExpanded ? 'mr-3' : ''}`} />
+              {isSidebarExpanded ? (
+                <div className="w-full flex items-center justify-between min-w-0">
+                  <span className="truncate text-slate-200 group-hover:text-white font-medium">{i18n.t('nav.dashboard')}</span>
+                  <div className="flex items-center gap-1.5 ml-auto shrink-0">
+                    <span className="text-[10px] font-mono text-slate-300 bg-slate-800/90 px-1.5 py-0.5 rounded border border-slate-700/80 font-semibold">
+                      Alt+1
+                    </span>
+                    {isSelectedEntityActive && (
+                      <span className="w-2 h-2 rounded-full bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.8)] shrink-0 ml-1" title="Entidade Ativa" />
+                    )}
+                  </div>
                 </div>
-              </div>
-            ) : (
-              <div className="absolute left-full ml-3.5 px-3 py-1.5 bg-slate-900 border border-slate-700/80 text-white text-xs font-semibold rounded-lg shadow-xl shadow-black/60 whitespace-nowrap opacity-0 pointer-events-none group-hover:opacity-100 transition-all duration-200 delay-200 z-50 translate-x-1 group-hover:translate-x-0 flex items-center gap-1.5">
+              ) : null}
+            </button>
+            {!isSidebarExpanded && (
+              <div 
+                role="tooltip"
+                className="sidebar-tooltip pointer-events-none absolute left-full ml-3.5 top-1/2 -translate-y-1/2 px-3 py-1.5 bg-slate-900 border border-slate-700/90 text-white text-xs font-semibold rounded-xl shadow-2xl shadow-black/80 whitespace-nowrap opacity-0 group-hover:opacity-100 -translate-x-1 group-hover:translate-x-0 transition-all duration-200 z-50 flex items-center gap-2"
+              >
                 <span>{i18n.t('nav.dashboard')}</span>
-                <span className="text-[10px] font-mono text-slate-400 bg-slate-800 px-1.5 py-0.5 rounded border border-slate-700">Alt+1</span>
+                <span className="text-[10px] font-mono text-slate-200 bg-slate-800 px-1.5 py-0.5 rounded border border-slate-700">Alt+1</span>
                 {isSelectedEntityActive && (
                   <span className="w-2 h-2 rounded-full bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.8)] shrink-0" title="Entidade Ativa" />
                 )}
-                <div className="absolute -left-1 top-1/2 -translate-y-1/2 w-2 h-2 bg-slate-900 border-l border-b border-slate-700/80 rotate-45"></div>
+                <div className="absolute -left-1 top-1/2 -translate-y-1/2 w-2 h-2 bg-slate-900 border-l border-b border-slate-700/90 rotate-45"></div>
               </div>
             )}
-          </button>
+          </motion.div>
 
           {/* AI Accountant Suite */}
-          <button 
-            id="nav-btn-assistant"
-            onClick={() => handleNavClick('assistant')}
-            title={undefined}
-            data-active={activeTab === 'assistant'}
-            className={`w-full flex items-center ${isSidebarExpanded ? 'px-3.5 py-2.5 justify-start' : 'p-2.5 justify-center relative group'} text-sm font-medium rounded-xl transition-all duration-200 ease-out hover:translate-x-1 hover:shadow-md hover:shadow-black/20 ${
-              activeTab === 'assistant' 
-                ? 'bg-blue-600 text-white shadow-md shadow-blue-600/20 active border-l-4 border-l-blue-400 scale-[1.01]' 
-                : 'text-slate-400 hover:bg-slate-800/90 hover:text-slate-100 border-l-4 border-l-transparent'
-            }`}
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95, x: -6 }}
+            animate={{ opacity: 1, scale: 1, x: 0 }}
+            transition={{ duration: 0.22, delay: 0.05, ease: [0.16, 1, 0.3, 1] }}
+            className="w-full relative group"
           >
-            <Bot className={`w-4 h-4 shrink-0 ${isSidebarExpanded ? 'mr-3' : ''}`} />
-            {isSidebarExpanded ? (
-              <div className="w-full flex items-center justify-between min-w-0">
-                <span className="truncate">{i18n.t('nav.aiAccountant')}</span>
-                <div className="flex items-center gap-1.5 ml-auto shrink-0">
-                  <span className="text-[10px] font-mono text-slate-400/90 bg-slate-800/80 px-1.5 py-0.5 rounded border border-slate-700/60">
-                    Alt+2
-                  </span>
-                  <span className="bg-blue-500/20 text-blue-400 text-[10px] uppercase font-bold px-1.5 py-0.5 rounded">
-                    {i18n.t('extra.active')}
-                  </span>
-                  {isSelectedEntityActive && (
-                    <span className="w-2 h-2 rounded-full bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.8)] shrink-0 ml-1" title="Entidade Ativa" />
-                  )}
+            <button 
+              id="nav-btn-assistant"
+              onClick={() => handleNavClick('assistant')}
+              aria-label={i18n.t('nav.aiAccountant')}
+              data-active={activeTab === 'assistant'}
+              className={`w-full flex items-center ${isSidebarExpanded ? 'px-3.5 py-2.5 justify-start' : 'p-2.5 justify-center relative'} text-sm font-medium rounded-xl transition-all duration-200 ease-out hover:translate-x-1 hover:shadow-md hover:shadow-black/20 ${
+                activeTab === 'assistant' 
+                  ? 'text-white shadow-md shadow-blue-600/20 active border-l-4 border-l-blue-300 scale-[1.01]' 
+                  : 'text-slate-300 hover:bg-slate-800/90 hover:text-white border-l-4 border-l-transparent'
+              }`}
+            >
+              <Bot className={`w-4 h-4 shrink-0 text-slate-300 group-hover:text-blue-300 ${isSidebarExpanded ? 'mr-3' : ''}`} />
+              {isSidebarExpanded ? (
+                <div className="w-full flex items-center justify-between min-w-0">
+                  <span className="truncate text-slate-200 group-hover:text-white font-medium">{i18n.t('nav.aiAccountant')}</span>
+                  <div className="flex items-center gap-1.5 ml-auto shrink-0">
+                    <span className="text-[10px] font-mono text-slate-300 bg-slate-800/90 px-1.5 py-0.5 rounded border border-slate-700/80 font-semibold">
+                      Alt+2
+                    </span>
+                    <span className="bg-blue-500/25 text-blue-300 text-[10px] uppercase font-bold px-1.5 py-0.5 rounded border border-blue-400/30">
+                      {i18n.t('extra.active')}
+                    </span>
+                    {isSelectedEntityActive && (
+                      <span className="w-2 h-2 rounded-full bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.8)] shrink-0 ml-1" title="Entidade Ativa" />
+                    )}
+                  </div>
                 </div>
-              </div>
-            ) : (
-              <div className="absolute left-full ml-3.5 px-3 py-1.5 bg-slate-900 border border-slate-700/80 text-white text-xs font-semibold rounded-lg shadow-xl shadow-black/60 whitespace-nowrap opacity-0 pointer-events-none group-hover:opacity-100 transition-all duration-200 delay-200 z-50 translate-x-1 group-hover:translate-x-0 flex items-center gap-2">
+              ) : null}
+            </button>
+            {!isSidebarExpanded && (
+              <div 
+                role="tooltip"
+                className="sidebar-tooltip pointer-events-none absolute left-full ml-3.5 top-1/2 -translate-y-1/2 px-3 py-1.5 bg-slate-900 border border-slate-700/90 text-white text-xs font-semibold rounded-xl shadow-2xl shadow-black/80 whitespace-nowrap opacity-0 group-hover:opacity-100 -translate-x-1 group-hover:translate-x-0 transition-all duration-200 z-50 flex items-center gap-2"
+              >
                 <span>{i18n.t('nav.aiAccountant')}</span>
-                <span className="text-[10px] font-mono text-slate-400 bg-slate-800 px-1.5 py-0.5 rounded border border-slate-700">Alt+2</span>
-                <span className="bg-blue-500/20 text-blue-400 text-[10px] uppercase font-bold px-1.5 py-0.5 rounded">
+                <span className="text-[10px] font-mono text-slate-200 bg-slate-800 px-1.5 py-0.5 rounded border border-slate-700">Alt+2</span>
+                <span className="bg-blue-500/25 text-blue-300 text-[10px] uppercase font-bold px-1.5 py-0.5 rounded border border-blue-400/30">
                   {i18n.t('extra.active')}
                 </span>
                 {isSelectedEntityActive && (
                   <span className="w-2 h-2 rounded-full bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.8)] shrink-0" title="Entidade Ativa" />
                 )}
-                <div className="absolute -left-1 top-1/2 -translate-y-1/2 w-2 h-2 bg-slate-900 border-l border-b border-slate-700/80 rotate-45"></div>
+                <div className="absolute -left-1 top-1/2 -translate-y-1/2 w-2 h-2 bg-slate-900 border-l border-b border-slate-700/90 rotate-45"></div>
               </div>
             )}
-          </button>
+          </motion.div>
+
+          {/* Contabilidade (PGC - Lançamentos & Balancete) */}
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95, x: -6 }}
+            animate={{ opacity: 1, scale: 1, x: 0 }}
+            transition={{ duration: 0.22, delay: 0.065, ease: [0.16, 1, 0.3, 1] }}
+            className="w-full relative group"
+          >
+            <button 
+              id="nav-btn-accounting"
+              onClick={() => handleNavClick('accounting')}
+              aria-label="Contabilidade"
+              data-active={activeTab === 'accounting'}
+              className={`w-full flex items-center ${isSidebarExpanded ? 'px-3.5 py-2.5 justify-start' : 'p-2.5 justify-center relative'} text-sm font-medium rounded-xl transition-all duration-200 ease-out hover:translate-x-1 hover:shadow-md hover:shadow-black/20 ${
+                activeTab === 'accounting' 
+                  ? 'text-white shadow-md shadow-blue-600/20 active border-l-4 border-l-blue-300 scale-[1.01]' 
+                  : 'text-slate-300 hover:bg-slate-800/90 hover:text-white border-l-4 border-l-transparent'
+              }`}
+            >
+              <Calculator className={`w-4 h-4 shrink-0 text-slate-300 group-hover:text-blue-300 ${isSidebarExpanded ? 'mr-3' : ''}`} />
+              {isSidebarExpanded ? (
+                <div className="w-full flex items-center justify-between min-w-0">
+                  <span className="truncate text-slate-200 group-hover:text-white font-medium">Contabilidade</span>
+                  <div className="flex items-center gap-1.5 ml-auto shrink-0">
+                    <span className="text-[10px] font-mono text-slate-300 bg-slate-800/90 px-1.5 py-0.5 rounded border border-slate-700/80 font-semibold" title="Atalho: Alt+A ou Alt+5">
+                      Alt+A
+                    </span>
+                    <span className="bg-blue-500/25 text-blue-300 text-[10px] uppercase font-bold px-1.5 py-0.5 rounded border border-blue-400/30">
+                      PGC
+                    </span>
+                    {isSelectedEntityActive && (
+                      <span className="w-2 h-2 rounded-full bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.8)] shrink-0 ml-1" title="Entidade Ativa" />
+                    )}
+                  </div>
+                </div>
+              ) : null}
+            </button>
+            {!isSidebarExpanded && (
+              <div 
+                role="tooltip"
+                className="sidebar-tooltip pointer-events-none absolute left-full ml-3.5 top-1/2 -translate-y-1/2 px-3 py-1.5 bg-slate-900 border border-slate-700/90 text-white text-xs font-semibold rounded-xl shadow-2xl shadow-black/80 whitespace-nowrap opacity-0 group-hover:opacity-100 -translate-x-1 group-hover:translate-x-0 transition-all duration-200 z-50 flex items-center gap-2"
+              >
+                <span>Contabilidade</span>
+                <span className="text-[10px] font-mono text-slate-200 bg-slate-800 px-1.5 py-0.5 rounded border border-slate-700">Alt+A</span>
+                <span className="bg-blue-500/25 text-blue-300 text-[10px] uppercase font-bold px-1.5 py-0.5 rounded border border-blue-400/30">
+                  PGC
+                </span>
+                {isSelectedEntityActive && (
+                  <span className="w-2 h-2 rounded-full bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.8)] shrink-0" title="Entidade Ativa" />
+                )}
+                <div className="absolute -left-1 top-1/2 -translate-y-1/2 w-2 h-2 bg-slate-900 border-l border-b border-slate-700/90 rotate-45"></div>
+              </div>
+            )}
+          </motion.div>
 
           {/* Aprendizados */}
-          <button 
-            id="nav-btn-learnings"
-            onClick={() => handleNavClick('learning')}
-            title={undefined}
-            data-active={activeTab === 'learning'}
-            className={`w-full flex items-center ${isSidebarExpanded ? 'px-3.5 py-2.5 justify-start' : 'p-2.5 justify-center relative group'} text-sm font-medium rounded-xl transition-all duration-200 ease-out hover:translate-x-1 hover:shadow-md hover:shadow-black/20 ${
-              activeTab === 'learning' 
-                ? 'bg-blue-600 text-white shadow-md shadow-blue-600/20 active border-l-4 border-l-blue-400 scale-[1.01]' 
-                : 'text-slate-400 hover:bg-slate-800/90 hover:text-slate-100 border-l-4 border-l-transparent'
-            }`}
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95, x: -6 }}
+            animate={{ opacity: 1, scale: 1, x: 0 }}
+            transition={{ duration: 0.22, delay: 0.08, ease: [0.16, 1, 0.3, 1] }}
+            className="w-full relative group"
           >
-            <BookOpen className={`w-4 h-4 shrink-0 ${isSidebarExpanded ? 'mr-3' : ''}`} />
-            {isSidebarExpanded ? (
-              <div className="w-full flex items-center justify-between min-w-0">
-                <span className="truncate">Aprendizados</span>
-                <div className="flex items-center gap-1.5 ml-auto shrink-0">
-                  <span className="text-[10px] font-mono text-slate-400/90 bg-slate-800/80 px-1.5 py-0.5 rounded border border-slate-700/60">
-                    Alt+3
-                  </span>
-                  <span className="bg-blue-500/15 text-blue-400 text-[10px] uppercase font-bold px-1.5 py-0.5 rounded">
-                    IA
-                  </span>
-                  {isSelectedEntityActive && (
-                    <span className="w-2 h-2 rounded-full bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.8)] shrink-0 ml-1" title="Entidade Ativa" />
-                  )}
+            <button 
+              id="nav-btn-learnings"
+              onClick={() => handleNavClick('learning')}
+              aria-label="Aprendizados"
+              data-active={activeTab === 'learning'}
+              className={`w-full flex items-center ${isSidebarExpanded ? 'px-3.5 py-2.5 justify-start' : 'p-2.5 justify-center relative'} text-sm font-medium rounded-xl transition-all duration-200 ease-out hover:translate-x-1 hover:shadow-md hover:shadow-black/20 ${
+                activeTab === 'learning' 
+                  ? 'text-white shadow-md shadow-blue-600/20 active border-l-4 border-l-blue-300 scale-[1.01]' 
+                  : 'text-slate-300 hover:bg-slate-800/90 hover:text-white border-l-4 border-l-transparent'
+              }`}
+            >
+              <BookOpen className={`w-4 h-4 shrink-0 text-slate-300 group-hover:text-blue-300 ${isSidebarExpanded ? 'mr-3' : ''}`} />
+              {isSidebarExpanded ? (
+                <div className="w-full flex items-center justify-between min-w-0">
+                  <span className="truncate text-slate-200 group-hover:text-white font-medium">Aprendizados</span>
+                  <div className="flex items-center gap-1.5 ml-auto shrink-0">
+                    <span className="text-[10px] font-mono text-slate-300 bg-slate-800/90 px-1.5 py-0.5 rounded border border-slate-700/80 font-semibold">
+                      Alt+3
+                    </span>
+                    <span className="bg-blue-500/25 text-blue-300 text-[10px] uppercase font-bold px-1.5 py-0.5 rounded border border-blue-400/30">
+                      IA
+                    </span>
+                    {isSelectedEntityActive && (
+                      <span className="w-2 h-2 rounded-full bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.8)] shrink-0 ml-1" title="Entidade Ativa" />
+                    )}
+                  </div>
                 </div>
-              </div>
-            ) : (
-              <div className="absolute left-full ml-3.5 px-3 py-1.5 bg-slate-900 border border-slate-700/80 text-white text-xs font-semibold rounded-lg shadow-xl shadow-black/60 whitespace-nowrap opacity-0 pointer-events-none group-hover:opacity-100 transition-all duration-200 delay-200 z-50 translate-x-1 group-hover:translate-x-0 flex items-center gap-2">
+              ) : null}
+            </button>
+            {!isSidebarExpanded && (
+              <div 
+                role="tooltip"
+                className="sidebar-tooltip pointer-events-none absolute left-full ml-3.5 top-1/2 -translate-y-1/2 px-3 py-1.5 bg-slate-900 border border-slate-700/90 text-white text-xs font-semibold rounded-xl shadow-2xl shadow-black/80 whitespace-nowrap opacity-0 group-hover:opacity-100 -translate-x-1 group-hover:translate-x-0 transition-all duration-200 z-50 flex items-center gap-2"
+              >
                 <span>Aprendizados</span>
-                <span className="text-[10px] font-mono text-slate-400 bg-slate-800 px-1.5 py-0.5 rounded border border-slate-700">Alt+3</span>
-                <span className="bg-blue-500/15 text-blue-400 text-[10px] uppercase font-bold px-1.5 py-0.5 rounded">
+                <span className="text-[10px] font-mono text-slate-200 bg-slate-800 px-1.5 py-0.5 rounded border border-slate-700">Alt+3</span>
+                <span className="bg-blue-500/25 text-blue-300 text-[10px] uppercase font-bold px-1.5 py-0.5 rounded border border-blue-400/30">
                   IA
                 </span>
                 {isSelectedEntityActive && (
                   <span className="w-2 h-2 rounded-full bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.8)] shrink-0" title="Entidade Ativa" />
                 )}
-                <div className="absolute -left-1 top-1/2 -translate-y-1/2 w-2 h-2 bg-slate-900 border-l border-b border-slate-700/80 rotate-45"></div>
+                <div className="absolute -left-1 top-1/2 -translate-y-1/2 w-2 h-2 bg-slate-900 border-l border-b border-slate-700/90 rotate-45"></div>
               </div>
             )}
-          </button>
+          </motion.div>
 
           {/* Quizzes & Avaliações */}
-          <button 
-            id="nav-btn-quizzes"
-            onClick={() => handleNavClick('quizzes')}
-            title={undefined}
-            data-active={activeTab === 'quizzes'}
-            className={`w-full flex items-center ${isSidebarExpanded ? 'px-3.5 py-2.5 justify-start' : 'p-2.5 justify-center relative group'} text-sm font-medium rounded-xl transition-all duration-200 ease-out hover:translate-x-1 hover:shadow-md hover:shadow-black/20 ${
-              activeTab === 'quizzes' 
-                ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/20 active border-l-4 border-l-amber-400 scale-[1.01]' 
-                : 'text-slate-400 hover:bg-slate-800/90 hover:text-slate-100 border-l-4 border-l-transparent'
-            }`}
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95, x: -6 }}
+            animate={{ opacity: 1, scale: 1, x: 0 }}
+            transition={{ duration: 0.22, delay: 0.11, ease: [0.16, 1, 0.3, 1] }}
+            className="w-full relative group"
           >
-            <GraduationCap className={`w-4 h-4 shrink-0 text-amber-400 ${isSidebarExpanded ? 'mr-3' : ''}`} />
-            {isSidebarExpanded ? (
-              <div className="w-full flex items-center justify-between min-w-0">
-                <span className="truncate">Quizzes & Avaliações</span>
-                <div className="flex items-center gap-1.5 ml-auto shrink-0">
-                  <span className="text-[10px] font-mono text-slate-400/90 bg-slate-800/80 px-1.5 py-0.5 rounded border border-slate-700/60">
-                    Alt+4
-                  </span>
-                  <span className="bg-amber-500/20 text-amber-300 text-[10px] uppercase font-bold px-1.5 py-0.5 rounded">
-                    NOVO
-                  </span>
+            <button 
+              id="nav-btn-quizzes"
+              onClick={() => handleNavClick('quizzes')}
+              aria-label="Quizzes & Avaliações"
+              data-active={activeTab === 'quizzes'}
+              className={`w-full flex items-center ${isSidebarExpanded ? 'px-3.5 py-2.5 justify-start' : 'p-2.5 justify-center relative'} text-sm font-medium rounded-xl transition-all duration-200 ease-out hover:translate-x-1 hover:shadow-md hover:shadow-black/20 ${
+                activeTab === 'quizzes' 
+                  ? 'text-white shadow-md shadow-indigo-600/20 active border-l-4 border-l-amber-400 scale-[1.01]' 
+                  : 'text-slate-300 hover:bg-slate-800/90 hover:text-white border-l-4 border-l-transparent'
+              }`}
+            >
+              <GraduationCap className={`w-4 h-4 shrink-0 text-amber-400 ${isSidebarExpanded ? 'mr-3' : ''}`} />
+              {isSidebarExpanded ? (
+                <div className="w-full flex items-center justify-between min-w-0">
+                  <span className="truncate text-slate-200 group-hover:text-white font-medium">Quizzes & Avaliações</span>
+                  <div className="flex items-center gap-1.5 ml-auto shrink-0">
+                    <span className="text-[10px] font-mono text-slate-300 bg-slate-800/90 px-1.5 py-0.5 rounded border border-slate-700/80 font-semibold">
+                      Alt+4
+                    </span>
+                    <span className="bg-amber-500/25 text-amber-300 text-[10px] uppercase font-bold px-1.5 py-0.5 rounded border border-amber-400/30">
+                      NOVO
+                    </span>
+                  </div>
                 </div>
-              </div>
-            ) : (
-              <div className="absolute left-full ml-3.5 px-3 py-1.5 bg-slate-900 border border-slate-700/80 text-white text-xs font-semibold rounded-lg shadow-xl shadow-black/60 whitespace-nowrap opacity-0 pointer-events-none group-hover:opacity-100 transition-all duration-200 delay-200 z-50 translate-x-1 group-hover:translate-x-0 flex items-center gap-2">
+              ) : null}
+            </button>
+            {!isSidebarExpanded && (
+              <div 
+                role="tooltip"
+                className="sidebar-tooltip pointer-events-none absolute left-full ml-3.5 top-1/2 -translate-y-1/2 px-3 py-1.5 bg-slate-900 border border-slate-700/90 text-white text-xs font-semibold rounded-xl shadow-2xl shadow-black/80 whitespace-nowrap opacity-0 group-hover:opacity-100 -translate-x-1 group-hover:translate-x-0 transition-all duration-200 z-50 flex items-center gap-2"
+              >
                 <span>Quizzes & Avaliações</span>
-                <span className="text-[10px] font-mono text-slate-400 bg-slate-800 px-1.5 py-0.5 rounded border border-slate-700">Alt+4</span>
-                <span className="bg-amber-500/20 text-amber-300 text-[10px] uppercase font-bold px-1.5 py-0.5 rounded">
+                <span className="text-[10px] font-mono text-slate-200 bg-slate-800 px-1.5 py-0.5 rounded border border-slate-700">Alt+4</span>
+                <span className="bg-amber-500/25 text-amber-300 text-[10px] uppercase font-bold px-1.5 py-0.5 rounded border border-amber-400/30">
                   NOVO
                 </span>
-                <div className="absolute -left-1 top-1/2 -translate-y-1/2 w-2 h-2 bg-slate-900 border-l border-b border-slate-700/80 rotate-45"></div>
+                <div className="absolute -left-1 top-1/2 -translate-y-1/2 w-2 h-2 bg-slate-900 border-l border-b border-slate-700/90 rotate-45"></div>
               </div>
             )}
-          </button>
+          </motion.div>
 
-          {/* Conversas & Mensagens */}
-          <button 
-            id="nav-btn-conversas"
-            onClick={() => handleNavClick('conversas')}
-            title={undefined}
-            data-active={activeTab === 'conversas'}
-            className={`w-full flex items-center ${isSidebarExpanded ? 'px-3.5 py-2.5 justify-start' : 'p-2.5 justify-center relative group'} text-sm font-medium rounded-xl transition-all duration-200 ease-out hover:translate-x-1 hover:shadow-md hover:shadow-black/20 ${
-              activeTab === 'conversas' 
-                ? 'bg-blue-600 text-white shadow-md shadow-blue-600/20 active border-l-4 border-l-blue-400 scale-[1.01]' 
-                : 'text-slate-400 hover:bg-slate-800/90 hover:text-slate-100 border-l-4 border-l-transparent'
-            }`}
+          {/* Notas & Caderno */}
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95, x: -6 }}
+            animate={{ opacity: 1, scale: 1, x: 0 }}
+            transition={{ duration: 0.22, delay: 0.14, ease: [0.16, 1, 0.3, 1] }}
+            className="w-full relative group"
           >
-            <MessageSquare className={`w-4 h-4 shrink-0 ${isSidebarExpanded ? 'mr-3' : ''}`} />
-            {isSidebarExpanded ? (
-              <div className="w-full flex items-center justify-between min-w-0">
-                <span className="truncate">Conversas</span>
-                <div className="flex items-center gap-1.5 ml-auto shrink-0">
-                  <span className="text-[10px] font-mono text-slate-400/90 bg-slate-800/80 px-1.5 py-0.5 rounded border border-slate-700/60">
-                    Alt+6
-                  </span>
-                  <span className="bg-blue-500/20 text-blue-400 text-[10px] uppercase font-bold px-1.5 py-0.5 rounded">
-                    CHAT
-                  </span>
+            <button 
+              id="nav-btn-notes"
+              onClick={() => handleNavClick('notes')}
+              aria-label="Notas e Caderno"
+              data-active={activeTab === 'notes'}
+              className={`w-full flex items-center ${isSidebarExpanded ? 'px-3.5 py-2.5 justify-start' : 'p-2.5 justify-center relative'} text-sm font-medium rounded-xl transition-all duration-200 ease-out hover:translate-x-1 hover:shadow-md hover:shadow-black/20 ${
+                activeTab === 'notes' 
+                  ? 'text-white shadow-md shadow-blue-600/20 active border-l-4 border-l-blue-300 scale-[1.01]' 
+                  : 'text-slate-300 hover:bg-slate-800/90 hover:text-white border-l-4 border-l-transparent'
+              }`}
+            >
+              <StickyNote className={`w-4 h-4 shrink-0 text-slate-300 group-hover:text-blue-300 ${isSidebarExpanded ? 'mr-3' : ''}`} />
+              {isSidebarExpanded ? (
+                <div className="w-full flex items-center justify-between min-w-0">
+                  <span className="truncate text-slate-200 group-hover:text-white font-medium">Notas</span>
+                  <div className="flex items-center gap-1.5 ml-auto shrink-0">
+                    <span className="text-[10px] font-mono text-slate-300 bg-slate-800/90 px-1.5 py-0.5 rounded border border-slate-700/80 font-semibold" title="Atalho: Alt+N ou Alt+6">
+                      Alt+N
+                    </span>
+                    <span className="bg-blue-500/25 text-blue-300 text-[10px] uppercase font-bold px-1.5 py-0.5 rounded border border-blue-400/30">
+                      NOTAS
+                    </span>
+                  </div>
                 </div>
-              </div>
-            ) : (
-              <div className="absolute left-full ml-3.5 px-3 py-1.5 bg-slate-900 border border-slate-700/80 text-white text-xs font-semibold rounded-lg shadow-xl shadow-black/60 whitespace-nowrap opacity-0 pointer-events-none group-hover:opacity-100 transition-all duration-200 delay-200 z-50 translate-x-1 group-hover:translate-x-0 flex items-center gap-2">
-                <span>Conversas</span>
-                <span className="text-[10px] font-mono text-slate-400 bg-slate-800 px-1.5 py-0.5 rounded border border-slate-700">Alt+6</span>
-                <span className="bg-blue-500/20 text-blue-400 text-[10px] uppercase font-bold px-1.5 py-0.5 rounded">
-                  CHAT
+              ) : null}
+            </button>
+            {!isSidebarExpanded && (
+              <div 
+                role="tooltip"
+                className="sidebar-tooltip pointer-events-none absolute left-full ml-3.5 top-1/2 -translate-y-1/2 px-3 py-1.5 bg-slate-900 border border-slate-700/90 text-white text-xs font-semibold rounded-xl shadow-2xl shadow-black/80 whitespace-nowrap opacity-0 group-hover:opacity-100 -translate-x-1 group-hover:translate-x-0 transition-all duration-200 z-50 flex items-center gap-2"
+              >
+                <span>Notas</span>
+                <span className="text-[10px] font-mono text-slate-200 bg-slate-800 px-1.5 py-0.5 rounded border border-slate-700">Alt+N</span>
+                <span className="bg-blue-500/25 text-blue-300 text-[10px] uppercase font-bold px-1.5 py-0.5 rounded border border-blue-400/30">
+                  NOTAS
                 </span>
-                <div className="absolute -left-1 top-1/2 -translate-y-1/2 w-2 h-2 bg-slate-900 border-l border-b border-slate-700/80 rotate-45"></div>
+                <div className="absolute -left-1 top-1/2 -translate-y-1/2 w-2 h-2 bg-slate-900 border-l border-b border-slate-700/90 rotate-45"></div>
               </div>
             )}
-          </button>
+          </motion.div>
         </nav>
 
         {/* Keyboard Shortcut Discovery Badge when expanded */}
         {isSidebarExpanded && (
-          <div className="mx-2.5 mb-2 px-3 py-1.5 bg-slate-800/60 rounded-xl border border-slate-700/60 flex items-center justify-between text-[11px] text-slate-300">
-            <span className="font-medium text-slate-400">Atalhos:</span>
-            <span className="font-mono bg-slate-900/80 px-2 py-0.5 rounded border border-slate-700/80 text-blue-400 font-bold">
+          <div className="mx-2.5 mb-2 px-3 py-1.5 bg-slate-800/80 rounded-xl border border-slate-700/80 flex items-center justify-between text-[11px] text-slate-200 font-medium">
+            <span className="font-semibold text-slate-300">Atalhos:</span>
+            <span className="font-mono bg-slate-900 px-2 py-0.5 rounded border border-slate-700 text-blue-300 font-bold">
               Alt+1..9
             </span>
           </div>
@@ -1671,7 +2126,7 @@ export default function App({ firebaseUser, firebaseUid }: { firebaseUser?: any;
           {isSidebarExpanded ? (
             <button
               onClick={() => setIsLogoutModalOpen(true)}
-              className="w-full flex items-center justify-center gap-2 py-2 px-3 bg-red-500/10 hover:bg-red-500/20 text-red-400 text-xs font-bold rounded-xl border border-red-500/20 transition-all cursor-pointer mb-2"
+              className="w-full flex items-center justify-center gap-2 py-2 px-3 bg-red-500/15 hover:bg-red-500/25 text-red-300 text-xs font-bold rounded-xl border border-red-500/30 transition-all cursor-pointer mb-2"
             >
               <LogOut className="w-3.5 h-3.5" />
               <span>Terminar Sessão</span>
@@ -1679,11 +2134,11 @@ export default function App({ firebaseUser, firebaseUid }: { firebaseUser?: any;
           ) : (
             <button
               onClick={() => setIsLogoutModalOpen(true)}
-              className="w-full flex items-center justify-center p-2.5 bg-red-500/10 hover:bg-red-500/20 text-red-400 rounded-xl border border-red-500/20 transition-all cursor-pointer relative group mb-2"
+              className="w-full flex items-center justify-center p-2.5 bg-red-500/15 hover:bg-red-500/25 text-red-300 rounded-xl border border-red-500/30 transition-all cursor-pointer relative group mb-2"
               title={undefined}
             >
               <LogOut className="w-4 h-4" />
-              <div className="absolute left-full ml-3.5 px-3 py-1.5 bg-slate-900 border border-slate-700/80 text-red-400 text-xs font-semibold rounded-lg shadow-xl shadow-black/60 whitespace-nowrap opacity-0 pointer-events-none group-hover:opacity-100 transition-all duration-200 delay-200 z-50 translate-x-1 group-hover:translate-x-0 flex items-center gap-1.5">
+              <div className="absolute left-full ml-3.5 px-3 py-1.5 bg-slate-900 border border-slate-700/80 text-red-300 text-xs font-semibold rounded-lg shadow-xl shadow-black/60 whitespace-nowrap opacity-0 pointer-events-none group-hover:opacity-100 transition-all duration-200 delay-200 z-50 translate-x-1 group-hover:translate-x-0 flex items-center gap-1.5">
                 <span>Terminar Sessão</span>
                 <div className="absolute -left-1 top-1/2 -translate-y-1/2 w-2 h-2 bg-slate-900 border-l border-b border-slate-700/80 rotate-45"></div>
               </div>
@@ -1695,16 +2150,16 @@ export default function App({ firebaseUser, firebaseUid }: { firebaseUser?: any;
             <button
               id="sidebar-bottom-chevron-btn"
               onClick={toggleSidebarPin}
-              className="w-full flex items-center justify-between p-2 text-slate-400 hover:text-white hover:bg-slate-800/80 rounded-xl transition-all cursor-pointer group"
+              className="w-full flex items-center justify-between p-2 text-slate-300 hover:text-white hover:bg-slate-800/80 rounded-xl transition-all cursor-pointer group"
               title={isSidebarPinned ? "Desafixar barra lateral" : "Fixar barra lateral expandida"}
             >
               {isSidebarExpanded && (
-                <span className="text-[11px] font-semibold text-slate-400 group-hover:text-slate-200 truncate">
+                <span className="text-[11px] font-semibold text-slate-300 group-hover:text-white truncate">
                   {isSidebarPinned ? 'Barra Lateral Fixada' : 'Modo Expansível'}
                 </span>
               )}
               <ChevronRight 
-                className={`w-4 h-4 shrink-0 transition-transform duration-300 text-slate-400 group-hover:text-blue-400 ${
+                className={`w-4 h-4 shrink-0 transition-transform duration-300 text-slate-300 group-hover:text-blue-300 ${
                   isSidebarExpanded ? 'rotate-180' : 'rotate-0'
                 }`} 
               />
@@ -1714,26 +2169,35 @@ export default function App({ firebaseUser, firebaseUid }: { firebaseUser?: any;
       </aside>
 
       {/* MAIN LAYOUT WRAPPER */}
-      <main className="flex-1 flex flex-col overflow-hidden min-w-0" id="main-content-panel">
+      <main 
+        className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden w-full max-w-full" 
+        id="main-content-panel"
+      >
 
         {/* UPPER HEADER - COMPACT & FULLY RESPONSIVE */}
-        <header className="h-16 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 px-3 sm:px-5 lg:px-6 flex items-center justify-between shrink-0 gap-2 sm:gap-4 select-none relative z-30" id="header-panel">
+        <header 
+          className="h-16 sticky top-0 z-[999] bg-white/90 dark:bg-slate-900/90 backdrop-blur-md border-b border-slate-200 dark:border-slate-800 px-3 sm:px-5 lg:px-6 flex items-center justify-between shrink-0 gap-2 sm:gap-4 select-none" 
+          style={{ position: 'sticky', top: 0, zIndex: 999, backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)' }}
+          id="header-panel"
+        >
           
           {/* LEFT GROUP: NAVIGATION & ACTIVE WORKSPACE TITLE */}
           <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1 sm:flex-initial">
             {/* Mobile Hamburger Toggle (Min 44x44px touch area) */}
             <button
+              id="btn-open-mobile-navigation"
+              type="button"
               onClick={() => setIsMobileOpen(true)}
-              className="md:hidden min-w-[44px] min-h-[44px] flex items-center justify-center text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 active:bg-slate-200 dark:active:bg-slate-700 rounded-xl transition-colors cursor-pointer shrink-0 -ml-1"
+              className="mobile-header-action md:hidden min-w-[44px] min-h-[44px] flex items-center justify-center text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 active:bg-slate-200 dark:active:bg-slate-700 rounded-xl transition-colors cursor-pointer shrink-0 -ml-1 focus:outline-none focus:ring-2 focus:ring-blue-500/50"
               aria-label="Abrir Menu de Navegação"
             >
-              <Menu className="w-5 h-5" />
+              <Menu className="w-6 h-6" />
             </button>
 
             {/* Active Workspace / Page Title */}
             <span className="font-black text-slate-900 dark:text-slate-100 text-xs sm:text-sm tracking-tight truncate max-w-[150px] sm:max-w-[200px] lg:max-w-xs sm:text-left text-center">
               {activeTab === 'dashboard' && 'Painel Principal'}
-              {activeTab === 'conversas' && 'Conversas & Mensagens'}
+              {activeTab === 'notes' && 'Notas'}
               {activeTab === 'accounting' && 'Contabilidade & Razão'}
               {activeTab === 'assistant' && 'AI Assistant'}
               {activeTab === 'learning' && 'Estudos & Módulos'}
@@ -1927,90 +2391,194 @@ export default function App({ firebaseUser, firebaseUid }: { firebaseUser?: any;
 
             {/* Visual Theme Selector (Claro / Escuro / Auto) - Hidden on Mobile */}
             <div className="hidden sm:block">
-              <ThemeSelector />
+              <Suspense fallback={<div className="w-20 h-8 rounded-xl bg-slate-100 dark:bg-slate-800 animate-pulse" />}>
+                <ThemeSelector />
+              </Suspense>
             </div>
 
             {/* Language Selector - Visible on Desktop (>1200px) */}
             <div className="hidden xl:block">
-              <LanguageSelector isTopbar={true} />
+              <Suspense fallback={<div className="w-16 h-8 rounded-xl bg-slate-100 dark:bg-slate-800 animate-pulse" />}>
+                <LanguageSelector isTopbar={true} />
+              </Suspense>
             </div>
             
             {/* User Profile Avatar Button (Min 44x44px touch target) */}
-            <div className="relative">
-              <button 
-                onClick={() => {
-                  if (window.innerWidth < 768) {
-                    setIsMobileDrawerOpen(true);
-                  } else {
-                    setIsUserMenuOpen(prev => !prev);
-                  }
-                }}
-                className="min-w-[44px] min-h-[44px] flex items-center justify-center space-x-2 text-left focus:outline-none cursor-pointer p-1 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 active:bg-slate-200 dark:active:bg-slate-700 transition-all border border-transparent hover:border-slate-200 dark:hover:border-slate-700"
-                title="Aceder ao Meu Perfil & Definições"
-                aria-label="Perfil do Utilizador"
-              >
-                <div className="hidden xl:block text-right mr-1">
-                  <div className="text-xs font-bold text-slate-800 dark:text-slate-100 truncate max-w-[100px]">{currentUser?.name || 'Utilizador'}</div>
-                  <div className="text-[9px] text-slate-400 dark:text-slate-300 font-extrabold uppercase tracking-wide">{currentUser?.role || 'Membro'}</div>
-                </div>
-                <div className="w-9 h-9 rounded-full bg-blue-600 dark:bg-blue-500 text-white flex items-center justify-center font-black text-xs border border-blue-200 dark:border-blue-400 shadow-2xs shrink-0 relative">
-                  {(currentUser?.name || 'U').substring(0, 2).toUpperCase()}
-                  {notifications.some(n => !n.read) && (
-                    <span className="sm:hidden absolute -top-0.5 -right-0.5 w-3 h-3 bg-red-500 rounded-full border-2 border-white dark:border-slate-900 animate-pulse shadow-xs"></span>
-                  )}
-                </div>
-              </button>
-
-              {/* Desktop / Tablet User Menu Dropdown */}
-              <AnimatePresence>
-                {isUserMenuOpen && (
-                  <motion.div 
-                    initial={{ opacity: 0, y: 8, scale: 0.95 }}
-                    animate={{ opacity: 1, y: 0, scale: 1 }}
-                    exit={{ opacity: 0, y: 8, scale: 0.95 }}
-                    transition={{ duration: 0.18 }}
-                    className="absolute right-0 mt-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-2xl py-2 w-56 z-50"
+            <div className="relative flex items-center gap-1.5">
+              {/* Mobile Quick New Chat Button for AI Accountant (visible on mobile <768px when on assistant tab) */}
+              {activeTab === 'assistant' && (
+                <div className="md:hidden flex items-center gap-1">
+                  <button
+                    type="button"
+                    onClick={() => window.dispatchEvent(new CustomEvent('ga-open-ai-history'))}
+                    className="w-9 h-9 flex items-center justify-center rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:text-indigo-600 dark:hover:text-indigo-400 active:scale-95 transition-all cursor-pointer border border-slate-200/80 dark:border-slate-700/80"
+                    title="Histórico de Conversas"
+                    aria-label="Histórico de Conversas IA"
                   >
-                    <div className="px-4 py-2.5 border-b border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/50">
-                      <p className="text-xs font-bold text-slate-900 dark:text-slate-100 truncate">{currentUser?.name || 'Utilizador'}</p>
-                      <p className="text-[10px] text-slate-400 dark:text-slate-300 truncate">{currentUser?.email || 'membro@estudos.ao'}</p>
-                    </div>
-                    <button
-                      onClick={() => {
-                        setActiveTab('profile');
-                        setIsUserMenuOpen(false);
-                      }}
-                      className="w-full text-left px-4 py-2.5 text-xs font-bold text-slate-700 dark:text-slate-200 hover:bg-blue-50/60 dark:hover:bg-slate-800 hover:text-blue-700 dark:hover:text-blue-400 transition-colors flex items-center gap-2 cursor-pointer mt-1"
+                    <MessageSquare className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => window.dispatchEvent(new CustomEvent('ga-new-ai-chat'))}
+                    className="w-9 h-9 flex items-center justify-center rounded-xl bg-indigo-600 text-white font-bold hover:bg-indigo-500 active:scale-95 transition-all cursor-pointer shadow-xs border border-indigo-500"
+                    title="Nova Conversa IA"
+                    aria-label="Nova Conversa IA"
+                  >
+                    <Plus className="w-5 h-5" />
+                  </button>
+                </div>
+              )}
+
+              {/* User Profile Avatar & Tools Dropdown Button */}
+              <div className="relative flex items-center">
+                <button 
+                  id="header-user-badge"
+                  onClick={() => {
+                    // Conditional debug log for mobile screen verification
+                    if (typeof window !== 'undefined') {
+                      console.debug('[Header Debug] Screen width:', window.innerWidth, 'isToolsMenuOpen toggling. Active tab:', activeTab, 'Z-Index: 9999');
+                    }
+                    setIsUserMenuOpen(prev => !prev);
+                    setIsToolsMenuOpen(prev => !prev);
+                  }}
+                  className="mobile-header-action min-w-[44px] min-h-[44px] flex items-center justify-center space-x-2 text-left focus:outline-none cursor-pointer p-1 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 active:bg-slate-200 dark:active:bg-slate-700 transition-all border border-transparent hover:border-slate-200 dark:hover:border-slate-700"
+                  title="Aceder ao Meu Perfil & Ferramentas"
+                  aria-label="Perfil do Utilizador e Ferramentas"
+                  aria-expanded={isUserMenuOpen || isToolsMenuOpen}
+                >
+                  <div className="hidden xl:block text-right mr-1">
+                    <div className="text-xs font-bold text-slate-800 dark:text-slate-100 truncate max-w-[100px]">{currentUser?.name || 'Utilizador'}</div>
+                    <div className="text-[9px] text-slate-400 dark:text-slate-300 font-extrabold uppercase tracking-wide">{currentUser?.role || 'Membro'}</div>
+                  </div>
+                  <div className="w-9 h-9 rounded-full bg-blue-600 dark:bg-blue-500 text-white flex items-center justify-center font-black text-xs border border-blue-200 dark:border-blue-400 shadow-2xs shrink-0 relative">
+                    {(currentUser?.name || 'U').substring(0, 2).toUpperCase()}
+                    {notifications.some(n => !n.read) && (
+                      <span className="sm:hidden absolute -top-0.5 -right-0.5 w-3 h-3 bg-red-500 rounded-full border-2 border-white dark:border-slate-900 animate-pulse shadow-xs"></span>
+                    )}
+                  </div>
+                </button>
+
+                {/* Native Responsive DropdownMenu with highest z-index */}
+                <AnimatePresence>
+                  {(isUserMenuOpen || isToolsMenuOpen) && (
+                    <motion.div 
+                      initial={{ opacity: 0, y: 8, scale: 0.95 }}
+                      animate={{ opacity: 1, y: 0, scale: 1 }}
+                      exit={{ opacity: 0, y: 8, scale: 0.95 }}
+                      transition={{ duration: 0.18 }}
+                      style={{ zIndex: 9999 }}
+                      className="absolute right-0 top-full mt-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-2xl py-2 w-64 z-[9999]"
                     >
-                      <User className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
-                      O meu Perfil & Segurança
-                    </button>
-                    {currentUser?.role === 'admin' && (
+                      <div className="px-4 py-2.5 border-b border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/50">
+                        <p className="text-xs font-bold text-slate-900 dark:text-slate-100 truncate">{currentUser?.name || 'Utilizador'}</p>
+                        <p className="text-[10px] text-slate-400 dark:text-slate-300 truncate">{currentUser?.email || 'membro@estudos.ao'}</p>
+                        <div className="mt-1.5 flex items-center gap-1.5">
+                          <span className="text-[9px] font-mono bg-blue-50 dark:bg-blue-900/40 text-blue-600 dark:text-blue-400 px-1.5 py-0.5 rounded border border-blue-200/60 dark:border-blue-800/60 font-semibold">
+                            {currentUser?.role || 'Membro'}
+                          </span>
+                          <span className="text-[9px] font-mono bg-emerald-50 dark:bg-emerald-900/40 text-emerald-600 dark:text-emerald-400 px-1.5 py-0.5 rounded border border-emerald-200/60 dark:border-emerald-800/60 font-semibold flex items-center gap-1">
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                            Online
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Mobile Fast Action Buttons (⚡, ⚙️, ⋯) */}
+                      <div className="px-2 py-1.5 border-b border-slate-100 dark:border-slate-800 flex items-center justify-around gap-1 bg-slate-50/30 dark:bg-slate-800/20">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            window.dispatchEvent(new CustomEvent('ga-open-quick-actions'));
+                            setIsUserMenuOpen(false);
+                            setIsToolsMenuOpen(false);
+                          }}
+                          className="flex-1 flex flex-col items-center justify-center p-1.5 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 text-[10px] font-semibold text-slate-700 dark:text-slate-200 transition-colors"
+                          title="Ações Rápidas"
+                        >
+                          <span className="text-sm">⚡</span>
+                          <span>Ações</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setActiveTab('profile');
+                            setIsUserMenuOpen(false);
+                            setIsToolsMenuOpen(false);
+                          }}
+                          className="flex-1 flex flex-col items-center justify-center p-1.5 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 text-[10px] font-semibold text-slate-700 dark:text-slate-200 transition-colors"
+                          title="Definições"
+                        >
+                          <span className="text-sm">⚙️</span>
+                          <span>Definições</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setIsToolsMenuOpen(false);
+                            setIsUserMenuOpen(false);
+                            setIsMobileDrawerOpen(true);
+                          }}
+                          className="flex-1 flex flex-col items-center justify-center p-1.5 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 text-[10px] font-semibold text-slate-700 dark:text-slate-200 transition-colors"
+                          title="Mais Ferramentas"
+                        >
+                          <span className="text-sm">⋯</span>
+                          <span>Menu</span>
+                        </button>
+                      </div>
+
                       <button
                         onClick={() => {
-                          setActiveTab('admin');
+                          setActiveTab('profile');
                           setIsUserMenuOpen(false);
+                          setIsToolsMenuOpen(false);
                         }}
-                        className="w-full text-left px-4 py-2.5 text-xs font-bold text-blue-600 dark:text-blue-400 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors border-t border-slate-100 dark:border-slate-800 flex items-center gap-2 cursor-pointer"
+                        className="w-full text-left px-4 py-2.5 text-xs font-bold text-slate-700 dark:text-slate-200 hover:bg-blue-50/60 dark:hover:bg-slate-800 hover:text-blue-700 dark:hover:text-blue-400 transition-colors flex items-center gap-2 cursor-pointer mt-1"
                       >
-                        <Shield className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
-                        Painel Admin
+                        <User className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
+                        O meu Perfil & Segurança
                       </button>
-                    )}
-                    <div className="border-t border-slate-100 dark:border-slate-800 my-1"></div>
-                    <button
-                      onClick={() => {
-                        setIsLogoutModalOpen(true);
-                        setIsUserMenuOpen(false);
-                      }}
-                      className="w-full text-left px-4 py-2.5 text-xs font-bold text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/40 transition-colors cursor-pointer flex items-center gap-2"
-                    >
-                      <LogOut className="w-3.5 h-3.5 text-red-600 dark:text-red-400" />
-                      Sair do Sistema
-                    </button>
-                  </motion.div>
-                )}
-              </AnimatePresence>
+
+                      <button
+                        onClick={() => {
+                          setIsSupabaseModalOpen(true);
+                          setIsUserMenuOpen(false);
+                          setIsToolsMenuOpen(false);
+                        }}
+                        className="w-full text-left px-4 py-2.5 text-xs font-bold text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50/60 dark:hover:bg-slate-800 transition-colors flex items-center gap-2 cursor-pointer border-t border-slate-100 dark:border-slate-800"
+                        id="btn-open-supabase-manager"
+                      >
+                        <Database className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                        Supabase Cloud & Dispositivos
+                      </button>
+                      {currentUser?.role === 'admin' && (
+                        <button
+                          onClick={() => {
+                            setActiveTab('admin');
+                            setIsUserMenuOpen(false);
+                            setIsToolsMenuOpen(false);
+                          }}
+                          className="w-full text-left px-4 py-2.5 text-xs font-bold text-blue-600 dark:text-blue-400 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors border-t border-slate-100 dark:border-slate-800 flex items-center gap-2 cursor-pointer"
+                        >
+                          <Shield className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
+                          Painel Admin
+                        </button>
+                      )}
+                      <div className="border-t border-slate-100 dark:border-slate-800 my-1"></div>
+                      <button
+                        onClick={() => {
+                          setIsLogoutModalOpen(true);
+                          setIsUserMenuOpen(false);
+                          setIsToolsMenuOpen(false);
+                        }}
+                        className="w-full text-left px-4 py-2.5 text-xs font-bold text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/40 transition-colors cursor-pointer flex items-center gap-2"
+                      >
+                        <LogOut className="w-3.5 h-3.5 text-red-600 dark:text-red-400" />
+                        Sair do Sistema
+                      </button>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
             </div>
 
           </div>
@@ -2019,7 +2587,7 @@ export default function App({ firebaseUser, firebaseUid }: { firebaseUser?: any;
         {/* MOBILE DRAWER OVERLAY PANEL (<768px) */}
         <AnimatePresence>
           {isMobileDrawerOpen && (
-            <div className="fixed inset-0 z-50 flex justify-end bg-slate-950/60 backdrop-blur-xs md:hidden">
+            <div className="mobile-profile-overlay fixed inset-0 z-[250] flex justify-end bg-slate-950/60 backdrop-blur-xs md:hidden">
               <motion.div
                 initial={{ x: '100%' }}
                 animate={{ x: 0 }}
@@ -2185,7 +2753,10 @@ export default function App({ firebaseUser, firebaseUid }: { firebaseUser?: any;
         </AnimatePresence>
 
         {/* WORKSPACE AREA */}
-        <div className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8 max-w-full overflow-x-hidden" id="workspace-scroll-area">
+        <div 
+          className={`flex min-h-0 min-w-0 flex-1 flex-col overflow-x-hidden ${activeTab === 'assistant' ? 'overflow-hidden p-0 md:p-6 lg:p-8' : 'overflow-y-auto p-4 sm:p-6 lg:p-8'}`} 
+          id="workspace-scroll-area"
+        >
           <Suspense fallback={<PageSkeleton />}>
 
           {/* OFFLINE BLOCKED PAGE REDIRECT */}
@@ -2195,180 +2766,190 @@ export default function App({ firebaseUser, firebaseUid }: { firebaseUser?: any;
               onGoToEstudos={() => setActiveTab('learning')} 
             />
           ) : (
-            <>
-          {/* TAB 1: DASHBOARD OVERVIEW */}
-          {(visitedTabs.has('dashboard') || activeTab === 'dashboard') && (
-            <motion.div 
-              style={{ display: activeTab === 'dashboard' ? 'block' : 'none' }}
-              initial={{ opacity: 0, x: 20 }}
-              animate={{ opacity: activeTab === 'dashboard' ? 1 : 0, x: activeTab === 'dashboard' ? 0 : 20 }}
-              transition={{ duration: 0.28, ease: [0.16, 1, 0.3, 1] }}
-            >
-              <ErrorBoundary fallbackTitle="Erro ao carregar o Dashboard">
-                <StudentDashboardView
-                  onNavigateTab={(tab) => {
-                    if (tab === 'knowledge_center' || tab === 'learning') {
-                      setActiveTab('learning');
-                    } else if (tab === 'ai_accountant' || tab === 'assistant') {
-                      setActiveTab('assistant');
-                    } else {
-                      setActiveTab(tab);
-                    }
-                  }}
-                  onOpenAiAssistant={() => setActiveTab('assistant')}
-                />
-              </ErrorBoundary>
-            </motion.div>
-          )}
+            <AnimatePresence mode="wait">
+              {/* TAB 1: DASHBOARD OVERVIEW */}
+              {activeTab === 'dashboard' && (
+                <motion.div 
+                  key="dashboard"
+                  initial={{ opacity: 0, x: 20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: -20 }}
+                  transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
+                >
+                  <ErrorBoundary fallbackTitle="Erro ao carregar o Dashboard">
+                    <StudentDashboardView
+                      onNavigateTab={(tab) => {
+                        if (tab === 'knowledge_center' || tab === 'learning') {
+                          setActiveTab('learning');
+                        } else if (tab === 'ai_accountant' || tab === 'assistant') {
+                          setActiveTab('assistant');
+                        } else {
+                          setActiveTab(tab);
+                        }
+                      }}
+                      onOpenAiAssistant={() => setActiveTab('assistant')}
+                    />
+                  </ErrorBoundary>
+                </motion.div>
+              )}
 
-          {/* TAB: CONVERSAS & MENSAGENS */}
-          {(visitedTabs.has('conversas') || activeTab === 'conversas') && (
-            <motion.div 
-              style={{ display: activeTab === 'conversas' ? 'block' : 'none' }}
-              className="w-full h-full"
-              id="tab-content-conversas"
-              initial={{ opacity: 0, x: 20 }}
-              animate={{ opacity: activeTab === 'conversas' ? 1 : 0, x: activeTab === 'conversas' ? 0 : 20 }}
-              transition={{ duration: 0.28, ease: [0.16, 1, 0.3, 1] }}
-            >
-              <ErrorBoundary fallbackTitle="Erro ao carregar Conversas">
-                <ConversasPage 
-                  currentUserId={currentUser?.id || ''} 
-                  onNavigateTab={setActiveTab} 
-                />
-              </ErrorBoundary>
-            </motion.div>
-          )}
+              {/* TAB: NOTAS & APONTAMENTOS */}
+              {activeTab === 'notes' && (
+                <motion.div 
+                  key="notes"
+                  className="w-full h-full"
+                  id="tab-content-notes"
+                  initial={{ opacity: 0, x: 20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: -20 }}
+                  transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
+                >
+                  <ErrorBoundary fallbackTitle="Erro ao carregar Notas">
+                    <NotasPage 
+                      currentUserId={currentUser?.id || (currentUser as any)?.uid || (currentUser as any)?.userId || ''} 
+                      onNavigateTab={setActiveTab} 
+                    />
+                  </ErrorBoundary>
+                </motion.div>
+              )}
 
-          {/* TAB: CONTABILIDADE (ERP) */}
-          {(visitedTabs.has('accounting') || activeTab === 'accounting') && (
-            <motion.div 
-              style={{ display: activeTab === 'accounting' ? 'block' : 'none' }} 
-              className="w-full" 
-              id="tab-content-accounting"
-              initial={{ opacity: 0, x: 20 }}
-              animate={{ opacity: activeTab === 'accounting' ? 1 : 0, x: activeTab === 'accounting' ? 0 : 20 }}
-              transition={{ duration: 0.28, ease: [0.16, 1, 0.3, 1] }}
-            >
-              <ErrorBoundary fallbackTitle="Erro ao carregar Contabilidade PGC">
-                <ErpAccountingWorkspace onNavigateTab={setActiveTab} />
-              </ErrorBoundary>
-            </motion.div>
-          )}
+              {/* TAB: CONTABILIDADE (ERP) */}
+              {activeTab === 'accounting' && (
+                <motion.div 
+                  key="accounting"
+                  className="w-full" 
+                  id="tab-content-accounting"
+                  initial={{ opacity: 0, x: 20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: -20 }}
+                  transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
+                >
+                  <ErrorBoundary fallbackTitle="Erro ao carregar Contabilidade PGC">
+                    <ErpAccountingWorkspace onNavigateTab={setActiveTab} />
+                  </ErrorBoundary>
+                </motion.div>
+              )}
 
-          {/* TAB 6: AI CONSULTANT */}
-          {(visitedTabs.has('assistant') || activeTab === 'assistant') && (
-            <motion.div 
-              style={{ display: activeTab === 'assistant' ? 'block' : 'none' }} 
-              className="h-[calc(100vh-160px)]" 
-              id="tab-content-assistant"
-              initial={{ opacity: 0, x: 20 }}
-              animate={{ opacity: activeTab === 'assistant' ? 1 : 0, x: activeTab === 'assistant' ? 0 : 20 }}
-              transition={{ duration: 0.28, ease: [0.16, 1, 0.3, 1] }}
-            >
-              <ErrorBoundary fallbackTitle="Erro ao carregar AI Accountant">
-                <AiAccountantSuite 
-                  currentLanguage={i18n.currentLang} 
-                  onSaveToVault={(type, title, content) => {
-                    if (!activeWorkspace) return;
-                    const txId = `tx-vault-${Date.now()}`;
-                    const docTx: any = {
-                      id: txId,
-                      entityId: entities[0]?.id || 'custom',
-                      entityName: entities[0]?.name || 'Vertex Holdings',
-                      date: new Date().toISOString().split('T')[0],
-                      description: `[AI Vault: ${type}] ${title.substring(0, 30)}`,
-                      account: 'AI Document Vault',
-                      amount: 0,
-                      type: 'Debit',
-                      status: 'Reconciled'
-                    };
-                    DB.setWorkspace(activeWorkspace.id, 'transactions', txId, docTx);
-                    logAuditEvent('AI Vault Salvo', `Guardou relatório "${title}" no workspace`, 'ai');
-                    createNotification('ai', 'Relatório Salvo', `O relatório de tipo "${type}" foi arquivado no ledger com sucesso.`);
-                    setRefreshCount(c => c + 1);
-                  }} 
-                />
-              </ErrorBoundary>
-            </motion.div>
-          )}
+              {/* TAB 6: AI CONSULTANT */}
+              {activeTab === 'assistant' && (
+                <motion.div 
+                  key="assistant"
+                  className="flex min-h-0 min-w-0 w-full max-w-full flex-1 h-full flex-col overflow-hidden ai-accountant-page" 
+                  id="tab-content-assistant"
+                  initial={{ opacity: 0, x: 20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: -20 }}
+                  transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
+                >
+                  <ErrorBoundary fallbackTitle="Erro ao carregar o Contador IA">
+                    <div className="flex min-h-0 min-w-0 h-full w-full flex-1 flex-col overflow-hidden">
+                      <AiAccountantSuite 
+                        currentLanguage={i18n.currentLang} 
+                        onSaveToVault={(type, title, content) => {
+                          if (!activeWorkspace) return;
+                          const txId = `tx-vault-${Date.now()}`;
+                          const docTx: any = {
+                            id: txId,
+                            entityId: entities[0]?.id || 'custom',
+                            entityName: entities[0]?.name || 'Vertex Holdings',
+                            date: new Date().toISOString().split('T')[0],
+                            description: `[AI Vault: ${type}] ${title.substring(0, 30)}`,
+                            account: 'AI Document Vault',
+                            amount: 0,
+                            type: 'Debit',
+                            status: 'Reconciled'
+                          };
+                          DB.setWorkspace(activeWorkspace.id, 'transactions', txId, docTx);
+                          logAuditEvent('AI Vault Salvo', `Guardou relatório "${title}" no workspace`, 'ai');
+                          createNotification('ai', 'Relatório Salvo', `O relatório de tipo "${type}" foi arquivado no ledger com sucesso.`);
+                          setRefreshCount(c => c + 1);
+                        }} 
+                      />
+                    </div>
+                  </ErrorBoundary>
+                </motion.div>
+              )}
 
-          {/* TAB 7: APRENDIZADOS */}
-          {(visitedTabs.has('learning') || activeTab === 'learning') && (
-            <motion.div 
-              style={{ display: activeTab === 'learning' ? 'block' : 'none' }} 
-              className="w-full" 
-              id="tab-content-learning"
-              initial={{ opacity: 0, x: 20 }}
-              animate={{ opacity: activeTab === 'learning' ? 1 : 0, x: activeTab === 'learning' ? 0 : 20 }}
-              transition={{ duration: 0.28, ease: [0.16, 1, 0.3, 1] }}
-            >
-              <ErrorBoundary fallbackTitle="Erro ao carregar Aprendizados">
-                <LearningWorkspace 
-                  currentLanguage={i18n.currentLang} 
-                  onNavigateTab={setActiveTab}
-                />
-              </ErrorBoundary>
-            </motion.div>
-          )}
+              {/* TAB 7: APRENDIZADOS */}
+              {activeTab === 'learning' && (
+                <motion.div 
+                  key="learning"
+                  className="w-full" 
+                  id="tab-content-learning"
+                  initial={{ opacity: 0, x: 20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: -20 }}
+                  transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
+                >
+                  <ErrorBoundary fallbackTitle="Erro ao carregar Aprendizados">
+                    <LearningWorkspace 
+                      currentLanguage={i18n.currentLang} 
+                      onNavigateTab={setActiveTab}
+                    />
+                  </ErrorBoundary>
+                </motion.div>
+              )}
 
-          {/* TAB: QUIZZES & AVALIAÇÕES */}
-          {(visitedTabs.has('quizzes') || activeTab === 'quizzes') && (
-            <motion.div 
-              style={{ display: activeTab === 'quizzes' ? 'block' : 'none' }} 
-              className="w-full" 
-              id="tab-content-quizzes"
-              initial={{ opacity: 0, x: 20 }}
-              animate={{ opacity: activeTab === 'quizzes' ? 1 : 0, x: activeTab === 'quizzes' ? 0 : 20 }}
-              transition={{ duration: 0.28, ease: [0.16, 1, 0.3, 1] }}
-            >
-              <ErrorBoundary fallbackTitle="Erro ao carregar Quizzes">
-                <QuizWorkspace 
-                  onNavigateToLearning={(topic) => setActiveTab('learning')}
-                />
-              </ErrorBoundary>
-            </motion.div>
-          )}
+              {/* TAB: QUIZZES & AVALIAÇÕES */}
+              {activeTab === 'quizzes' && (
+                <motion.div 
+                  key="quizzes"
+                  className="w-full" 
+                  id="tab-content-quizzes"
+                  initial={{ opacity: 0, x: 20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: -20 }}
+                  transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
+                >
+                  <ErrorBoundary fallbackTitle="Erro ao carregar Quizzes">
+                    <QuizWorkspace 
+                      onNavigateToLearning={(topic) => setActiveTab('learning')}
+                    />
+                  </ErrorBoundary>
+                </motion.div>
+              )}
 
-          {/* TAB 9: USER PROFILE */}
-          {(visitedTabs.has('profile') || activeTab === 'profile') && (
-            <motion.div 
-              style={{ display: activeTab === 'profile' ? 'block' : 'none' }} 
-              className="space-y-8" 
-              id="tab-content-profile"
-              initial={{ opacity: 0, x: 20 }}
-              animate={{ opacity: activeTab === 'profile' ? 1 : 0, x: activeTab === 'profile' ? 0 : 20 }}
-              transition={{ duration: 0.28, ease: [0.16, 1, 0.3, 1] }}
-            >
-              <ErrorBoundary fallbackTitle="Erro ao carregar Perfil de Utilizador">
-                <UserProfilePanel 
-                  onUpdateUser={(user) => {
-                    setCurrentUser(user);
-                    refreshWorkspaceState();
-                  }}
-                  onLogout={handleLogout}
-                  onNavigateTab={setActiveTab}
-                />
-              </ErrorBoundary>
-            </motion.div>
-          )}
+              {/* TAB 9: USER PROFILE */}
+              {activeTab === 'profile' && (
+                <motion.div 
+                  key="profile"
+                  className="space-y-8" 
+                  id="tab-content-profile"
+                  initial={{ opacity: 0, x: 20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: -20 }}
+                  transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
+                >
+                  <ErrorBoundary fallbackTitle="Erro ao carregar Perfil de Utilizador">
+                    <UserProfilePanel 
+                      onUpdateUser={(user) => {
+                        setCurrentUser(user);
+                        refreshWorkspaceState();
+                      }}
+                      onLogout={handleLogout}
+                      onNavigateTab={setActiveTab}
+                    />
+                  </ErrorBoundary>
+                </motion.div>
+              )}
 
-          {/* TAB 10: ADMIN DASHBOARD */}
-          {(visitedTabs.has('admin') || activeTab === 'admin') && (
-            <motion.div 
-              style={{ display: activeTab === 'admin' ? 'block' : 'none' }} 
-              className="space-y-8" 
-              id="tab-content-admin"
-              initial={{ opacity: 0, x: 20 }}
-              animate={{ opacity: activeTab === 'admin' ? 1 : 0, x: activeTab === 'admin' ? 0 : 20 }}
-              transition={{ duration: 0.28, ease: [0.16, 1, 0.3, 1] }}
-            >
-              <ErrorBoundary fallbackTitle="Erro ao carregar Painel de Administração">
-                <AdminDashboard />
-              </ErrorBoundary>
-            </motion.div>
-          )}
-          </>
+              {/* TAB 10: ADMIN DASHBOARD */}
+              {activeTab === 'admin' && (
+                <motion.div 
+                  key="admin"
+                  className="space-y-8" 
+                  id="tab-content-admin"
+                  initial={{ opacity: 0, x: 20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: -20 }}
+                  transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
+                >
+                  <ErrorBoundary fallbackTitle="Erro ao carregar Painel de Administração">
+                    <AdminDashboard />
+                  </ErrorBoundary>
+                </motion.div>
+              )}
+            </AnimatePresence>
           )}
           </Suspense>
 
@@ -2382,7 +2963,11 @@ export default function App({ firebaseUser, firebaseUid }: { firebaseUser?: any;
       {/* POPUP MODAL: ADD LEGAL ENTITY */}
       <AnimatePresence>
         {isAddEntityOpen && (
-          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50" id="modal-add-entity">
+          <div 
+            className="app-modal-overlay fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-[10000] pointer-events-auto" 
+            style={{ zIndex: 10000, pointerEvents: 'auto' }}
+            id="modal-add-entity"
+          >
             <motion.div 
               initial={{ opacity: 0, scale: 0.95, y: 15 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
@@ -2562,7 +3147,11 @@ export default function App({ firebaseUser, firebaseUid }: { firebaseUser?: any;
       {/* POPUP MODAL: LOG JOURNAL ENTRY */}
       <AnimatePresence>
         {isAddTxOpen && (
-          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50" id="modal-add-tx">
+          <div 
+            className="app-modal-overlay fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-[10000] pointer-events-auto" 
+            style={{ zIndex: 10000, pointerEvents: 'auto' }}
+            id="modal-add-tx"
+          >
             <motion.div 
               initial={{ opacity: 0, scale: 0.95, y: 15 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
@@ -2798,19 +3387,23 @@ export default function App({ firebaseUser, firebaseUid }: { firebaseUser?: any;
       </AnimatePresence>
 
       {/* GLOBAL SEARCH DIALOG PALETTE OVERLAY */}
-      <GlobalSearchPanel 
-        isOpen={isSearchOpen} 
-        onClose={() => setIsSearchOpen(false)} 
-        onNavigateTab={(tab) => {
-          setActiveTab(tab);
-          setIsSearchOpen(false);
-        }}
-      />
+      {isSearchOpen && (
+        <Suspense fallback={null}>
+          <GlobalSearchPanel 
+            isOpen={isSearchOpen} 
+            onClose={() => setIsSearchOpen(false)} 
+            onNavigateTab={(tab) => {
+              setActiveTab(tab);
+              setIsSearchOpen(false);
+            }}
+          />
+        </Suspense>
+      )}
 
       {/* GLOBAL LOGOUT CONFIRMATION MODAL */}
       <AnimatePresence>
         {isLogoutModalOpen && (
-          <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4 z-50" id="global-logout-modal">
+          <div className="app-modal-overlay fixed inset-0 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4 z-50" id="global-logout-modal">
             <motion.div 
               initial={{ opacity: 0, scale: 0.95, y: 15 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
@@ -2878,12 +3471,74 @@ export default function App({ firebaseUser, firebaseUid }: { firebaseUser?: any;
         )}
       </AnimatePresence>
 
+      {/* SUPABASE CLOUD & CONNECTED DEVICES MANAGER MODAL */}
+      <AnimatePresence>
+        {isSupabaseModalOpen && (
+          <Suspense fallback={null}>
+            <SupabaseSyncManagerModal 
+              userId={currentUser?.id || 'usr_local'} 
+              onClose={() => setIsSupabaseModalOpen(false)} 
+            />
+          </Suspense>
+        )}
+      </AnimatePresence>
+
       {/* FIRESTORE HEALTH & STATUS MODAL */}
       <FirestoreStatusModal
         isOpen={isFirestoreModalOpen}
         onClose={() => setIsFirestoreModalOpen(false)}
       />
 
-    </div>
+      {/* RESTORED CONNECTION & AUTO-SYNC NOTIFICATION TOAST */}
+      <AnimatePresence>
+        {onlineRestoreToast && onlineRestoreToast.show && (
+          <motion.aside
+            key="online-restore-toast"
+            initial={{ opacity: 0, y: -24, scale: 0.95 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -20, scale: 0.95 }}
+            transition={{ type: 'spring', stiffness: 380, damping: 25 }}
+            className="fixed top-4 right-4 sm:right-6 z-[99999] max-w-sm w-[calc(100vw-2rem)] bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border border-emerald-500/30 dark:border-emerald-500/40 rounded-2xl shadow-xl p-3.5 flex items-start gap-3 pointer-events-auto"
+            role="status"
+            aria-live="polite"
+          >
+            <div className={`p-2 rounded-xl shrink-0 ${
+              onlineRestoreToast.isSyncing 
+                ? 'bg-blue-500/15 text-blue-600 dark:text-blue-400' 
+                : 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400'
+            }`}>
+              {onlineRestoreToast.isSyncing ? (
+                <RefreshCw className="w-4 h-4 animate-spin" />
+              ) : (
+                <Wifi className="w-4 h-4" />
+              )}
+            </div>
+            <div className="flex-1 min-w-0 pr-1">
+              <div className="flex items-center gap-1.5">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 inline-block animate-pulse" />
+                <h4 className="text-xs font-bold text-slate-900 dark:text-slate-100 truncate">
+                  {onlineRestoreToast.title}
+                </h4>
+              </div>
+              <p className="text-[11px] text-slate-600 dark:text-slate-300 mt-0.5 leading-relaxed">
+                {onlineRestoreToast.message}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setOnlineRestoreToast(null)}
+              className="p-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded-lg transition-colors cursor-pointer"
+              title="Fechar notificação"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </motion.aside>
+        )}
+      </AnimatePresence>
+
+      {/* FLOATING VISUAL THEME & ACCENT CUSTOMIZER 🎨 */}
+      <ThemeCustomizerFloatingButton userId={currentUser?.id || 'global'} />
+
+    </motion.div>
   );
 }

@@ -74,6 +74,10 @@ export default function AuthScreen({ onSuccess, initialNotificationMessage }: Au
   const strength = calculatePasswordStrength(registerPassword);
 
   const handleGoogleLogin = () => {
+    console.log("[AuthScreen:handleGoogleLogin] Clique no login Google capturado.", {
+      isMobile: typeof navigator !== "undefined" && /Android|iPhone|iPad|Mobile/i.test(navigator.userAgent),
+      timestamp: new Date().toISOString()
+    });
     setError(null);
     setInfo('A autenticar com a Conta Google...');
     
@@ -340,7 +344,7 @@ export default function AuthScreen({ onSuccess, initialNotificationMessage }: Au
 
   return (
     <div 
-      className="min-h-screen bg-[#0F172A] flex flex-col items-center justify-center relative p-6 font-sans overflow-hidden select-none"
+      className="min-h-[100dvh] bg-[#0F172A] flex flex-col items-center justify-center relative p-6 font-sans overflow-hidden select-none"
       id="auth-screen-container"
     >
       {/* Background visual graphics */}

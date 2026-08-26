@@ -1,5 +1,3 @@
-import { GoogleGenAI } from '@google/genai';
-
 export interface QuizQuestion {
   id: number;
   question: string;

@@ -48,11 +48,10 @@ import {
   DeviceSession 
 } from '../lib/firebase';
 import { 
-  getActiveExperienceMode, 
-  setActiveExperienceMode, 
   PROFILE_CONFIGS, 
   UserProfileRole, 
-  UserExperienceMode 
+  saveUserProfileMultiStore, 
+  loadUserProfileMultiStore 
 } from '../lib/userProfiles';
 import { 
   DB, 
@@ -65,6 +64,8 @@ import {
   createNotification
 } from '../lib/db';
 import { useAuditLog } from '../hooks/useAuditLog';
+import { clearRuntimeCache, estimateCacheUsage } from '../services/appCacheService';
+import ThemeCustomizationDrawer from './ThemeCustomizationDrawer';
 
 interface UserProfilePanelProps {
   onUpdateUser: (user: UserSession) => void;
@@ -91,9 +92,9 @@ export default function UserProfilePanel({ onUpdateUser, onLogout, onNavigateTab
   
   // Custom Profile & Photo Crop State
   const [photoUrl, setPhotoUrl] = useState<string>('');
-  const [bio, setBio] = useState('Especialista em auditoria fiscal e lançamentos no PGC Angola.');
-  const [roleTitle, setRoleTitle] = useState('Contador Sénior & Auditor');
-  const [company, setCompany] = useState('Global Audit Angola');
+  const [bio, setBio] = useState('');
+  const [roleTitle, setRoleTitle] = useState('');
+  const [company, setCompany] = useState('');
   
   // Camera & Image Editing
   const [isCameraOpen, setIsCameraOpen] = useState(false);
@@ -331,6 +332,20 @@ export default function UserProfilePanel({ onUpdateUser, onLogout, onNavigateTab
   const [isLogoutModalOpen, setIsLogoutModalOpen] = useState(false);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [deleteConfirmInput, setDeleteConfirmInput] = useState('');
+  const [runtimeCacheStats, setRuntimeCacheStats] = useState<{ count: number; formattedSize: string } | null>(null);
+
+  const loadCacheUsageStats = async () => {
+    try {
+      const stats = await estimateCacheUsage();
+      setRuntimeCacheStats({ count: stats.count, formattedSize: stats.formattedSize });
+    } catch {
+      setRuntimeCacheStats(null);
+    }
+  };
+
+  useEffect(() => {
+    loadCacheUsageStats();
+  }, []);
 
   const countries = [
     'Portugal', 'Brasil', 'Angola', 'Moçambique', 'Cabo Verde', 
@@ -369,22 +384,38 @@ export default function UserProfilePanel({ onUpdateUser, onLogout, onNavigateTab
     'bg-amber-600', 'bg-rose-600', 'bg-indigo-600', 'bg-teal-600'
   ];
 
+  const [autoSaveBadge, setAutoSaveBadge] = useState(false);
+  const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const showSavedBadge = () => {
+    setAutoSaveBadge(true);
+    if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
+    autoSaveTimerRef.current = setTimeout(() => {
+      setAutoSaveBadge(false);
+    }, 2500);
+  };
+
   useEffect(() => {
     const activeUser = getCurrentUser();
     if (activeUser) {
       setUser(activeUser);
-      setName(activeUser.name || 'Dr. Mateus Silva');
-      setEmail(activeUser.email || '');
-      setCountry(activeUser.country || 'Angola');
-      setProfile(activeUser.profile || 'accountant');
-      setPrefLang(activeUser.language || 'en');
+      const uid = activeUser.userId || (activeUser as any).id || (activeUser.email ? activeUser.email.toLowerCase().trim() : '');
+      
+      // Check multi-store persistence (localStorage, sessionStorage, cookie in order)
+      const cached = uid ? loadUserProfileMultiStore(uid) : null;
+      
+      setName(cached?.name || activeUser.name || '');
+      setEmail(cached?.email || activeUser.email || '');
+      setCountry(cached?.country || activeUser.country || 'Angola');
+      setProfile(cached?.profile || activeUser.profile || 'accountant');
+      setPrefLang(cached?.preferredLanguage || cached?.language || activeUser.language || 'en');
 
-      // Load extra profile fields from activeUser session
+      // Load extra profile fields
       const u = activeUser as any;
-      setPhotoUrl(u.photoUrl || '');
-      setBio(u.bio || 'Especialista em auditoria fiscal e lançamentos no PGC Angola com foco em empresas petrolíferas e comerciais.');
-      setRoleTitle(u.roleTitle || 'Contador Sénior & Auditor');
-      setCompany(u.company || 'Global Audit Angola');
+      setPhotoUrl(cached?.fotoUrl || cached?.photoUrl || cached?.avatar || u.photoUrl || '');
+      setBio(cached?.bio || u.bio || '');
+      setRoleTitle(cached?.roleTitle || u.roleTitle || '');
+      setCompany(cached?.company || u.company || '');
 
       // Load preferences
       const prefs = activeUser.preferences;
@@ -435,32 +466,61 @@ export default function UserProfilePanel({ onUpdateUser, onLogout, onNavigateTab
     }, 4000);
   };
 
+  /**
+   * Grava imediatamente em 3 locais: localStorage, sessionStorage e cookie (365 dias)
+   */
+  const persistProfileData = (overrides?: Partial<UserSession>) => {
+    const activeUser = user || getCurrentUser();
+    if (!activeUser) return;
+
+    const uid = activeUser.userId || (activeUser as any).id || (activeUser.email ? activeUser.email.toLowerCase().trim() : 'anonymous');
+    const profilePayload = {
+      name: overrides?.name ?? name,
+      email: overrides?.email ?? email,
+      country: overrides?.country ?? country,
+      profile: overrides?.profile ?? profile,
+      language: overrides?.language ?? prefLang,
+      photoUrl: overrides?.photoUrl ?? photoUrl,
+      bio: overrides?.bio ?? bio,
+      roleTitle: overrides?.roleTitle ?? roleTitle,
+      company: overrides?.company ?? company,
+    };
+
+    // 1. Tripla gravação (localStorage, sessionStorage, cookie)
+    saveUserProfileMultiStore(uid, profilePayload);
+    if (activeUser.email) {
+      saveUserProfileMultiStore(activeUser.email.toLowerCase().trim(), profilePayload);
+    }
+
+    // 2. Sincronizar sessão em memória e storage
+    const updated: UserSession = {
+      ...activeUser,
+      ...profilePayload
+    };
+    onUpdateUser(updated);
+
+    // 3. Notificar todos os componentes da aplicação
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('user_profile_updated', { detail: profilePayload }));
+    }
+
+    // 4. Feedback discreto
+    showSavedBadge();
+  };
+
+  const handleFieldBlur = () => {
+    persistProfileData();
+  };
+
   // Section 1: Save Personal Info
   const handleSaveInfo = (e: React.FormEvent) => {
     e.preventDefault();
     if (!user) return;
 
-    const updated: UserSession = {
-      ...user,
-      name,
-      email,
-      country,
-      profile,
-      language: prefLang,
-      photoUrl,
-      bio,
-      roleTitle,
-      company
-    };
-
-    localStorage.setItem('ga_session', JSON.stringify(updated));
-    localStorage.setItem(`ga:user_record:${email.toLowerCase().trim()}`, JSON.stringify(updated));
-
-    onUpdateUser(updated);
-    
+    persistProfileData();
     logAuditEvent('Alterar Perfil', 'Informações de perfil pessoal e foto atualizadas', 'perfil');
     logFormSubmit(user.userId, 'update_user_profile', { name, email, country, roleTitle, company });
-    triggerAlert('success', 'Perfil e foto atualizados com sucesso!');
+    triggerAlert('success', 'Perfil guardado com sucesso em todos os armazenamentos!');
   };
 
   // Section 2: Save Security (Password)
@@ -650,6 +710,31 @@ export default function UserProfilePanel({ onUpdateUser, onLogout, onNavigateTab
       window.dispatchEvent(new CustomEvent('learnings_updated'));
     } catch (e) {
       triggerAlert('error', 'Falha ao limpar conteúdo offline.');
+    }
+  };
+
+  const handleClearRuntimeCache = async () => {
+    try {
+      const stats = await estimateCacheUsage();
+      const confirmed = window.confirm(
+        `Tem a certeza de que deseja limpar o cache de rede (contaglobal-runtime-v5)?\n\nEspaço aproximado a libertar: ${stats.formattedSize} (${stats.count} recursos).\nOs seus dados locais e notas não serão apagados.`
+      );
+      if (!confirmed) return;
+
+      const result = await clearRuntimeCache();
+      if (result.success) {
+        await loadCacheUsageStats();
+        logAuditEvent('Privacidade', 'Cache de rede (contaglobal-runtime-v5) limpo', 'dados');
+        triggerAlert(
+          'success', 
+          `Cache de rede (contaglobal-runtime-v5) limpo com sucesso! ${result.deletedCount > 0 ? `(${result.deletedCount} recursos libertados)` : ''}`
+        );
+      } else {
+        triggerAlert('error', `Falha ao limpar o cache de runtime: ${result.error || 'Erro desconhecido'}`);
+      }
+    } catch (e) {
+      console.error('[Cache Clean Error]:', e);
+      triggerAlert('error', 'Falha ao limpar o cache de runtime da rede.');
     }
   };
 
@@ -945,6 +1030,7 @@ export default function UserProfilePanel({ onUpdateUser, onLogout, onNavigateTab
                       type="text"
                       value={name}
                       onChange={(e) => setName(e.target.value)}
+                      onBlur={handleFieldBlur}
                       className="w-full bg-slate-50 border border-slate-200 text-slate-800 px-4 py-2.5 text-xs rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                       required
                     />
@@ -956,6 +1042,7 @@ export default function UserProfilePanel({ onUpdateUser, onLogout, onNavigateTab
                       type="email"
                       value={email}
                       onChange={(e) => setEmail(e.target.value)}
+                      onBlur={handleFieldBlur}
                       className="w-full bg-slate-50 border border-slate-200 text-slate-800 px-4 py-2.5 text-xs rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                       required
                     />
@@ -970,6 +1057,7 @@ export default function UserProfilePanel({ onUpdateUser, onLogout, onNavigateTab
                       type="text"
                       value={roleTitle}
                       onChange={(e) => setRoleTitle(e.target.value)}
+                      onBlur={handleFieldBlur}
                       placeholder="Ex: Contador Sénior, Auditor, Consultor Fiscal"
                       className="w-full bg-slate-50 border border-slate-200 text-slate-800 px-4 py-2.5 text-xs rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                     />
@@ -981,6 +1069,7 @@ export default function UserProfilePanel({ onUpdateUser, onLogout, onNavigateTab
                       type="text"
                       value={company}
                       onChange={(e) => setCompany(e.target.value)}
+                      onBlur={handleFieldBlur}
                       placeholder="Ex: Global Audit, Deloitte, Ministério das Finanças"
                       className="w-full bg-slate-50 border border-slate-200 text-slate-800 px-4 py-2.5 text-xs rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                     />
@@ -993,107 +1082,44 @@ export default function UserProfilePanel({ onUpdateUser, onLogout, onNavigateTab
                     rows={3}
                     value={bio}
                     onChange={(e) => setBio(e.target.value)}
+                    onBlur={handleFieldBlur}
                     placeholder="Escreva um breve resumo da sua experiência contabilística..."
                     className="w-full bg-slate-50 border border-slate-200 text-slate-800 p-3 text-xs rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                   />
                 </div>
 
-                {/* User Profile Category & Experience Mode Selection Box */}
-                <div className="p-5 bg-gradient-to-r from-blue-50 to-indigo-50/70 border border-blue-200 rounded-2xl space-y-4 shadow-sm">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <h3 className="text-xs font-black text-slate-900 uppercase tracking-wider flex items-center gap-2">
-                        <GraduationCap className="w-4 h-4 text-blue-600" />
-                        Perfil do Utilizador e Modo de Experiência
-                      </h3>
-                      <p className="text-[11px] text-slate-600">
-                        O sistema adapta automaticamente o painel, a IA e as ferramentas consoante o seu perfil.
-                      </p>
-                    </div>
-                    <span className={`text-[10px] font-extrabold px-2.5 py-1 rounded-full ${
-                      getActiveExperienceMode() === 'student' 
-                        ? 'bg-amber-100 text-amber-800 border border-amber-300' 
-                        : 'bg-emerald-100 text-emerald-800 border border-emerald-300'
-                    }`}>
-                      {getActiveExperienceMode() === 'student' ? '🎓 Modo Estudante' : '💼 Modo Profissional'}
-                    </span>
+                {/* Standard Profile Fields */}
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">
+                      Categoria de Perfil
+                    </label>
+                    <select
+                      value={profile}
+                      onChange={(e) => {
+                        setProfile(e.target.value);
+                        persistProfileData({ profile: e.target.value as any });
+                      }}
+                      onBlur={handleFieldBlur}
+                      className="w-full bg-slate-50 border border-slate-200 text-slate-800 px-3 py-2.5 text-xs rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 cursor-pointer font-medium"
+                    >
+                      <option value="accountant">💼 Contabilista / Auditor Certificado</option>
+                      <option value="student">🎓 Estudante / Académico</option>
+                      <option value="manager">👔 Gestor / Diretor Financeiro (CFO)</option>
+                      <option value="company">🏢 Empresa / Corporativo</option>
+                      <option value="other">🌐 Outro Perfil / Consultor</option>
+                    </select>
                   </div>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">
-                        Categoria de Perfil:
-                      </label>
-                      <select
-                        value={profile}
-                        onChange={(e) => {
-                          const newProf = e.target.value;
-                          setProfile(newProf);
-                          if (newProf === 'student') {
-                            setActiveExperienceMode('student');
-                            triggerAlert('success', 'Estás agora no modo Estudante / Académico. A tua experiência foi ajustada para foco em aprendizagem, quizzes e grupos de estudo.');
-                          } else {
-                            setActiveExperienceMode('professional');
-                            triggerAlert('success', 'Estás agora no modo Profissional. A tua experiência foi ajustada para produtividade, gestão de empresas e auditoria.');
-                          }
-                        }}
-                        className="w-full bg-white border border-slate-300 text-slate-800 p-2.5 text-xs rounded-xl font-medium focus:ring-2 focus:ring-blue-500/20 cursor-pointer"
-                      >
-                        <option value="student">🎓 Estudante / Académico</option>
-                        <option value="accountant">💼 Contabilista / Auditor Certificado</option>
-                        <option value="manager">👔 Gestor / Diretor Financeiro (CFO)</option>
-                        <option value="company">🏢 Empresa / Corporativo</option>
-                        <option value="other">🌐 Outro Perfil / Consultor</option>
-                      </select>
-                    </div>
-
-                    <div>
-                      <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">
-                        Alternar Modo de Experiência:
-                      </label>
-                      <div className="grid grid-cols-2 gap-2">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setActiveExperienceMode('student');
-                            triggerAlert('success', 'Estás agora no modo Estudante / Académico. A tua experiência foi ajustada para foco em aprendizagem, quizzes e grupos de estudo.');
-                          }}
-                          className={`px-3 py-2 text-xs font-bold rounded-xl border transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
-                            getActiveExperienceMode() === 'student'
-                              ? 'bg-amber-500 text-slate-950 border-amber-600 shadow-sm'
-                              : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
-                          }`}
-                        >
-                          <GraduationCap className="w-3.5 h-3.5" />
-                          <span>Estudante</span>
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setActiveExperienceMode('professional');
-                            triggerAlert('success', 'Estás agora no modo Profissional. A tua experiência foi ajustada para produtividade, gestão de empresas, consolidação e auditoria.');
-                          }}
-                          className={`px-3 py-2 text-xs font-bold rounded-xl border transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
-                            getActiveExperienceMode() === 'professional'
-                              ? 'bg-blue-600 text-white border-blue-700 shadow-sm'
-                              : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
-                          }`}
-                        >
-                          <Briefcase className="w-3.5 h-3.5" />
-                          <span>Profissional</span>
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">País de Atuação</label>
                     <select
                       value={country}
-                      onChange={(e) => setCountry(e.target.value)}
+                      onChange={(e) => {
+                        setCountry(e.target.value);
+                        persistProfileData({ country: e.target.value });
+                      }}
+                      onBlur={handleFieldBlur}
                       className="w-full bg-slate-50 border border-slate-200 text-slate-800 px-3 py-2.5 text-xs rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 cursor-pointer"
                     >
                       {countries.map(c => (
@@ -1106,7 +1132,11 @@ export default function UserProfilePanel({ onUpdateUser, onLogout, onNavigateTab
                     <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">Norma Contabilística</label>
                     <select
                       value={accountingStandard}
-                      onChange={(e) => setAccountingStandard(e.target.value)}
+                      onChange={(e) => {
+                        setAccountingStandard(e.target.value);
+                        persistProfileData();
+                      }}
+                      onBlur={handleFieldBlur}
                       className="w-full bg-slate-50 border border-slate-200 text-slate-800 px-3 py-2.5 text-xs rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 cursor-pointer"
                     >
                       {standards.map(s => (
@@ -1116,13 +1146,21 @@ export default function UserProfilePanel({ onUpdateUser, onLogout, onNavigateTab
                   </div>
                 </div>
 
-                <button
-                  type="submit"
-                  className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs py-3.5 px-6 rounded-xl transition-all shadow-md cursor-pointer flex items-center justify-center gap-2"
-                >
-                  <Check className="w-4 h-4" />
-                  <span>Guardar Alterações do Perfil</span>
-                </button>
+                <div className="flex items-center gap-3">
+                  <button
+                    type="submit"
+                    className="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs py-3.5 px-6 rounded-xl transition-all shadow-md cursor-pointer flex items-center justify-center gap-2"
+                  >
+                    <Check className="w-4 h-4" />
+                    <span>Guardar Alterações do Perfil</span>
+                  </button>
+                  {autoSaveBadge && (
+                    <span className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-emerald-50 text-emerald-700 border border-emerald-200 text-xs font-bold animate-fadeIn">
+                      <Check className="w-3.5 h-3.5" />
+                      <span>Dados guardados ✓</span>
+                    </span>
+                  )}
+                </div>
               </form>
 
               {/* Right Col: Live Card Preview */}
@@ -1376,7 +1414,12 @@ export default function UserProfilePanel({ onUpdateUser, onLogout, onNavigateTab
 
             {/* Theme & Background */}
             <div className="space-y-4">
-              <h3 className="text-xs font-extrabold uppercase text-slate-400 tracking-wider">Interface Visual & Estilo</h3>
+              <h3 className="text-xs font-extrabold uppercase text-slate-400 tracking-wider">Personalização Visual & Estilo do App</h3>
+              
+              {/* Embedded Visual Customization Panel */}
+              <div className="rounded-2xl border border-slate-200/80 dark:border-white/10 overflow-hidden shadow-sm">
+                <ThemeCustomizationDrawer isEmbedded={true} isOpen={true} onClose={() => {}} />
+              </div>
 
               {/* Modo Foco Noturno Switch Card */}
               <div 
@@ -1851,14 +1894,34 @@ export default function UserProfilePanel({ onUpdateUser, onLogout, onNavigateTab
 
                 <div className="flex items-center justify-between py-3.5">
                   <div>
-                    <span className="text-xs font-bold text-slate-800 block">Limpar Conteúdo Offline (Aprendizados)</span>
+                    <span className="text-xs font-bold text-slate-800 dark:text-slate-200 block">Limpar Conteúdo Offline (Aprendizados)</span>
                     <span className="text-[10px] text-slate-400 mt-0.5">Remove os módulos e caches locais guardados para estudo sem acesso à internet.</span>
                   </div>
                   <button
                     onClick={handleClearOfflineContent}
-                    className="bg-transparent hover:bg-amber-50 border border-amber-300 text-amber-800 font-bold px-3 py-2 rounded-xl text-[10px]"
+                    className="bg-transparent hover:bg-amber-50 dark:hover:bg-amber-950/40 border border-amber-300 dark:border-amber-700 text-amber-800 dark:text-amber-300 font-bold px-3 py-2 rounded-xl text-[10px] cursor-pointer"
                   >
                     Limpar Cache Offline
+                  </button>
+                </div>
+
+                <div className="flex items-center justify-between py-3.5 border-t border-slate-100 dark:border-slate-800">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-bold text-slate-800 dark:text-slate-200 block">Limpar Cache de Rede (contaglobal-runtime-v5)</span>
+                      {runtimeCacheStats && (
+                        <span className="px-2 py-0.5 text-[9px] font-extrabold bg-blue-100 dark:bg-blue-950/80 text-blue-700 dark:text-blue-300 rounded-md border border-blue-200 dark:border-blue-800">
+                          {runtimeCacheStats.formattedSize} (~{runtimeCacheStats.count} recursos)
+                        </span>
+                      )}
+                    </div>
+                    <span className="text-[10px] text-slate-400 mt-0.5">Liberta armazenamento do dispositivo removendo requisições HTTP em cache dinâmico sem apagar os seus dados ou notas locais.</span>
+                  </div>
+                  <button
+                    onClick={handleClearRuntimeCache}
+                    className="bg-transparent hover:bg-blue-50 dark:hover:bg-blue-950/40 border border-blue-300 dark:border-blue-700 text-blue-700 dark:text-blue-300 font-bold px-3 py-2 rounded-xl text-[10px] cursor-pointer shrink-0 ml-2"
+                  >
+                    Limpar Cache de Rede {runtimeCacheStats ? `(${runtimeCacheStats.formattedSize})` : ''}
                   </button>
                 </div>
               </div>

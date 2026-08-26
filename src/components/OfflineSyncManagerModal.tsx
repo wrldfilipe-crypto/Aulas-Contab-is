@@ -24,9 +24,12 @@ import {
   getOfflineInvoices,
   getOfflineAccountingEntries,
   clearAllOfflineStorage,
+  getSyncHistory,
+  clearSyncHistory,
   PendingAction,
   OfflineInvoice,
-  OfflineAccountingEntry
+  OfflineAccountingEntry,
+  SyncHistoryRecord
 } from '../lib/offlineDb';
 
 interface OfflineSyncManagerModalProps {
@@ -49,10 +52,11 @@ export const OfflineSyncManagerModal: React.FC<OfflineSyncManagerModalProps> = (
     removeDraft
   } = useOfflineSync();
 
-  const [activeTab, setActiveTab] = useState<'queue' | 'invoices' | 'accounting' | 'drafts' | 'sw'>('queue');
+  const [activeTab, setActiveTab] = useState<'queue' | 'history' | 'invoices' | 'accounting' | 'drafts' | 'sw'>('queue');
   const [pendingItems, setPendingItems] = useState<PendingAction[]>([]);
   const [invoices, setInvoices] = useState<OfflineInvoice[]>([]);
   const [entries, setEntries] = useState<OfflineAccountingEntry[]>([]);
+  const [syncHistoryList, setSyncHistoryList] = useState<SyncHistoryRecord[]>([]);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [isLoadingData, setIsLoadingData] = useState(true);
 
@@ -67,6 +71,7 @@ export const OfflineSyncManagerModal: React.FC<OfflineSyncManagerModalProps> = (
       setPendingItems(pending);
       setInvoices(invs);
       setEntries(accs);
+      setSyncHistoryList(getSyncHistory(5));
     } catch (e) {
       console.warn("Error loading offline modal data:", e);
     } finally {
@@ -218,6 +223,16 @@ export const OfflineSyncManagerModal: React.FC<OfflineSyncManagerModalProps> = (
           </button>
 
           <button
+            onClick={() => setActiveTab('history')}
+            className={`py-3 px-3.5 font-bold border-b-2 transition-colors whitespace-nowrap cursor-pointer flex items-center gap-2 ${
+              activeTab === 'history' ? 'border-blue-500 text-blue-400' : 'border-transparent text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            <Clock className="w-3.5 h-3.5" />
+            <span>Histórico de Sincronização ({syncHistoryList.length})</span>
+          </button>
+
+          <button
             onClick={() => setActiveTab('invoices')}
             className={`py-3 px-3.5 font-bold border-b-2 transition-colors whitespace-nowrap cursor-pointer flex items-center gap-2 ${
               activeTab === 'invoices' ? 'border-blue-500 text-blue-400' : 'border-transparent text-slate-400 hover:text-slate-200'
@@ -298,6 +313,91 @@ export const OfflineSyncManagerModal: React.FC<OfflineSyncManagerModalProps> = (
                   <h3 className="font-bold text-sm text-slate-200">Sem operações na fila de espera</h3>
                   <p className="text-xs text-slate-500 max-w-sm mx-auto">
                     Todas as suas operações e lançamentos locais estão totalmente sincronizados.
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* TAB 1.5: SYNC HISTORY */}
+          {activeTab === 'history' && (
+            <div className="space-y-3">
+              <div className="flex items-center justify-between text-xs text-slate-400 pb-2 border-b border-slate-800">
+                <span>Últimas 5 tentativas de sincronização armazenadas localmente</span>
+                {syncHistoryList.length > 0 && (
+                  <button
+                    onClick={() => {
+                      clearSyncHistory();
+                      setSyncHistoryList([]);
+                      setStatusMessage('Histórico de sincronização limpo.');
+                      setTimeout(() => setStatusMessage(null), 3000);
+                    }}
+                    className="text-slate-400 hover:text-slate-200 text-[11px] underline cursor-pointer"
+                  >
+                    Limpar Histórico
+                  </button>
+                )}
+              </div>
+
+              {syncHistoryList.length > 0 ? (
+                <div className="space-y-2.5">
+                  {syncHistoryList.map((log) => (
+                    <div 
+                      key={log.id} 
+                      className={`p-3.5 rounded-xl border flex items-start justify-between gap-3 text-xs transition-colors ${
+                        log.success 
+                          ? 'bg-slate-800/50 border-emerald-500/30' 
+                          : 'bg-rose-950/20 border-rose-500/30'
+                      }`}
+                    >
+                      <div className="flex items-start gap-3 min-w-0">
+                        <div className={`p-2 rounded-lg mt-0.5 shrink-0 ${
+                          log.success ? 'bg-emerald-500/10 text-emerald-400' : 'bg-rose-500/10 text-rose-400'
+                        }`}>
+                          {log.success ? <CheckCircle2 className="w-4 h-4" /> : <AlertCircle className="w-4 h-4" />}
+                        </div>
+                        <div className="space-y-1 min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className={`font-bold ${log.success ? 'text-emerald-300' : 'text-rose-300'}`}>
+                              {log.success ? 'Sincronização Bem-Sucedida' : 'Falha na Sincronização'}
+                            </span>
+                            <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-800 text-slate-300 border border-slate-700">
+                              {log.type === 'manual' ? 'Manual' : 'Automática'}
+                            </span>
+                            {log.syncedCount > 0 && (
+                              <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-blue-950/60 text-blue-300 border border-blue-800">
+                                {log.syncedCount} item(ns)
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-slate-300 text-[11px] leading-relaxed">
+                            {log.message}
+                          </p>
+                          {log.errorDetails && (
+                            <p className="text-rose-400 font-mono text-[10px] bg-rose-950/40 p-1.5 rounded border border-rose-900/60">
+                              Detalhes: {log.errorDetails}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="text-right shrink-0 text-[11px] text-slate-400">
+                        <div className="font-mono text-slate-200">
+                          {new Date(log.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                        </div>
+                        <div className="text-[10px] text-slate-500">
+                          {new Date(log.timestamp).toLocaleDateString()}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="py-12 text-center text-slate-400 space-y-2">
+                  <Clock className="w-10 h-10 text-slate-600 mx-auto" />
+                  <h3 className="font-bold text-sm text-slate-200">Nenhum registo no histórico recente</h3>
+                  <p className="text-xs text-slate-500 max-w-sm mx-auto">
+                    As próximas sincronizações realizadas (automáticas ou manuais) serão registadas aqui para transparência do sistema.
                   </p>
                 </div>
               )}

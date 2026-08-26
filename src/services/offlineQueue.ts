@@ -1,4 +1,4 @@
-import { syncOfflineDataWithServer } from './dashboardCache';
+import { syncOfflineDataWithServer, openIDB } from './dashboardCache';
 
 export interface OfflineQueueItem {
   id: string;
@@ -8,33 +8,8 @@ export interface OfflineQueueItem {
   retries?: number;
 }
 
-const DB_NAME = "GestaoAngolaOfflineDB";
-const DB_VERSION = 1;
 const QUEUE_STORE = "offlineQueue";
 const MODULES_STORE = "learningModules";
-
-function openDB(): Promise<IDBDatabase> {
-  return new Promise((resolve, reject) => {
-    if (typeof window === 'undefined' || !window.indexedDB) {
-      return reject(new Error("IndexedDB não está disponível neste ambiente."));
-    }
-    const request = indexedDB.open(DB_NAME, DB_VERSION);
-    request.onupgradeneeded = () => {
-      const db = request.result;
-      if (!db.objectStoreNames.contains(QUEUE_STORE)) {
-        db.createObjectStore(QUEUE_STORE, { keyPath: "id" });
-      }
-      if (!db.objectStoreNames.contains(MODULES_STORE)) {
-        db.createObjectStore(MODULES_STORE, { keyPath: "id" });
-      }
-    };
-    request.onsuccess = () => resolve(request.result);
-    request.onerror = () => {
-      console.error("[IndexedDB] Erro ao abrir base de dados:", request.error);
-      reject(request.error);
-    };
-  });
-}
 
 // ── OFFLINE ACTIONS QUEUE ─────────────────────────────────────────
 
@@ -48,7 +23,7 @@ export async function enqueueOfflineAction(type: string, payload: any): Promise<
   };
 
   try {
-    const db = await openDB();
+    const db = await openIDB();
     const tx = db.transaction(QUEUE_STORE, "readwrite");
     const store = tx.objectStore(QUEUE_STORE);
     store.put(item);
@@ -64,7 +39,7 @@ export async function enqueueOfflineAction(type: string, payload: any): Promise<
 
 export async function getPendingOfflineActions(): Promise<OfflineQueueItem[]> {
   try {
-    const db = await openDB();
+    const db = await openIDB();
     const tx = db.transaction(QUEUE_STORE, "readonly");
     const store = tx.objectStore(QUEUE_STORE);
     const req = store.getAll();
@@ -83,7 +58,7 @@ export async function getPendingOfflineActions(): Promise<OfflineQueueItem[]> {
 
 export async function clearOfflineQueue(): Promise<void> {
   try {
-    const db = await openDB();
+    const db = await openIDB();
     const tx = db.transaction(QUEUE_STORE, "readwrite");
     const store = tx.objectStore(QUEUE_STORE);
     store.clear();
@@ -117,7 +92,7 @@ export async function processOfflineQueue(): Promise<{ success: boolean; syncedC
 
 export async function saveModuleForOffline(moduleItem: any): Promise<boolean> {
   try {
-    const db = await openDB();
+    const db = await openIDB();
     const tx = db.transaction(MODULES_STORE, "readwrite");
     const store = tx.objectStore(MODULES_STORE);
     store.put({
@@ -139,7 +114,7 @@ export async function saveModuleForOffline(moduleItem: any): Promise<boolean> {
 
 export async function removeModuleOffline(moduleId: string): Promise<boolean> {
   try {
-    const db = await openDB();
+    const db = await openIDB();
     const tx = db.transaction(MODULES_STORE, "readwrite");
     const store = tx.objectStore(MODULES_STORE);
     store.delete(moduleId);
@@ -157,7 +132,7 @@ export async function removeModuleOffline(moduleId: string): Promise<boolean> {
 
 export async function getOfflineModules(): Promise<any[]> {
   try {
-    const db = await openDB();
+    const db = await openIDB();
     const tx = db.transaction(MODULES_STORE, "readonly");
     const store = tx.objectStore(MODULES_STORE);
     const req = store.getAll();
@@ -173,7 +148,7 @@ export async function getOfflineModules(): Promise<any[]> {
 
 export async function isModuleOffline(moduleId: string): Promise<boolean> {
   try {
-    const db = await openDB();
+    const db = await openIDB();
     const tx = db.transaction(MODULES_STORE, "readonly");
     const store = tx.objectStore(MODULES_STORE);
     const req = store.get(moduleId);

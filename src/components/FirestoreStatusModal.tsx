@@ -231,3 +231,5 @@ export const FirestoreStatusModal: React.FC<FirestoreStatusModalProps> = ({
     </AnimatePresence>
   );
 };
+
+export default FirestoreStatusModal;

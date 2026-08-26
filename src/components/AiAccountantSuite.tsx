@@ -3,9 +3,10 @@ import { motion, AnimatePresence } from 'motion/react';
 import { 
   MessageSquare, FileText, Grid, BarChart3, Presentation, ShieldAlert, 
   Send, Sparkles, Download, Edit3, Trash2, ArrowRight, Eye, RefreshCw, 
-  CheckCircle, AlertTriangle, Info, HelpCircle, Upload, ChevronRight, FileSpreadsheet, Share2, Plus, Volume2, ZoomIn, ZoomOut,
+  CheckCircle, AlertTriangle, Info, HelpCircle, Upload, ChevronRight, ChevronLeft, Settings, FileSpreadsheet, Share2, Plus, Volume2, ZoomIn, ZoomOut,
   Globe, Brain, Mic, MicOff, ExternalLink, Zap, Copy, Check, X, RotateCcw, Smartphone,
-  Search, ThumbsUp, ThumbsDown, Paperclip, Loader2, Calculator, BookOpen, MoreVertical, Pencil, Scale, History
+  Search, ThumbsUp, ThumbsDown, Paperclip, Loader2, Calculator, BookOpen, MoreVertical, Pencil, Scale, History,
+  Menu, ChevronDown, MoreHorizontal
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import pptxgen from 'pptxgenjs';
@@ -27,6 +28,18 @@ import { buildMemorySystemPrompt, updateMemoryFromExtraction } from '../lib/memo
 import { getCurrentUser } from '../lib/db';
 import { AdminPGCUpload } from '../lib/pgc/AdminPGCUpload';
 import { MarkdownRenderer } from './MarkdownRenderer';
+import { VirtualizedChatMessagesList } from './VirtualizedChatMessagesList';
+import { generateLocalChatAnswer } from '../services/localChatAiService';
+import { useI18n } from '../hooks/useI18n';
+import { buildLanguagePrompt } from '../lib/languagePolicy';
+import { 
+  getLocalConversations, 
+  saveConversation, 
+  deleteConversation, 
+  syncConversationsWithFirestore, 
+  setupChatSyncListener, 
+  ChatConversation 
+} from '../services/aiChatPersistenceService';
 
 // --- TS INTERFACES ---
 interface ChatMessage {
@@ -149,6 +162,21 @@ interface ApiErrorInfo {
 }
 
 export const AiAccountantSuite: React.FC<AiAccountantSuiteProps> = ({ currentLanguage, onSaveToVault }) => {
+  // Isolamento completo de layout e restauração obrigatória de estilos globais
+  useEffect(() => {
+    // Guardar valores originais antes de qualquer alteração
+    const originalOverflow     = document.body.style.overflow;
+    const originalHeight       = document.body.style.height;
+    const originalHtmlOverflow = document.documentElement.style.overflow;
+
+    // Retornar função de cleanup obrigatória ao desmontar o componente
+    return () => {
+      document.body.style.overflow     = originalOverflow;
+      document.body.style.height       = originalHeight;
+      document.documentElement.style.overflow = originalHtmlOverflow;
+    };
+  }, []);
+
   const [activeSubtab, setActiveSubtab] = useState<'chat' | 'word' | 'excel' | 'visualization' | 'powerpoint'>('chat');
   const [loading, setLoading] = useState(false);
   const [apiError, setApiError] = useState<ApiErrorInfo | null>(null);
@@ -259,6 +287,7 @@ export const AiAccountantSuite: React.FC<AiAccountantSuiteProps> = ({ currentLan
   const [messageFeedbackMap, setMessageFeedbackMap] = useState<Record<string, 'up' | 'down'>>({});
 
   // --- STATE FOR CHAT ---
+  const [showAllMessages, setShowAllMessages] = useState(false);
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([
     {
       id: '1',
@@ -280,125 +309,188 @@ export const AiAccountantSuite: React.FC<AiAccountantSuiteProps> = ({ currentLan
   const [isGlossaryModalOpen, setIsGlossaryModalOpen] = useState(false);
   const [isPgcModalOpen, setIsPgcModalOpen] = useState(false);
 
+  // Sidebar collapse state with localStorage persistence
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem('ga_ai_chat_sidebar_collapsed') === 'true';
+    } catch (e) {
+      return false;
+    }
+  });
+
+  const toggleSidebarCollapsed = () => {
+    setIsSidebarCollapsed(prev => {
+      const next = !prev;
+      try {
+        localStorage.setItem('ga_ai_chat_sidebar_collapsed', String(next));
+      } catch (e) {}
+      return next;
+    });
+  };
+
+  // Popups state for quick actions, settings, history drawer and tools dropdown
+  const [isHistoryDrawerOpen, setIsHistoryDrawerOpen] = useState(false);
+  const [isToolsDropdownOpen, setIsToolsDropdownOpen] = useState(false);
+  const toolsDropdownRef = useRef<HTMLDivElement>(null);
+
+  const [showQuickActionsMenu, setShowQuickActionsMenu] = useState(false);
+  const quickActionsMenuRef = useRef<HTMLDivElement>(null);
+
+  const [showSettingsPopover, setShowSettingsPopover] = useState(false);
+  const settingsPopoverRef = useRef<HTMLDivElement>(null);
+
+  const [showBottomToolsPopover, setShowBottomToolsPopover] = useState(false);
+  const bottomToolsPopoverRef = useRef<HTMLDivElement>(null);
+
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  // Auto-resize textarea between 52px and 180px
+  useEffect(() => {
+    if (textareaRef.current) {
+      textareaRef.current.style.height = 'auto';
+      const scrollH = textareaRef.current.scrollHeight;
+      const targetH = Math.min(Math.max(scrollH, 52), 180);
+      textareaRef.current.style.height = `${targetH}px`;
+    }
+  }, [chatInput]);
+
+  // Click outside to close menus
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent | TouchEvent) => {
+      const target = event.target as Node;
+      if (quickActionsMenuRef.current && !quickActionsMenuRef.current.contains(target)) {
+        setShowQuickActionsMenu(false);
+      }
+      if (settingsPopoverRef.current && !settingsPopoverRef.current.contains(target)) {
+        setShowSettingsPopover(false);
+      }
+      if (toolsDropdownRef.current && !toolsDropdownRef.current.contains(target)) {
+        setIsToolsDropdownOpen(false);
+      }
+      if (bottomToolsPopoverRef.current && !bottomToolsPopoverRef.current.contains(target)) {
+        setShowBottomToolsPopover(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    document.addEventListener('touchstart', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('touchstart', handleClickOutside);
+    };
+  }, []);
+
+  // Detect if user has sent any message in active chat (to hide initial context suggestions)
+  const hasUserSentMessage = useMemo(() => {
+    return chatMessages.some(m => m.sender === 'user');
+  }, [chatMessages]);
+
   // Compute text context from active chat for dynamic glossary extraction
   const currentChatContextText = useMemo(() => {
     return chatMessages.map(m => m.text).join('\n');
   }, [chatMessages]);
 
   const currentUser = getCurrentUser();
-  const userId = currentUser?.userId || 'guest';
+  const userId = currentUser?.userId || (currentUser as any)?.firebaseUid || (currentUser as any)?.uid || 'guest';
   const [chatHistory, setChatHistory] = useState<ChatHistoryItem[]>([]);
   const [activeHistoryId, setActiveHistoryId] = useState<string | null>(null);
 
-  // Load chat history from localStorage on mount
+  // Load chat history from IndexedDB cache and synchronize with Firestore on mount
   useEffect(() => {
-    try {
-      const stored = localStorage.getItem(`ga_ai_accountant_history_${userId}`);
-      if (stored) {
-        const parsed = JSON.parse(stored);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          setChatHistory(parsed);
-          return;
+    let isMounted = true;
+    console.log(`[AI Accountant Debug] Initializing chat persistence for user ${userId}...`);
+
+    async function initChatHistory() {
+      // 1. First fetch immediate local cache from IndexedDB / localStorage
+      try {
+        const local = await getLocalConversations(userId);
+        if (isMounted && local && local.length > 0) {
+          console.log(`[AI Accountant Debug] Loaded ${local.length} conversations from local cache.`);
+          setChatHistory(local as any);
+        }
+      } catch (err) {
+        console.warn('[AI Accountant Debug] Failed loading local conversations:', err);
+      }
+
+      // 2. Sincronização em background com Firestore se online
+      if (navigator.onLine && userId !== 'guest') {
+        try {
+          const synced = await syncConversationsWithFirestore(userId, (remoteUpdated) => {
+            if (isMounted && remoteUpdated) {
+              console.log(`[AI Accountant Debug] Realtime remote sync received ${remoteUpdated.length} conversations.`);
+              setChatHistory(remoteUpdated as any);
+            }
+          });
+          if (isMounted && synced && synced.length > 0) {
+            setChatHistory(synced as any);
+          }
+        } catch (syncErr) {
+          console.warn('[AI Accountant Debug] Background Firestore sync notice:', syncErr);
         }
       }
-    } catch (e) {
-      console.warn('Failed loading chat history:', e);
     }
 
-    const initialSeed: ChatHistoryItem[] = [
-      {
-        id: 'hist-1',
-        title: 'Tratamento de IVA & Retenção na Fonte (PGC Angola)',
-        date: '01/08/2026 10:15',
-        timestamp: 'Hoje, 10:15',
-        standard: 'PGC Angola (Decreto n.º 82/01)',
-        tag: '#IVA',
-        messages: [
-          {
-            id: 'h1-1',
-            sender: 'user',
-            text: 'Como contabilizar a retenção na fonte de 6.5% no PGC Angola para serviços de consultoria?',
-            timestamp: '10:15'
-          },
-          {
-            id: 'h1-2',
-            sender: 'assistant',
-            text: 'No PGC Angola (Decreto n.º 82/01), o registo contabilístico da retenção na fonte de 6,5% de Imposto Industrial efectua-se da seguinte forma:\n\n1. **Debitar**: Conta 62.2 - Serviços Especializados (pelo valor ilíquido da fatura)\n2. **Creditar**: Conta 34.5 - Estado - Imposto Industrial (Retenção 6,5% a entregar às Finanças)\n3. **Creditar**: Conta 32.1 - Fornecedores c/ Correntes (pelo valor líquido a pagar ao prestador)',
-            timestamp: '10:16'
-          }
-        ]
-      },
-      {
-        id: 'hist-2',
-        title: 'Análise de Balanço & Demonstrações Financeiras',
-        date: '31/07/2026 16:30',
-        timestamp: 'Ontem',
-        standard: 'IFRS / IAS (International)',
-        tag: '#Balanço',
-        messages: [
-          {
-            id: 'h2-1',
-            sender: 'user',
-            text: 'Quais os requisitos principais de apresentação do Balanço segundo a IAS 1?',
-            timestamp: '16:30'
-          },
-          {
-            id: 'h2-2',
-            sender: 'assistant',
-            text: 'Sob a IAS 1, o Balanço deve apresentar separadamente Ativos Correntes vs Não Correntes e Passivos Correntes vs Não Correntes. As rubricas mínimas obrigatórias incluem Ativos Fixos Tangíveis, Propriedades de Investimento, Inventários, Clientes e Outros Contas a Receber, Caixa e Equivalentes de Caixa.',
-            timestamp: '16:31'
-          }
-        ]
-      },
-      {
-        id: 'hist-3',
-        title: 'Auditoria Fiscal IRC & Tributação Autónoma',
-        date: '29/07/2026 14:00',
-        timestamp: '29/07/2026',
-        standard: 'PGC-PE (Pequenas Entidades)',
-        tag: '#Fiscal',
-        messages: [
-          {
-            id: 'h3-1',
-            sender: 'user',
-            text: 'Como tratar os custos não documentados em sede de IRC?',
-            timestamp: '14:00'
-          },
-          {
-            id: 'h3-2',
-            sender: 'assistant',
-            text: 'Os custos não documentados não são aceites fiscalmente como encargo dedutível e estão sujeitos a Tributação Autónoma de 50% ou superior, devendo ser acrescidos no Quadro 07 da Declaração Modelo 22.',
-            timestamp: '14:01'
-          }
-        ]
-      }
-    ];
+    initChatHistory();
 
-    setChatHistory(initialSeed);
-    try {
-      localStorage.setItem(`ga_ai_accountant_history_${userId}`, JSON.stringify(initialSeed));
-    } catch (e) {}
+    // 3. Register auto sync listener on online event and Firestore snapshot
+    const cleanupListener = setupChatSyncListener(userId, (updated) => {
+      if (isMounted && updated) {
+        console.log(`[AI Accountant Debug] Auto-sync updated ${updated.length} conversations.`);
+        setChatHistory(updated as any);
+      }
+    });
+
+    return () => {
+      isMounted = false;
+      cleanupListener();
+    };
   }, [userId]);
 
-  const saveChatHistory = (history: ChatHistoryItem[]) => {
+  const saveChatHistory = async (history: ChatHistoryItem[]) => {
     setChatHistory(history);
+    // Persist all conversations through the persistence layer
     try {
-      localStorage.setItem(`ga_ai_accountant_history_${userId}`, JSON.stringify(history));
+      for (const item of history.slice(0, 10)) {
+        await saveConversation(userId, {
+          id: item.id,
+          uid: userId,
+          title: item.title,
+          date: item.date,
+          timestamp: item.timestamp,
+          standard: item.standard,
+          tag: item.tag || '#Contabilidade',
+          messages: item.messages as any,
+          updatedAt: Date.now()
+        });
+      }
+      console.log(`[AI Accountant Debug] Persisted ${history.length} conversations.`);
     } catch (e) {
-      console.error('Error saving chat history:', e);
+      console.error('[AI Accountant Debug] Error persisting chat history:', e);
     }
   };
 
   const handleSelectHistoryItem = (hist: ChatHistoryItem) => {
+    console.log(`[AI Accountant Debug] Switching to conversation: ${hist.id} (${hist.title}) with ${hist.messages?.length || 0} messages`);
     setActiveHistoryId(hist.id);
     if (hist.messages && hist.messages.length > 0) {
       setChatMessages(hist.messages);
+    } else {
+      setChatMessages([
+        {
+          id: Date.now().toString(),
+          sender: 'assistant',
+          text: currentLanguage.startsWith('pt') 
+            ? `Conversa "${hist.title}" carregada. Como posso continuar a ajudar?`
+            : `Conversation "${hist.title}" resumed. How can I continue assisting you?`,
+          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+        }
+      ]);
     }
     setIsMobileHistoryOpen(false);
-    showToast(`Consulta "${hist.title}" retomada com sucesso! Contexto PGC Angola ativo.`);
+    showToast(`Consulta "${hist.title}" retomada com sucesso!`);
   };
 
   const handleClearCurrentChat = () => {
+    console.log('[AI Accountant Debug] Starting new clean chat session...');
     setActiveHistoryId(null);
     setChatMessages([
       {
@@ -414,10 +506,16 @@ export const AiAccountantSuite: React.FC<AiAccountantSuiteProps> = ({ currentLan
     showToast(currentLanguage.startsWith('pt') ? "Nova conversa iniciada!" : "New chat started!");
   };
 
-  const handleDeleteHistoryItem = (id: string, e?: React.MouseEvent) => {
+  const handleDeleteHistoryItem = async (id: string, e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
+    console.log(`[AI Accountant Debug] Deleting conversation ${id}...`);
     const updated = chatHistory.filter(h => h.id !== id);
-    saveChatHistory(updated);
+    setChatHistory(updated);
+    try {
+      await deleteConversation(userId, id);
+    } catch (err) {
+      console.warn('[AI Accountant Debug] Error removing from persistence layer:', err);
+    }
     if (activeHistoryId === id) {
       handleClearCurrentChat();
     }
@@ -460,6 +558,22 @@ export const AiAccountantSuite: React.FC<AiAccountantSuiteProps> = ({ currentLan
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [chatMessages]);
+
+  // Listen for topbar mobile events to start new chat or open history
+  useEffect(() => {
+    const handleNewChatEvent = () => {
+      handleClearCurrentChat();
+    };
+    const handleOpenHistoryEvent = () => {
+      setIsMobileHistoryOpen(true);
+    };
+    window.addEventListener('ga-new-ai-chat', handleNewChatEvent);
+    window.addEventListener('ga-open-ai-history', handleOpenHistoryEvent);
+    return () => {
+      window.removeEventListener('ga-new-ai-chat', handleNewChatEvent);
+      window.removeEventListener('ga-open-ai-history', handleOpenHistoryEvent);
+    };
+  }, []);
 
   const showToast = (message: string) => {
     setFeedback(message);
@@ -548,6 +662,8 @@ export const AiAccountantSuite: React.FC<AiAccountantSuiteProps> = ({ currentLan
 
         if (isTimeout) {
           console.warn(`[API Timeout] Pedido para [${endpoint}] excedeu o limite de ${timeoutMs}ms ou foi cancelado.`);
+        } else if (isNetworkErr) {
+          console.warn(`[API Connection Notice] Aviso de ligação em [${endpoint}]:`, error?.message || error);
         } else {
           console.error(`API Error on [${endpoint}]:`, error);
         }
@@ -560,8 +676,8 @@ export const AiAccountantSuite: React.FC<AiAccountantSuiteProps> = ({ currentLan
             : "Request timed out. Gemini API took longer than expected. Please try again.";
         } else if (isNetworkErr) {
           errorMsg = currentLanguage.startsWith('pt')
-            ? "Falha temporária de ligação ao servidor. Por favor, tente novamente."
-            : "Temporary server connection issue. Please try again.";
+            ? "A operar em modo local devido a instabilidade na ligação de rede."
+            : "Operating in local mode due to network connection instability.";
         } else {
           errorMsg = options?.customErrorMessage || error?.message || (currentLanguage.startsWith('pt')
             ? "Erro ao comunicar com o serviço da IA."
@@ -576,7 +692,9 @@ export const AiAccountantSuite: React.FC<AiAccountantSuiteProps> = ({ currentLan
         };
 
         setApiError(errorObj);
-        showToast(errorMsg);
+        if (!isNetworkErr) {
+          showToast(errorMsg);
+        }
         setLoading(false);
         return null;
       }
@@ -705,6 +823,15 @@ export const AiAccountantSuite: React.FC<AiAccountantSuiteProps> = ({ currentLan
     showToast(currentLanguage.startsWith('pt') ? "🎙️ Ditado de áudio concluído!" : "🎙️ Voice dictation stopped!");
   };
 
+  // --- SANITIZER FOR STANDARD CITATION PREAMBLES ---
+  const cleanStandardPreambles = (text: string): string => {
+    if (!text) return '';
+    let cleaned = text;
+    cleaned = cleaned.replace(/^(?:(?:\*\*|\*|_)?(?:De acordo com|Segundo|Com base no|Nos termos do|À luz do|Conforme o|Tendo em conta o|Em conformidade com o)\s+(?:o\s+)?(?:Plano Geral de Contabilidade de Angola|PGC(?:\s+Angola)?|Decreto(?:\s+(?:Presidencial|Executivo|n\.º))?\s*(?:82\/2001|82\/01)[^,.:\n]*)[,.:]?(?:\*\*|\*|_)?\s*(?:[-–—:]\s*)?)/i, '');
+    cleaned = cleaned.replace(/^(?:(?:\*\*|\*|_)?(?:De acordo com|Segundo|Com base no|Nos termos do|À luz do|Conforme o)\s+.*?(?:Decreto\s+n\.º\s*82\/01|Decreto\s+82\/2001|PGC\s+Angola).*?[:.]\s*(?:\*\*|\*|_)?\n+)/im, '');
+    return cleaned.trim();
+  };
+
   // --- CHAT ACTION HANDLERS ---
   const handleSendChat = async (overridePrompt?: string) => {
     const textToSend = overridePrompt || chatInput;
@@ -724,13 +851,25 @@ export const AiAccountantSuite: React.FC<AiAccountantSuiteProps> = ({ currentLan
       actualPrompt += "\n[IMPORTANT] Formulate your answer containing a highly illustrative visual flowchart or conceptual map representation in SVG format matching our modern Corporate Slate theme. Wrap the SVG block code inside <svg>...</svg> explicitly.";
     }
 
-    const adaptivePrompt = buildAdaptiveSystemPrompt(
-      sessionContext.standard,
-      sessionContext.level,
-      sessionContext.objective,
-      currentLanguage,
-      userMemoryList
-    );
+    console.log('[AI Accountant Debug] Sending prompt to AI:', {
+      promptLength: textToSend.length,
+      standard: sessionContext.standard,
+      language: currentLanguage,
+      activeHistoryId
+    });
+
+    const languageDirective = buildLanguagePrompt(currentLanguage);
+
+    const adaptivePrompt = [
+      languageDirective,
+      buildAdaptiveSystemPrompt(
+        sessionContext.standard,
+        sessionContext.level,
+        sessionContext.objective,
+        currentLanguage,
+        userMemoryList
+      )
+    ].filter(Boolean).join('\n\n');
 
     const memoryPromptStr = buildMemorySystemPrompt();
 
@@ -739,6 +878,161 @@ export const AiAccountantSuite: React.FC<AiAccountantSuiteProps> = ({ currentLan
       content: m.text
     }));
 
+    // Real-time streaming response
+    const assistantId = (Date.now() + 1).toString();
+    try {
+      setLoading(true);
+      const res = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          message: actualPrompt,
+          history: historyPayload,
+          language: currentLanguage,
+          useSearch: isSearchGroundingEnabled,
+          thinkingMode: enableHighThinking,
+          systemInstruction: adaptivePrompt,
+          memoryPrompt: memoryPromptStr,
+          stream: true
+        })
+      });
+
+      if (res.ok && res.body && res.headers.get('content-type')?.includes('text/event-stream')) {
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder('utf-8');
+        let accumulatedText = '';
+        let streamDone = false;
+        let modelUsed = 'gemini-3.7-flash';
+
+        // Add initial empty placeholder
+        setChatMessages(prev => [
+          ...prev,
+          {
+            id: assistantId,
+            sender: 'assistant',
+            text: '',
+            timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+          }
+        ]);
+
+        let streamError: string | null = null;
+        while (!streamDone) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          const chunk = decoder.decode(value, { stream: true });
+          const lines = chunk.split('\n');
+          for (const line of lines) {
+            if (line.startsWith('data: [DONE]')) {
+              streamDone = true;
+              break;
+            } else if (line.startsWith('data: ')) {
+              try {
+                const parsed = JSON.parse(line.slice(6));
+                if (parsed.error) {
+                  streamError = parsed.error;
+                }
+                if (parsed.text) {
+                  accumulatedText += parsed.text;
+                  const liveCleaned = cleanStandardPreambles(accumulatedText);
+                  setChatMessages(prev => prev.map(m => m.id === assistantId ? { ...m, text: liveCleaned } : m));
+                }
+                if (parsed.modelUsed) modelUsed = parsed.modelUsed;
+              } catch (_) {}
+            }
+          }
+        }
+
+        let diagramSvg: string | undefined;
+        const svgMatch = accumulatedText.match(/<svg[\s\S]*?<\/svg>/i);
+        if (svgMatch) {
+          diagramSvg = svgMatch[0];
+        }
+
+        let finalCleaned = cleanStandardPreambles(accumulatedText.replace(/<svg[\s\S]*?<\/svg>/i, '').trim());
+        if (!finalCleaned && streamError) {
+          finalCleaned = currentLanguage.startsWith('pt')
+            ? `⚠️ Os servidores de inteligência artificial estão temporariamente sob alta procura (${streamError.includes('503') || streamError.includes('UNAVAILABLE') ? '503 High Demand' : 'Serviço Ocupado'}). Por favor, clique novamente em Enviar dentro de instantes.`
+            : `⚠️ The AI service is currently experiencing high demand. Please try sending your message again in a moment.`;
+        }
+
+        const suggestedActions: Array<{ label: string; actionType: 'word' | 'excel' | 'visualization' | 'vault'; payload: string }> = [];
+        if (finalCleaned.toLowerCase().includes('balanço') || finalCleaned.toLowerCase().includes('balance') || finalCleaned.toLowerCase().includes('relatório')) {
+          suggestedActions.push({ label: currentLanguage.startsWith('pt') ? "📄 Criar Documento Word" : "📄 Generate Word Doc", actionType: 'word', payload: textToSend });
+        }
+        if (finalCleaned.toLowerCase().includes('planilha') || finalCleaned.toLowerCase().includes('tabela') || finalCleaned.toLowerCase().includes('orçamento') || finalCleaned.toLowerCase().includes('excel')) {
+          suggestedActions.push({ label: currentLanguage.startsWith('pt') ? "📊 Exportar para Excel" : "📊 Export to Excel Spreadsheet", actionType: 'excel', payload: textToSend });
+        }
+        if (finalCleaned && !finalCleaned.startsWith('⚠️')) {
+          suggestedActions.push({ label: currentLanguage.startsWith('pt') ? "🗄️ Guardar no Vault" : "🗄️ Save to Vault", actionType: 'vault', payload: finalCleaned });
+        }
+
+        const finalizedMsg: ChatMessage = {
+          id: assistantId,
+          sender: 'assistant',
+          text: finalCleaned,
+          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          diagramSvg,
+          isVisual: !!diagramSvg,
+          modelUsed,
+          suggestedActions
+        };
+
+        setChatMessages(prev => {
+          const nextMsgs = prev.map(m => m.id === assistantId ? finalizedMsg : m);
+          
+          const nowStr = new Date().toLocaleDateString('pt-PT') + ' ' + new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+          let updatedHistory = [...chatHistory];
+
+          if (activeHistoryId) {
+            updatedHistory = updatedHistory.map(h => {
+              if (h.id === activeHistoryId) {
+                return {
+                  ...h,
+                  date: nowStr,
+                  messages: nextMsgs
+                };
+              }
+              return h;
+            });
+          } else {
+            const newHistId = 'hist-' + Date.now();
+            const newHistItem: ChatHistoryItem = {
+              id: newHistId,
+              title: textToSend.slice(0, 45) + (textToSend.length > 45 ? '...' : ''),
+              date: nowStr,
+              timestamp: 'Hoje',
+              standard: sessionContext.standard,
+              tag: sessionContext.standard.includes('Angola') ? '#PGC' : sessionContext.standard.includes('IFRS') ? '#IFRS' : '#Fiscal',
+              messages: nextMsgs
+            };
+            setActiveHistoryId(newHistId);
+            updatedHistory = [newHistItem, ...updatedHistory];
+          }
+          saveChatHistory(updatedHistory);
+          return nextMsgs;
+        });
+
+        setLoading(false);
+
+        // Perform background organic memory extraction silently
+        callApi('/api/memory/extract', {
+          userMessage: textToSend,
+          aiResponse: finalizedMsg.text
+        }).then((extracted) => {
+          if (extracted) {
+            updateMemoryFromExtraction(extracted);
+          }
+        }).catch(err => console.error("Memory extraction error:", err));
+
+        return;
+      }
+    } catch (streamErr) {
+      console.warn('[Chat] Stream failed, falling back to standard API call:', streamErr);
+    } finally {
+      setLoading(false);
+    }
+
+    // Fallback standard call
     const response = await callApi('/api/chat', {
       message: actualPrompt,
       history: historyPayload,
@@ -771,7 +1065,7 @@ export const AiAccountantSuite: React.FC<AiAccountantSuiteProps> = ({ currentLan
       }
       suggestedActions.push({ label: currentLanguage.startsWith('pt') ? "🗄️ Guardar no Vault" : "🗄️ Save to Vault", actionType: 'vault', payload: response.text });
 
-      let cleanedText = response.text.replace(/<svg[\s\S]*?<\/svg>/i, '').trim();
+      let cleanedText = cleanStandardPreambles(response.text.replace(/<svg[\s\S]*?<\/svg>/i, '').trim());
 
       const assistantMsg: ChatMessage = {
         id: (Date.now() + 1).toString(),
@@ -786,7 +1080,7 @@ export const AiAccountantSuite: React.FC<AiAccountantSuiteProps> = ({ currentLan
       };
 
       setChatMessages(prev => {
-        const nextMsgs = [...prev, assistantMsg];
+        const nextMsgs = [...prev.filter(m => m.id !== assistantId), assistantMsg];
         
         // Save/Update conversation in history
         const nowStr = new Date().toLocaleDateString('pt-PT') + ' ' + new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
@@ -832,23 +1126,53 @@ export const AiAccountantSuite: React.FC<AiAccountantSuiteProps> = ({ currentLan
         }
       }).catch(err => console.error("Memory extraction error:", err));
     } else {
-      // Render fallback inline error bubble in chat
-      const assistantErrorMsg: ChatMessage = {
+      // Offline/local fallback: generate instant intelligent accounting response
+      const localAnswer = generateLocalChatAnswer(textToSend, sessionContext.standard, currentLanguage);
+      
+      const assistantFallbackMsg: ChatMessage = {
         id: (Date.now() + 1).toString(),
         sender: 'assistant',
-        text: currentLanguage.startsWith('pt')
-          ? `⚠️ **Falha na Comunicação com a IA Gemini**\n\nNão foi possível obter a resposta devido a um problema de ligação ou tempo de resposta excedido (Timeout).\n\nClique abaixo para tentar enviar novamente.`
-          : `⚠️ **Gemini AI Connection Failed**\n\nCould not receive a response due to a network error or timeout.\n\nClick below to retry sending.`,
+        text: localAnswer.text,
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        modelUsed: 'local-knowledge-engine',
         suggestedActions: [
           {
-            label: currentLanguage.startsWith('pt') ? "🔄 Tentar Novamente" : "🔄 Retry Request",
+            label: currentLanguage.startsWith('pt') ? "🔄 Tentar Novamente na Cloud" : "🔄 Retry Cloud Request",
             actionType: 'word',
             payload: textToSend
+          },
+          {
+            label: currentLanguage.startsWith('pt') ? "🗄️ Guardar no Vault" : "🗄️ Save to Vault",
+            actionType: 'vault',
+            payload: localAnswer.text
           }
         ]
       };
-      setChatMessages(prev => [...prev, assistantErrorMsg]);
+
+      setChatMessages(prev => {
+        const nextMsgs = [...prev.filter(m => m.id !== assistantId), assistantFallbackMsg];
+        const nowStr = new Date().toLocaleDateString('pt-PT') + ' ' + new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        let updatedHistory = [...chatHistory];
+
+        if (activeHistoryId) {
+          updatedHistory = updatedHistory.map(h => h.id === activeHistoryId ? { ...h, date: nowStr, messages: nextMsgs } : h);
+        } else {
+          const newHistId = 'hist-' + Date.now();
+          const newHistItem: ChatHistoryItem = {
+            id: newHistId,
+            title: textToSend.slice(0, 45) + (textToSend.length > 45 ? '...' : ''),
+            date: nowStr,
+            timestamp: 'Hoje',
+            standard: sessionContext.standard,
+            tag: sessionContext.standard.includes('Angola') ? '#PGC' : sessionContext.standard.includes('IFRS') ? '#IFRS' : '#Fiscal',
+            messages: nextMsgs
+          };
+          setActiveHistoryId(newHistId);
+          updatedHistory = [newHistItem, ...updatedHistory];
+        }
+        saveChatHistory(updatedHistory);
+        return nextMsgs;
+      });
     }
   };
 
@@ -937,6 +1261,16 @@ export const AiAccountantSuite: React.FC<AiAccountantSuiteProps> = ({ currentLan
 
       setChatMessages(prev => [...prev, assistantMsg]);
       showToast(currentLanguage.startsWith('pt') ? "Mensagem atualizada e reprocessada com sucesso!" : "Message updated and reprocessed successfully!");
+    } else {
+      const localAnswer = generateLocalChatAnswer(trimmed, sessionContext.standard, currentLanguage);
+      const assistantFallbackMsg: ChatMessage = {
+        id: (Date.now() + 1).toString(),
+        sender: 'assistant',
+        text: localAnswer.text,
+        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        modelUsed: 'local-knowledge-engine'
+      };
+      setChatMessages(prev => [...prev, assistantFallbackMsg]);
     }
   };
 
@@ -1849,7 +2183,10 @@ export const AiAccountantSuite: React.FC<AiAccountantSuiteProps> = ({ currentLan
   };
 
   return (
-    <div id="ai_accountant_suite_root" className="flex flex-col h-full bg-white text-gray-800 rounded-2xl border border-gray-100 overflow-hidden shadow-sm">
+    <div
+      id="ai_accountant_suite_root"
+      className="ai-accountant-page relative flex min-h-0 min-w-0 flex-1 h-full w-full flex-col overflow-hidden bg-white dark:bg-[#0F1929] text-gray-800 dark:text-gray-100 rounded-2xl border border-gray-100 dark:border-[rgba(255,255,255,0.07)] shadow-sm"
+    >
       
       {/* Toast Alert Feedback */}
       <AnimatePresence>
@@ -1866,109 +2203,231 @@ export const AiAccountantSuite: React.FC<AiAccountantSuiteProps> = ({ currentLan
         )}
       </AnimatePresence>
 
-      {/* SUBTAB HEADER MENU */}
-      <div id="suite_subtab_header" className="flex items-center justify-between border-b border-gray-100 dark:border-[rgba(255,255,255,0.07)] bg-gray-50/50 dark:bg-[#0A1628] px-4 py-2 flex-wrap gap-2">
-        <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar scroll-smooth py-0.5 flex-1 min-w-0">
+      {/* SUBTAB HEADER MENU (Visible on Mobile, Tablet and Desktop) */}
+      <div id="suite_subtab_header" className="flex items-center justify-between border-b border-gray-200/80 dark:border-[rgba(255,255,255,0.07)] bg-gray-50/80 dark:bg-[#0A1628] px-2 sm:px-3 py-1 min-h-[42px] gap-1.5 sm:gap-2 shrink-0 z-30 overflow-visible relative">
+        <div className="flex items-center gap-1 sm:gap-1.5 overflow-visible py-0.5 flex-1 min-w-0">
+          {/* MOBILE GLOBAL NAVIGATION MENU BUTTON (<768px) */}
+          <button
+            type="button"
+            onClick={() => {
+              window.dispatchEvent(new CustomEvent('ga-open-mobile-sidebar'));
+            }}
+            className="md:hidden flex items-center justify-center p-2 rounded-lg text-gray-700 dark:text-[#A8C4E8] hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-[#1F3050] active:scale-95 transition-all shrink-0 cursor-pointer min-w-[36px] min-h-[36px]"
+            title="Abrir Menu da Aplicação"
+            aria-label="Abrir Menu da Aplicação"
+          >
+            <Menu className="w-4 h-4 text-indigo-600 dark:text-cyan-400" />
+          </button>
+
+          {/* CHAT IA BUTTON */}
           <button 
             id="subtab_btn_chat"
             onClick={() => setActiveSubtab('chat')}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold tracking-tight transition-all shrink-0 whitespace-nowrap min-h-[36px] ${
+            className={`flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-bold tracking-tight transition-all shrink-0 whitespace-nowrap min-h-[34px] cursor-pointer ${
               activeSubtab === 'chat' 
-                ? 'bg-slate-900 dark:bg-[#1B3A6B] text-white shadow-xs' 
+                ? 'bg-slate-900 dark:bg-blue-600 text-white shadow-xs' 
                 : 'text-gray-600 dark:text-[#A8C4E8] hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-[#1F3050]'
             }`}
           >
             <MessageSquare className="w-3.5 h-3.5 shrink-0" />
-            <span>{currentLanguage.startsWith('pt') ? "💬 Chat IA" : "💬 AI Chat"}</span>
+            <span>{currentLanguage.startsWith('pt') ? "Chat IA" : "AI Chat"}</span>
           </button>
 
-          <button 
-            id="subtab_btn_word"
-            onClick={() => setActiveSubtab('word')}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold tracking-tight transition-all shrink-0 whitespace-nowrap min-h-[36px] ${
-              activeSubtab === 'word' 
-                ? 'bg-slate-900 dark:bg-[#1B3A6B] text-white shadow-xs' 
-                : 'text-gray-600 dark:text-[#A8C4E8] hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-[#1F3050]'
-            }`}
+          {/* MOBILE & TABLET TOOLS DROPDOWN (Native DropdownMenu component managed by isToolsDropdownOpen state) */}
+          <div 
+            className="relative flex xl:hidden shrink-0" 
+            ref={toolsDropdownRef}
+            id="mobile-tools-menu-container"
           >
-            <FileText className="w-3.5 h-3.5 shrink-0" />
-            <span>📄 Word</span>
-          </button>
+            <button
+              id="subtab_tools_dropdown_btn"
+              type="button"
+              onClick={() => {
+                const nextState = !isToolsDropdownOpen;
+                setIsToolsDropdownOpen(nextState);
+                if (typeof window !== 'undefined') {
+                  console.log('[ToolsMenu Debug]', {
+                    screenWidth: window.innerWidth,
+                    isToolsMenuOpen: nextState,
+                    activeSubtab,
+                    isMobile: window.innerWidth < 1280
+                  });
+                }
+              }}
+              className={`flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-bold transition-all shrink-0 whitespace-nowrap min-h-[34px] cursor-pointer ${
+                activeSubtab !== 'chat' || isToolsDropdownOpen
+                  ? 'bg-indigo-600 dark:bg-blue-600 text-white shadow-xs'
+                  : 'text-gray-600 dark:text-[#A8C4E8] hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-[#1F3050]'
+              }`}
+              title="Mais Ferramentas Contabilísticas"
+              aria-expanded={isToolsDropdownOpen}
+              aria-haspopup="true"
+            >
+              <MoreHorizontal className="w-3.5 h-3.5 shrink-0" />
+              <span>{currentLanguage.startsWith('pt') ? "⋯ Ferramentas" : "⋯ Tools"}</span>
+              <ChevronDown className={`w-3 h-3 transition-transform duration-200 ${isToolsDropdownOpen ? 'rotate-180' : ''}`} />
+            </button>
 
-          <button 
-            id="subtab_btn_excel"
-            onClick={() => setActiveSubtab('excel')}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold tracking-tight transition-all shrink-0 whitespace-nowrap min-h-[36px] ${
-              activeSubtab === 'excel' 
-                ? 'bg-slate-900 dark:bg-[#1B3A6B] text-white shadow-xs' 
-                : 'text-gray-600 dark:text-[#A8C4E8] hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-[#1F3050]'
-            }`}
-          >
-            <Grid className="w-3.5 h-3.5 shrink-0" />
-            <span>📊 Excel</span>
-          </button>
+            {/* DropdownMenu panel rendered conditionally via React state with high z-index */}
+            <div
+              style={{ display: isToolsDropdownOpen ? 'flex' : 'none' }}
+              className="absolute top-full left-0 mt-1.5 w-64 max-w-[88vw] bg-white dark:bg-[#1A2540] border border-gray-200 dark:border-[rgba(255,255,255,0.12)] rounded-xl shadow-2xl py-1.5 z-[9999] flex-col animate-in fade-in-50 zoom-in-95 duration-150"
+              id="mobile-tools-dropdown-menu"
+              role="menu"
+            >
+              <button
+                onClick={() => { setActiveSubtab('word'); setIsToolsDropdownOpen(false); }}
+                className={`w-full text-left px-3.5 py-2.5 text-xs font-semibold flex items-center gap-2.5 hover:bg-gray-100 dark:hover:bg-[#2A4070] cursor-pointer transition-colors ${
+                  activeSubtab === 'word' ? 'text-indigo-600 dark:text-indigo-400 font-bold bg-indigo-50/70 dark:bg-[#1F3050]' : 'text-gray-700 dark:text-[#E8EDF5]'
+                }`}
+                role="menuitem"
+              >
+                <FileText className="w-4 h-4 text-indigo-500 shrink-0" />
+                <span>📄 Relatório Word</span>
+              </button>
+              <button
+                onClick={() => { setActiveSubtab('excel'); setIsToolsDropdownOpen(false); }}
+                className={`w-full text-left px-3.5 py-2.5 text-xs font-semibold flex items-center gap-2.5 hover:bg-gray-100 dark:hover:bg-[#2A4070] cursor-pointer transition-colors ${
+                  activeSubtab === 'excel' ? 'text-emerald-600 dark:text-emerald-400 font-bold bg-emerald-50/70 dark:bg-[#1F3050]' : 'text-gray-700 dark:text-[#E8EDF5]'
+                }`}
+                role="menuitem"
+              >
+                <Grid className="w-4 h-4 text-emerald-500 shrink-0" />
+                <span>📊 Folha Excel</span>
+              </button>
+              <button
+                onClick={() => { setActiveSubtab('visualization'); setIsToolsDropdownOpen(false); }}
+                className={`w-full text-left px-3.5 py-2.5 text-xs font-semibold flex items-center gap-2.5 hover:bg-gray-100 dark:hover:bg-[#2A4070] cursor-pointer transition-colors ${
+                  activeSubtab === 'visualization' ? 'text-amber-600 dark:text-amber-400 font-bold bg-amber-50/70 dark:bg-[#1F3050]' : 'text-gray-700 dark:text-[#E8EDF5]'
+                }`}
+                role="menuitem"
+              >
+                <BarChart3 className="w-4 h-4 text-amber-500 shrink-0" />
+                <span>📈 Visualizações & Rácios</span>
+              </button>
+              <button
+                onClick={() => { setActiveSubtab('powerpoint'); setIsToolsDropdownOpen(false); }}
+                className={`w-full text-left px-3.5 py-2.5 text-xs font-semibold flex items-center gap-2.5 hover:bg-gray-100 dark:hover:bg-[#2A4070] cursor-pointer transition-colors ${
+                  activeSubtab === 'powerpoint' ? 'text-orange-600 dark:text-orange-400 font-bold bg-orange-50/70 dark:bg-[#1F3050]' : 'text-gray-700 dark:text-[#E8EDF5]'
+                }`}
+                role="menuitem"
+              >
+                <Presentation className="w-4 h-4 text-orange-500 shrink-0" />
+                <span>📑 Apresentação Slides</span>
+              </button>
+              <div className="h-px bg-gray-100 dark:bg-[rgba(255,255,255,0.08)] my-1" />
+              <button
+                onClick={() => { setIsGlossaryModalOpen(true); setIsToolsDropdownOpen(false); }}
+                className="w-full text-left px-3.5 py-2.5 text-xs font-semibold text-amber-700 dark:text-amber-300 flex items-center gap-2.5 hover:bg-amber-50 dark:hover:bg-amber-950/30 cursor-pointer transition-colors"
+                role="menuitem"
+              >
+                <BookOpen className="w-4 h-4 text-amber-600 shrink-0" />
+                <span>📖 Glossário Dinâmico PGC</span>
+              </button>
+              <button
+                onClick={() => { setIsPgcModalOpen(true); setIsToolsDropdownOpen(false); }}
+                className="w-full text-left px-3.5 py-2.5 text-xs font-semibold text-blue-700 dark:text-blue-300 flex items-center gap-2.5 hover:bg-blue-50 dark:hover:bg-blue-950/30 cursor-pointer transition-colors"
+                role="menuitem"
+              >
+                <Scale className="w-4 h-4 text-blue-500 shrink-0" />
+                <span>⚖️ Demonstrações (82/01)</span>
+              </button>
+            </div>
+          </div>
 
-          <button 
-            id="subtab_btn_vis"
-            onClick={() => setActiveSubtab('visualization')}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold tracking-tight transition-all shrink-0 whitespace-nowrap min-h-[36px] ${
-              activeSubtab === 'visualization' 
-                ? 'bg-slate-900 dark:bg-[#1B3A6B] text-white shadow-xs' 
-                : 'text-gray-600 dark:text-[#A8C4E8] hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-[#1F3050]'
-            }`}
-          >
-            <BarChart3 className="w-3.5 h-3.5 shrink-0" />
-            <span>{currentLanguage.startsWith('pt') ? "📈 Visualizações" : "📈 Visualizations"}</span>
-          </button>
+          {/* DESKTOP INDIVIDUAL SUBTAB BUTTONS (>= 1280px / xl and above) */}
+          <div className="hidden xl:flex items-center gap-1.5 shrink-0">
+            <button 
+              id="subtab_btn_word"
+              onClick={() => setActiveSubtab('word')}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold tracking-tight transition-all shrink-0 whitespace-nowrap min-h-[32px] cursor-pointer ${
+                activeSubtab === 'word' 
+                  ? 'bg-indigo-600 hover:bg-indigo-700 text-white font-bold shadow-xs' 
+                  : 'text-gray-600 dark:text-[#A8C4E8] hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-[#1F3050]'
+              }`}
+            >
+              <FileText className="w-3.5 h-3.5 shrink-0" />
+              <span>📄 Word</span>
+            </button>
 
-          <button 
-            id="subtab_btn_ppt"
-            onClick={() => setActiveSubtab('powerpoint')}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold tracking-tight transition-all shrink-0 whitespace-nowrap min-h-[36px] ${
-              activeSubtab === 'powerpoint' 
-                ? 'bg-slate-900 dark:bg-[#1B3A6B] text-white shadow-xs' 
-                : 'text-gray-600 dark:text-[#A8C4E8] hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-[#1F3050]'
-            }`}
-          >
-            <Presentation className="w-3.5 h-3.5 shrink-0" />
-            <span>📑 Slides</span>
-          </button>
+            <button 
+              id="subtab_btn_excel"
+              onClick={() => setActiveSubtab('excel')}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold tracking-tight transition-all shrink-0 whitespace-nowrap min-h-[32px] cursor-pointer ${
+                activeSubtab === 'excel' 
+                  ? 'bg-emerald-600 hover:bg-emerald-700 text-white font-bold shadow-xs' 
+                  : 'text-gray-600 dark:text-[#A8C4E8] hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-[#1F3050]'
+              }`}
+            >
+              <Grid className="w-3.5 h-3.5 shrink-0" />
+              <span>📊 Excel</span>
+            </button>
 
-          {/* Dynamic PGC Angola Glossary Button */}
-          <button 
-            id="subtab_btn_glossary"
-            onClick={() => setIsGlossaryModalOpen(true)}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-extrabold bg-gradient-to-r from-amber-500 via-amber-400 to-amber-500 hover:from-amber-600 hover:to-amber-500 text-slate-950 shadow-2xs hover:shadow-sm transition-all cursor-pointer border border-amber-300 shrink-0 whitespace-nowrap min-h-[36px]"
-            title="Abrir Glossário Dinâmico PGC Angola"
-          >
-            <BookOpen className="w-3.5 h-3.5 text-slate-950 shrink-0" />
-            <span>{currentLanguage.startsWith('pt') ? "📖 Glossário" : "📖 Glossary"}</span>
-          </button>
+            <button 
+              id="subtab_btn_vis"
+              onClick={() => setActiveSubtab('visualization')}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold tracking-tight transition-all shrink-0 whitespace-nowrap min-h-[32px] cursor-pointer ${
+                activeSubtab === 'visualization' 
+                  ? 'bg-amber-600 hover:bg-amber-700 text-white font-bold shadow-xs' 
+                  : 'text-gray-600 dark:text-[#A8C4E8] hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-[#1F3050]'
+              }`}
+            >
+              <BarChart3 className="w-3.5 h-3.5 shrink-0" />
+              <span>{currentLanguage.startsWith('pt') ? "📈 Visualizações & Rácios" : "📈 Visualizations"}</span>
+            </button>
 
-          {/* Official PGC Angola Demonstrations Button */}
-          <button 
-            id="subtab_btn_pgc_demonstracoes"
-            onClick={() => setIsPgcModalOpen(true)}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-extrabold bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-700 hover:from-blue-500 hover:to-indigo-500 text-white shadow-2xs hover:shadow-sm transition-all cursor-pointer border border-blue-400/40 shrink-0 whitespace-nowrap min-h-[36px]"
-            title="Gerar Mapas Oficiais das Demonstrações Financeiras PGC Angola (Decreto n.º 82/2001)"
-          >
-            <Scale className="w-3.5 h-3.5 text-blue-200 shrink-0" />
-            <span>{currentLanguage.startsWith('pt') ? "⚖️ Demonstrações (82/01)" : "⚖️ PGC Statements"}</span>
-          </button>
+            <button 
+              id="subtab_btn_ppt"
+              onClick={() => setActiveSubtab('powerpoint')}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold tracking-tight transition-all shrink-0 whitespace-nowrap min-h-[32px] cursor-pointer ${
+                activeSubtab === 'powerpoint' 
+                  ? 'bg-orange-600 hover:bg-orange-700 text-white font-bold shadow-xs' 
+                  : 'text-gray-600 dark:text-[#A8C4E8] hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-[#1F3050]'
+              }`}
+            >
+              <Presentation className="w-3.5 h-3.5 shrink-0" />
+              <span>📑 Slides</span>
+            </button>
+
+            {/* Dynamic PGC Angola Glossary Button */}
+            <button 
+              id="subtab_btn_glossary"
+              onClick={() => setIsGlossaryModalOpen(true)}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-gradient-to-r from-amber-500 via-amber-400 to-amber-500 hover:from-amber-600 hover:to-amber-500 text-slate-950 shadow-2xs hover:shadow-sm transition-all cursor-pointer border border-amber-300 shrink-0 whitespace-nowrap min-h-[32px]"
+              title="Abrir Glossário Dinâmico PGC Angola"
+            >
+              <BookOpen className="w-3.5 h-3.5 text-slate-950 shrink-0" />
+              <span>{currentLanguage.startsWith('pt') ? "📖 Glossário" : "📖 Glossary"}</span>
+            </button>
+
+            {/* Official PGC Angola Demonstrations Button */}
+            <button 
+              id="subtab_btn_pgc_demonstracoes"
+              onClick={() => setIsPgcModalOpen(true)}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-700 hover:from-blue-500 hover:to-indigo-500 text-white shadow-2xs hover:shadow-sm transition-all cursor-pointer border border-blue-400/40 shrink-0 whitespace-nowrap min-h-[32px]"
+              title="Gerar Mapas Oficiais das Demonstrações Financeiras PGC Angola (Decreto n.º 82/2001)"
+            >
+              <Scale className="w-3.5 h-3.5 text-blue-200 shrink-0" />
+              <span>{currentLanguage.startsWith('pt') ? "⚖️ Demonstrações (82/01)" : "⚖️ PGC Statements"}</span>
+            </button>
+          </div>
         </div>
 
         {/* Active Accounting Standard & Global Loading Spinner */}
-        <div className="flex items-center gap-2 shrink-0">
+        <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
           <div 
-            className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold border bg-amber-50 text-amber-900 border-amber-200/80 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-800/60 shadow-xs select-none"
+            className="inline-flex items-center gap-1 sm:gap-1.5 px-1.5 sm:px-2 py-0.5 rounded-lg text-xs font-semibold border bg-amber-50 text-amber-900 border-amber-200/80 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-800/60 shadow-xs select-none"
             title="Norma Contabilística Ativa: PGC Angola (Decreto n.º 82/2001)"
           >
             <span className="text-xs">🇦🇴</span>
-            <span className="text-[11px] font-bold">PGC Angola (82/01)</span>
+            <span className="text-[10px] sm:text-[11px] font-bold whitespace-nowrap">
+              <span className="hidden sm:inline">PGC Angola (82/01)</span>
+              <span className="sm:hidden">PGC 82/01</span>
+            </span>
           </div>
 
           {loading && (
-            <div className="flex items-center gap-1 text-slate-500 dark:text-slate-300 text-[10px] uppercase font-mono tracking-wider bg-gray-100 dark:bg-[#1A2540] px-2 py-1 rounded-full shrink-0">
+            <div className="flex items-center gap-1 text-slate-500 dark:text-slate-300 text-[10px] uppercase font-mono tracking-wider bg-gray-100 dark:bg-[#1A2540] px-1.5 sm:px-2 py-0.5 rounded-full shrink-0">
               <RefreshCw className="w-3 h-3 animate-spin text-indigo-600 dark:text-indigo-400" />
               <span className="hidden sm:inline">{currentLanguage.startsWith('pt') ? "IA..." : "AI..."}</span>
             </div>
@@ -2035,7 +2494,7 @@ export const AiAccountantSuite: React.FC<AiAccountantSuiteProps> = ({ currentLan
       </AnimatePresence>
 
       {/* MAIN LAYOUT WRAPPER */}
-      <div className="flex-1 overflow-hidden relative">
+      <div className="flex min-h-0 min-w-0 flex-1 overflow-hidden relative w-full">
         <AnimatePresence mode="wait">
           
           {/* 1. CHAT TAB PANEL */}
@@ -2045,374 +2504,176 @@ export const AiAccountantSuite: React.FC<AiAccountantSuiteProps> = ({ currentLan
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              className="absolute inset-0 flex"
+              className="absolute inset-0 flex min-h-0 min-w-0 flex-col h-full overflow-hidden w-full"
             >
-              {/* History Sidebar */}
-              <div id="chat_history_sidebar" className="w-72 border-r border-gray-100 dark:border-[rgba(255,255,255,0.07)] flex flex-col bg-gray-50/50 dark:bg-[#0A1628] hidden md:flex">
-                <div className="p-3 border-b border-gray-100 dark:border-[rgba(255,255,255,0.07)] space-y-2">
-                  <div className="flex items-center justify-between">
-                    <span className="text-[11px] font-bold uppercase tracking-wider text-gray-500 dark:text-[#A8C4E8] font-sans flex items-center gap-1.5">
-                      <MessageSquare className="w-3.5 h-3.5 text-indigo-500 dark:text-indigo-400" />
-                      {currentLanguage.startsWith('pt') ? "Conversas de IA" : "AI Conversations"}
-                    </span>
-                    <div className="flex items-center gap-1">
-                      <button 
-                        onClick={handleClearCurrentChat}
-                        className="p-1 text-gray-400 dark:text-[#A8C4E8] hover:text-slate-900 dark:hover:text-white rounded-md hover:bg-gray-200 dark:hover:bg-[#1F3050] transition-all cursor-pointer"
-                        title={currentLanguage.startsWith('pt') ? "Nova conversa" : "New chat"}
-                      >
-                        <Plus className="w-4 h-4" />
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Search Bar */}
-                  <div className="relative">
-                    <Search className="w-3.5 h-3.5 text-gray-400 dark:text-[#6A82A8] absolute left-2.5 top-2.5" />
-                    <input 
-                      type="text"
-                      placeholder={currentLanguage.startsWith('pt') ? "Pesquisar histórico..." : "Search conversations..."}
-                      value={historySearchQuery}
-                      onChange={(e) => setHistorySearchQuery(e.target.value)}
-                      className="w-full pl-8 pr-3 py-1.5 bg-white dark:bg-[#1A2540] border border-gray-200 dark:border-[rgba(255,255,255,0.1)] rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-gray-800 dark:text-[#E8EDF5] placeholder-gray-400 dark:placeholder-[#6A82A8]"
+              {/* UNIFIED SLIDE-OVER CONVERSATIONS DRAWER (Desktop, Tablet, Mobile) */}
+              <AnimatePresence>
+                {(isHistoryDrawerOpen || isMobileHistoryOpen) && (
+                  <div className="ai-history-overlay fixed inset-0 z-50 md:hidden flex">
+                    {/* Backdrop */}
+                    <motion.div
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      exit={{ opacity: 0 }}
+                      onClick={() => {
+                        setIsHistoryDrawerOpen(false);
+                        setIsMobileHistoryOpen(false);
+                      }}
+                      className="fixed inset-0 bg-black/50 backdrop-blur-xs"
                     />
-                  </div>
-
-                  {/* Tag Filters */}
-                  <div className="flex items-center gap-1 overflow-x-auto no-scrollbar py-0.5">
-                    {['Todas', '#IVA', '#Balanço', '#Fiscal'].map(tag => (
-                      <button
-                        key={tag}
-                        onClick={() => setSelectedTag(tag === 'Todas' ? null : tag)}
-                        className={`text-[10px] px-2 py-0.5 rounded-full font-medium transition-all shrink-0 cursor-pointer ${
-                          (tag === 'Todas' && !selectedTag) || selectedTag === tag
-                            ? 'bg-slate-900 dark:bg-[#1B3A6B] text-white shadow-2xs'
-                            : 'bg-gray-100 dark:bg-[#1F3050] text-gray-600 dark:text-[#A8C4E8] hover:bg-gray-200 dark:hover:bg-[#2A4070]'
-                        }`}
-                      >
-                        {tag}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                {/* History Items List */}
-                <div className="flex-1 overflow-y-auto p-2 space-y-1.5">
-                  {chatHistory
-                    .filter(hist => {
-                      const matchesSearch = !historySearchQuery || hist.title.toLowerCase().includes(historySearchQuery.toLowerCase());
-                      const matchesTag = !selectedTag || hist.tag === selectedTag;
-                      return matchesSearch && matchesTag;
-                    })
-                    .map(hist => {
-                      const isActive = activeHistoryId === hist.id;
-                      const isEditing = editingChatId === hist.id;
-
-                      return (
-                        <div 
-                          key={hist.id} 
-                          onClick={() => !isEditing && handleSelectHistoryItem(hist)}
-                          className={`group/hist p-2.5 rounded-xl border transition-all cursor-pointer text-left space-y-1 relative ${
-                            isActive 
-                              ? 'bg-indigo-50/90 dark:bg-[#1B3A6B] border-indigo-300 dark:border-indigo-400/50 shadow-2xs ring-1 ring-indigo-400/20 text-indigo-950 dark:text-white' 
-                              : 'bg-white dark:bg-[#1A2540]/60 hover:bg-gray-50 dark:hover:bg-[#1A2540] border-gray-200/70 dark:border-[rgba(255,255,255,0.07)] hover:border-indigo-200 hover:shadow-2xs text-gray-800 dark:text-[#C8D4E8]'
-                          }`}
-                        >
-                          <div className="flex items-start justify-between gap-1.5">
-                            <div className="flex items-start gap-2 flex-1 min-w-0 pr-1">
-                              <MessageSquare className={`w-3.5 h-3.5 shrink-0 mt-0.5 ${isActive ? 'text-indigo-600 dark:text-indigo-300 font-bold' : 'text-indigo-500/80 dark:text-[#A8C4E8]'}`} />
-                              <div className="flex-1 min-w-0">
-                                {isEditing ? (
-                                  <div className="flex items-center gap-1 my-0.5" onClick={(e) => e.stopPropagation()}>
-                                    <input
-                                      type="text"
-                                      value={editingChatTitle}
-                                      onChange={(e) => setEditingChatTitle(e.target.value)}
-                                      onKeyDown={(e) => {
-                                        if (e.key === 'Enter') handleSaveRenameChat(hist.id);
-                                        if (e.key === 'Escape') setEditingChatId(null);
-                                      }}
-                                      autoFocus
-                                      className="w-full px-2 py-0.5 text-xs font-bold bg-white dark:bg-[#1A2540] border border-indigo-400 rounded-md text-gray-900 dark:text-[#E8EDF5] focus:outline-none ring-1 ring-indigo-500/30"
-                                    />
-                                    <button
-                                      onClick={() => handleSaveRenameChat(hist.id)}
-                                      className="px-2 py-0.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-[10px] rounded cursor-pointer shrink-0"
-                                    >
-                                      ✓
-                                    </button>
-                                    <button
-                                      onClick={() => setEditingChatId(null)}
-                                      className="px-2 py-0.5 bg-gray-200 dark:bg-slate-700 hover:bg-gray-300 text-gray-700 dark:text-slate-200 font-bold text-[10px] rounded cursor-pointer shrink-0"
-                                    >
-                                      ✕
-                                    </button>
-                                  </div>
-                                ) : (
-                                  <p className={`text-xs font-bold truncate ${isActive ? 'text-indigo-950 dark:text-white' : 'text-gray-800 dark:text-[#E8EDF5]'}`}>
-                                    {hist.title}
-                                  </p>
-                                )}
-                                
-                                {/* Metadata: Data, Tema & Norma usada */}
-                                <div className="flex flex-wrap items-center gap-1 mt-1 text-[9.5px]">
-                                  <span className="text-gray-400 dark:text-[#6A82A8] font-mono">
-                                    📅 {hist.date || hist.timestamp}
-                                  </span>
-                                  {hist.standard && (
-                                    <span className="px-1.5 py-0.2 rounded bg-indigo-100/80 dark:bg-[#1F3050] text-indigo-900 dark:text-[#A8C4E8] font-bold truncate max-w-[130px]">
-                                      📜 {hist.standard.split(' ')[0]}
-                                    </span>
-                                  )}
-                                  {hist.tag && (
-                                    <span className="px-1.5 py-0.2 rounded bg-slate-100 dark:bg-[#1F3050] text-slate-700 dark:text-[#C8D4E8] font-medium">
-                                      {hist.tag}
-                                    </span>
-                                  )}
-                                </div>
-                              </div>
-                            </div>
-
-                            {/* Three dots menu button */}
-                            <div className="relative shrink-0">
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setActiveMenuChatId(activeMenuChatId === hist.id ? null : hist.id);
-                                }}
-                                className="p-1 text-gray-400 dark:text-[#A8C4E8] hover:text-indigo-600 dark:hover:text-white hover:bg-indigo-50 dark:hover:bg-[#1F3050] rounded-lg transition-all cursor-pointer"
-                                title="Mais opções"
-                              >
-                                <MoreVertical className="w-3.5 h-3.5" />
-                              </button>
-
-                              {/* Dropdown Menu */}
-                              {activeMenuChatId === hist.id && (
-                                <div 
-                                  onClick={(e) => e.stopPropagation()}
-                                  className="absolute right-0 top-6 z-30 w-40 bg-white dark:bg-[#1A2540] rounded-xl shadow-xl border border-gray-200 dark:border-[rgba(255,255,255,0.1)] py-1 space-y-0.5 animate-in fade-in duration-100 text-left font-sans"
-                                >
-                                  <button
-                                    onClick={(e) => handleStartRenameChat(hist, e)}
-                                    className="w-full text-left px-3 py-1.5 text-xs font-semibold text-gray-700 dark:text-[#E8EDF5] hover:bg-indigo-50 dark:hover:bg-[#1F3050] hover:text-indigo-700 flex items-center gap-2 transition-colors cursor-pointer"
-                                  >
-                                    <Pencil className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
-                                    <span>{currentLanguage.startsWith('pt') ? "Renomear conversa" : "Rename chat"}</span>
-                                  </button>
-                                  <button
-                                    onClick={(e) => handleOpenDeleteSingleModal(hist, e)}
-                                    className="w-full text-left px-3 py-1.5 text-xs font-semibold text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 flex items-center gap-2 transition-colors cursor-pointer"
-                                  >
-                                    <Trash2 className="w-3.5 h-3.5 text-rose-500" />
-                                    <span>{currentLanguage.startsWith('pt') ? "Eliminar conversa" : "Delete chat"}</span>
-                                  </button>
-                                </div>
-                              )}
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  
-                  {chatHistory.length === 0 && (
-                    <div className="text-center py-8 text-gray-400 dark:text-[#6A82A8] text-xs font-sans">
-                      {currentLanguage.startsWith('pt') ? "Nenhuma conversa gravada no histórico." : "No saved conversations."}
-                    </div>
-                  )}
-                </div>
-
-                {/* Sidebar Footer Controls */}
-                <div className="p-2.5 border-t border-gray-100 dark:border-[rgba(255,255,255,0.07)] bg-white dark:bg-[#0A1628] space-y-1.5">
-                  <div className="grid grid-cols-2 gap-1.5">
-                    <button
-                      onClick={() => setShowMemoryModal(true)}
-                      className="w-full flex items-center justify-center gap-1 px-2 py-1.5 rounded-lg bg-indigo-50 dark:bg-[#1F3050] hover:bg-indigo-100/80 dark:hover:bg-[#2A4070] text-indigo-700 dark:text-[#A8C4E8] text-[11px] font-bold transition-all cursor-pointer border border-indigo-200/50 dark:border-[rgba(255,255,255,0.07)]"
-                      title={currentLanguage.startsWith('pt') ? "Gerir contexto e factos lembrados da IA" : "Manage AI memory and context facts"}
+                    {/* Drawer Panel */}
+                    <motion.div
+                      initial={{ x: '-100%' }}
+                      animate={{ x: 0 }}
+                      exit={{ x: '-100%' }}
+                      transition={{ type: 'spring', damping: 25, stiffness: 250 }}
+                      className="relative w-84 max-w-[88vw] h-full bg-white dark:bg-[#0A1628] flex flex-col shadow-2xl z-10 border-r border-gray-200 dark:border-[rgba(255,255,255,0.1)]"
                     >
-                      <Sparkles className="w-3 h-3 text-indigo-600 dark:text-indigo-400" />
-                      <span>{currentLanguage.startsWith('pt') ? "Memória IA" : "AI Memory"}</span>
-                    </button>
-
-                    <button
-                      onClick={handleExportChat}
-                      className="w-full flex items-center justify-center gap-1 px-2 py-1.5 rounded-lg bg-emerald-50 dark:bg-[#1F3050] hover:bg-emerald-100/80 dark:hover:bg-[#2A4070] text-emerald-700 dark:text-[#A8C4E8] text-[11px] font-bold transition-all cursor-pointer border border-emerald-200/50 dark:border-[rgba(255,255,255,0.07)]"
-                      title={currentLanguage.startsWith('pt') ? "Exportar conversa em formato texto" : "Export chat transcript"}
-                    >
-                      <Download className="w-3 h-3 text-emerald-600 dark:text-emerald-400" />
-                      <span>{currentLanguage.startsWith('pt') ? "Exportar" : "Export"}</span>
-                    </button>
-                  </div>
-
-                  {chatHistory.length > 0 && (
-                    <button
-                      onClick={() => setShowDeleteAllModal(true)}
-                      className="w-full flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 border border-rose-100 dark:border-rose-900/40 text-[11px] font-semibold transition-all cursor-pointer"
-                    >
-                      <Trash2 className="w-3 h-3 text-rose-500" />
-                      <span>{currentLanguage.startsWith('pt') ? "Eliminar Tudo Permanentemente" : "Delete All Permanently"}</span>
-                    </button>
-                  )}
-                </div>
-              </div>
-
-              {/* Chat Viewport */}
-              <div className="flex-1 flex flex-col bg-white dark:bg-[#0F1929] min-w-0 overflow-hidden relative">
-                {/* Mobile Sub-Header for History Drawer & New Chat (Visible on mobile <768px) */}
-                <div className="md:hidden flex items-center justify-between px-3 py-2 border-b border-gray-100 dark:border-[rgba(255,255,255,0.07)] bg-gray-50/90 dark:bg-[#0A1628] shrink-0">
-                  <div className="flex items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={() => setIsMobileHistoryOpen(true)}
-                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white dark:bg-[#1A2540] border border-gray-200 dark:border-[rgba(255,255,255,0.1)] text-gray-800 dark:text-[#E8EDF5] text-xs font-bold shadow-2xs min-h-[38px] active:scale-95 transition-all cursor-pointer"
-                      title={currentLanguage.startsWith('pt') ? "Abrir Histórico de Conversas" : "Open Chat History"}
-                    >
-                      <MessageSquare className="w-4 h-4 text-indigo-600 dark:text-indigo-400 shrink-0" />
-                      <span>{currentLanguage.startsWith('pt') ? "Conversas" : "History"}</span>
-                      {chatHistory.length > 0 && (
-                        <span className="px-1.5 py-0.2 text-[10px] font-mono rounded-full bg-indigo-100 dark:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300 font-bold">
-                          {chatHistory.length}
+                      {/* Drawer Header */}
+                      <div className="p-3.5 border-b border-gray-100 dark:border-[rgba(255,255,255,0.07)] flex items-center justify-between">
+                        <span className="text-xs font-bold uppercase tracking-wider text-gray-700 dark:text-[#E8EDF5] flex items-center gap-2">
+                          <MessageSquare className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+                          <span>{currentLanguage.startsWith('pt') ? "Conversas de IA" : "AI Conversations"}</span>
                         </span>
-                      )}
-                    </button>
+                        <div className="flex items-center gap-1">
+                          <button
+                            onClick={() => {
+                              handleClearCurrentChat();
+                              setIsHistoryDrawerOpen(false);
+                              setIsMobileHistoryOpen(false);
+                            }}
+                            className="p-1.5 rounded-lg bg-indigo-50 dark:bg-[#1F3050] text-indigo-600 dark:text-[#A8C4E8] hover:bg-indigo-100 text-xs font-bold flex items-center gap-1 cursor-pointer"
+                            title={currentLanguage.startsWith('pt') ? "Nova Conversa" : "New Chat"}
+                          >
+                            <Plus className="w-4 h-4" />
+                          </button>
+                          <button
+                            onClick={() => {
+                              setIsHistoryDrawerOpen(false);
+                              setIsMobileHistoryOpen(false);
+                            }}
+                            className="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-[#1F3050] text-gray-500 dark:text-[#A8C4E8] flex items-center justify-center cursor-pointer"
+                            title={currentLanguage.startsWith('pt') ? "Fechar" : "Close"}
+                          >
+                            <X className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </div>
 
-                    <button
-                      type="button"
-                      onClick={handleClearCurrentChat}
-                      className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-indigo-50 dark:bg-[#1B3A6B] text-indigo-700 dark:text-white border border-indigo-200/60 dark:border-blue-400/30 text-xs font-bold shadow-2xs min-h-[38px] active:scale-95 transition-all cursor-pointer"
-                      title={currentLanguage.startsWith('pt') ? "Nova Conversa" : "New Conversation"}
-                    >
-                      <Plus className="w-4 h-4 shrink-0" />
-                      <span>{currentLanguage.startsWith('pt') ? "Nova" : "New"}</span>
-                    </button>
-                  </div>
-
-                  <div className="text-right min-w-0 pl-2">
-                    <span className="text-[11px] font-semibold text-gray-500 dark:text-[#A8C4E8] truncate max-w-[130px] block">
-                      {activeHistoryId ? (chatHistory.find(h => h.id === activeHistoryId)?.title || "Conversa") : (currentLanguage.startsWith('pt') ? "Nova Conversa" : "New Chat")}
-                    </span>
-                  </div>
-                </div>
-
-                {/* Mobile History Slide-Over Drawer */}
-                <AnimatePresence>
-                  {isMobileHistoryOpen && (
-                    <div className="fixed inset-0 z-50 md:hidden flex">
-                      {/* Backdrop */}
-                      <motion.div
-                        initial={{ opacity: 0 }}
-                        animate={{ opacity: 1 }}
-                        exit={{ opacity: 0 }}
-                        onClick={() => setIsMobileHistoryOpen(false)}
-                        className="fixed inset-0 bg-black/50 backdrop-blur-xs"
-                      />
-                      {/* Drawer Panel */}
-                      <motion.div
-                        initial={{ x: '-100%' }}
-                        animate={{ x: 0 }}
-                        exit={{ x: '-100%' }}
-                        transition={{ type: 'spring', damping: 25, stiffness: 250 }}
-                        className="relative w-80 max-w-[85vw] h-full bg-white dark:bg-[#0A1628] flex flex-col shadow-2xl z-10 border-r border-gray-200 dark:border-[rgba(255,255,255,0.1)]"
-                      >
-                        {/* Drawer header */}
-                        <div className="p-3.5 border-b border-gray-100 dark:border-[rgba(255,255,255,0.07)] flex items-center justify-between">
-                          <span className="text-xs font-bold uppercase tracking-wider text-gray-700 dark:text-[#E8EDF5] flex items-center gap-2">
-                            <MessageSquare className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
-                            <span>{currentLanguage.startsWith('pt') ? "Conversas de IA" : "AI Conversations"}</span>
-                          </span>
-                          <div className="flex items-center gap-1">
-                            <button
-                              onClick={() => {
-                                handleClearCurrentChat();
-                                setIsMobileHistoryOpen(false);
-                              }}
-                              className="p-2 rounded-xl bg-indigo-50 dark:bg-[#1F3050] text-indigo-600 dark:text-[#A8C4E8] hover:bg-indigo-100 text-xs font-bold flex items-center gap-1 min-h-[38px] min-w-[38px] justify-center cursor-pointer"
-                              title={currentLanguage.startsWith('pt') ? "Nova Conversa" : "New Chat"}
-                            >
-                              <Plus className="w-4 h-4" />
-                            </button>
-                            <button
-                              onClick={() => setIsMobileHistoryOpen(false)}
-                              className="p-2 rounded-xl hover:bg-gray-100 dark:hover:bg-[#1F3050] text-gray-500 dark:text-[#A8C4E8] min-h-[38px] min-w-[38px] flex items-center justify-center cursor-pointer"
-                              title={currentLanguage.startsWith('pt') ? "Fechar" : "Close"}
-                            >
-                              <X className="w-4 h-4" />
-                            </button>
-                          </div>
+                      {/* Search and Tag Filters */}
+                      <div className="p-3 border-b border-gray-100 dark:border-[rgba(255,255,255,0.07)] space-y-2">
+                        <div className="relative">
+                          <Search className="w-3.5 h-3.5 text-gray-400 dark:text-[#6A82A8] absolute left-2.5 top-2.5" />
+                          <input 
+                            type="text"
+                            placeholder={currentLanguage.startsWith('pt') ? "Pesquisar histórico..." : "Search conversations..."}
+                            value={historySearchQuery}
+                            onChange={(e) => setHistorySearchQuery(e.target.value)}
+                            className="w-full pl-8 pr-3 py-1.5 bg-gray-50 dark:bg-[#1A2540] border border-gray-200 dark:border-[rgba(255,255,255,0.1)] rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-gray-800 dark:text-[#E8EDF5] placeholder-gray-400 dark:placeholder-[#6A82A8]"
+                          />
                         </div>
 
-                        {/* Search and Filters */}
-                        <div className="p-3 border-b border-gray-100 dark:border-[rgba(255,255,255,0.07)] space-y-2">
-                          <div className="relative">
-                            <Search className="w-3.5 h-3.5 text-gray-400 dark:text-[#6A82A8] absolute left-2.5 top-2.5" />
-                            <input 
-                              type="text"
-                              placeholder={currentLanguage.startsWith('pt') ? "Pesquisar histórico..." : "Search conversations..."}
-                              value={historySearchQuery}
-                              onChange={(e) => setHistorySearchQuery(e.target.value)}
-                              className="w-full pl-8 pr-3 py-1.5 bg-gray-50 dark:bg-[#1A2540] border border-gray-200 dark:border-[rgba(255,255,255,0.1)] rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-gray-800 dark:text-[#E8EDF5] placeholder-gray-400 dark:placeholder-[#6A82A8]"
-                            />
-                          </div>
+                        <div className="flex items-center gap-1 overflow-x-auto no-scrollbar py-0.5">
+                          {['Todas', '#IVA', '#Balanço', '#Fiscal'].map(tag => (
+                            <button
+                              key={tag}
+                              onClick={() => setSelectedTag(tag === 'Todas' ? null : tag)}
+                              className={`text-[10px] px-2.5 py-1 rounded-full font-medium transition-all shrink-0 cursor-pointer ${
+                                (tag === 'Todas' && !selectedTag) || selectedTag === tag
+                                  ? 'bg-slate-900 dark:bg-[#1B3A6B] text-white shadow-2xs'
+                                  : 'bg-gray-100 dark:bg-[#1F3050] text-gray-600 dark:text-[#A8C4E8] hover:bg-gray-200 dark:hover:bg-[#2A4070]'
+                              }`}
+                            >
+                              {tag}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
 
-                          <div className="flex items-center gap-1 overflow-x-auto no-scrollbar py-0.5">
-                            {['Todas', '#IVA', '#Balanço', '#Fiscal'].map(tag => (
-                              <button
-                                key={tag}
-                                onClick={() => setSelectedTag(tag === 'Todas' ? null : tag)}
-                                className={`text-[10px] px-2.5 py-1 rounded-full font-medium transition-all shrink-0 cursor-pointer ${
-                                  (tag === 'Todas' && !selectedTag) || selectedTag === tag
-                                    ? 'bg-slate-900 dark:bg-[#1B3A6B] text-white shadow-2xs'
-                                    : 'bg-gray-100 dark:bg-[#1F3050] text-gray-600 dark:text-[#A8C4E8] hover:bg-gray-200 dark:hover:bg-[#2A4070]'
+                      {/* Chat History List */}
+                      <div className="flex-1 overflow-y-auto p-2 space-y-1.5">
+                        {chatHistory
+                          .filter(hist => {
+                            const matchesSearch = !historySearchQuery || hist.title.toLowerCase().includes(historySearchQuery.toLowerCase());
+                            const matchesTag = !selectedTag || hist.tag === selectedTag;
+                            return matchesSearch && matchesTag;
+                          })
+                          .map(hist => {
+                            const isActive = activeHistoryId === hist.id;
+                            const isEditing = editingChatId === hist.id;
+                            return (
+                              <div 
+                                key={hist.id} 
+                                onClick={() => {
+                                  if (!isEditing) {
+                                    handleSelectHistoryItem(hist);
+                                    setIsHistoryDrawerOpen(false);
+                                    setIsMobileHistoryOpen(false);
+                                  }
+                                }}
+                                className={`p-2.5 rounded-xl border transition-all cursor-pointer text-left space-y-1 ${
+                                  isActive 
+                                    ? 'bg-indigo-50 dark:bg-[#1B3A6B] border-indigo-300 dark:border-indigo-400/50 shadow-2xs text-indigo-950 dark:text-white' 
+                                    : 'bg-white dark:bg-[#1A2540]/60 hover:bg-gray-50 dark:hover:bg-[#1A2540] border-gray-200/70 dark:border-[rgba(255,255,255,0.07)] text-gray-800 dark:text-[#C8D4E8]'
                                 }`}
                               >
-                                {tag}
-                              </button>
-                            ))}
-                          </div>
-                        </div>
-
-                        {/* Chat History List */}
-                        <div className="flex-1 overflow-y-auto p-2 space-y-1.5">
-                          {chatHistory
-                            .filter(hist => {
-                              const matchesSearch = !historySearchQuery || hist.title.toLowerCase().includes(historySearchQuery.toLowerCase());
-                              const matchesTag = !selectedTag || hist.tag === selectedTag;
-                              return matchesSearch && matchesTag;
-                            })
-                            .map(hist => {
-                              const isActive = activeHistoryId === hist.id;
-                              const isEditing = editingChatId === hist.id;
-                              return (
-                                <div 
-                                  key={hist.id} 
-                                  onClick={() => {
-                                    if (!isEditing) {
-                                      handleSelectHistoryItem(hist);
-                                      setIsMobileHistoryOpen(false);
-                                    }
-                                  }}
-                                  className={`p-2.5 rounded-xl border transition-all cursor-pointer text-left space-y-1 ${
-                                    isActive 
-                                      ? 'bg-indigo-50 dark:bg-[#1B3A6B] border-indigo-300 dark:border-indigo-400/50 shadow-2xs text-indigo-950 dark:text-white' 
-                                      : 'bg-white dark:bg-[#1A2540]/60 hover:bg-gray-50 dark:hover:bg-[#1A2540] border-gray-200/70 dark:border-[rgba(255,255,255,0.07)] text-gray-800 dark:text-[#C8D4E8]'
-                                  }`}
-                                >
-                                  <div className="flex items-start justify-between gap-1.5">
-                                    <div className="flex items-start gap-2 flex-1 min-w-0 pr-1">
-                                      <MessageSquare className={`w-3.5 h-3.5 shrink-0 mt-0.5 ${isActive ? 'text-indigo-600 dark:text-indigo-300 font-bold' : 'text-indigo-500/80 dark:text-[#A8C4E8]'}`} />
-                                      <div className="flex-1 min-w-0">
+                                <div className="flex items-start justify-between gap-1.5">
+                                  <div className="flex items-start gap-2 flex-1 min-w-0 pr-1">
+                                    <MessageSquare className={`w-3.5 h-3.5 shrink-0 mt-0.5 ${isActive ? 'text-indigo-600 dark:text-indigo-300 font-bold' : 'text-indigo-500/80 dark:text-[#A8C4E8]'}`} />
+                                    <div className="flex-1 min-w-0">
+                                      {isEditing ? (
+                                        <div className="flex items-center gap-1 my-0.5" onClick={(e) => e.stopPropagation()}>
+                                          <input
+                                            type="text"
+                                            value={editingChatTitle}
+                                            onChange={(e) => setEditingChatTitle(e.target.value)}
+                                            onKeyDown={(e) => {
+                                              if (e.key === 'Enter') handleSaveRenameChat(hist.id);
+                                              if (e.key === 'Escape') setEditingChatId(null);
+                                            }}
+                                            autoFocus
+                                            className="w-full px-2 py-0.5 text-xs font-bold bg-white dark:bg-[#1A2540] border border-indigo-400 rounded-md text-gray-900 dark:text-[#E8EDF5] focus:outline-none ring-1 ring-indigo-500/30"
+                                          />
+                                          <button
+                                            onClick={() => handleSaveRenameChat(hist.id)}
+                                            className="px-2 py-0.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-[10px] rounded cursor-pointer shrink-0"
+                                          >
+                                            ✓
+                                          </button>
+                                          <button
+                                            onClick={() => setEditingChatId(null)}
+                                            className="px-2 py-0.5 bg-gray-200 dark:bg-slate-700 hover:bg-gray-300 text-gray-700 dark:text-slate-200 font-bold text-[10px] rounded cursor-pointer shrink-0"
+                                          >
+                                            ✕
+                                          </button>
+                                        </div>
+                                      ) : (
                                         <p className={`text-xs font-bold truncate ${isActive ? 'text-indigo-950 dark:text-white' : 'text-gray-800 dark:text-[#E8EDF5]'}`}>
                                           {hist.title}
                                         </p>
-                                        <div className="flex flex-wrap items-center gap-1 mt-1 text-[9.5px]">
-                                          <span className="text-gray-400 dark:text-[#6A82A8] font-mono">📅 {hist.date || hist.timestamp}</span>
-                                          {hist.standard && (
-                                            <span className="px-1.5 py-0.2 rounded bg-indigo-100/80 dark:bg-[#1F3050] text-indigo-900 dark:text-[#A8C4E8] font-bold truncate max-w-[130px]">
-                                              📜 {hist.standard.split(' ')[0]}
-                                            </span>
-                                          )}
-                                        </div>
+                                      )}
+                                      <div className="flex flex-wrap items-center gap-1 mt-1 text-[9.5px]">
+                                        <span className="text-gray-400 dark:text-[#6A82A8] font-mono">📅 {hist.date || hist.timestamp}</span>
+                                        {hist.standard && (
+                                          <span className="px-1.5 py-0.2 rounded bg-indigo-100/80 dark:bg-[#1F3050] text-indigo-900 dark:text-[#A8C4E8] font-bold truncate max-w-[130px]">
+                                            📜 {hist.standard.split(' ')[0]}
+                                          </span>
+                                        )}
                                       </div>
                                     </div>
+                                  </div>
+                                  
+                                  <div className="flex items-center gap-1 shrink-0">
+                                    <button
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleStartRenameChat(hist, e);
+                                      }}
+                                      className="p-1 text-gray-400 hover:text-indigo-600 rounded-lg transition-colors cursor-pointer"
+                                      title="Renomear"
+                                    >
+                                      <Pencil className="w-3.5 h-3.5" />
+                                    </button>
                                     <button
                                       onClick={(e) => {
                                         e.stopPropagation();
@@ -2425,514 +2686,466 @@ export const AiAccountantSuite: React.FC<AiAccountantSuiteProps> = ({ currentLan
                                     </button>
                                   </div>
                                 </div>
-                              );
-                            })}
-                          {chatHistory.length === 0 && (
-                            <div className="text-center py-8 text-gray-400 dark:text-[#6A82A8] text-xs font-sans">
-                              {currentLanguage.startsWith('pt') ? "Nenhuma conversa gravada." : "No saved conversations."}
-                            </div>
-                          )}
-                        </div>
-
-                        {/* Drawer footer */}
-                        <div className="p-3 border-t border-gray-100 dark:border-[rgba(255,255,255,0.07)] bg-gray-50/50 dark:bg-[#0A1628] space-y-2">
-                          <div className="grid grid-cols-2 gap-2">
-                            <button
-                              onClick={() => {
-                                setShowMemoryModal(true);
-                                setIsMobileHistoryOpen(false);
-                              }}
-                              className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-indigo-50 dark:bg-[#1F3050] text-indigo-700 dark:text-[#A8C4E8] text-xs font-bold border border-indigo-200/50 min-h-[40px] cursor-pointer"
-                            >
-                              <Sparkles className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
-                              <span>{currentLanguage.startsWith('pt') ? "Memória IA" : "AI Memory"}</span>
-                            </button>
-                            <button
-                              onClick={() => {
-                                handleExportChat();
-                                setIsMobileHistoryOpen(false);
-                              }}
-                              className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-emerald-50 dark:bg-[#1F3050] text-emerald-700 dark:text-[#A8C4E8] text-xs font-bold border border-emerald-200/50 min-h-[40px] cursor-pointer"
-                            >
-                              <Download className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
-                              <span>{currentLanguage.startsWith('pt') ? "Exportar" : "Export"}</span>
-                            </button>
-                          </div>
-                        </div>
-                      </motion.div>
-                    </div>
-                  )}
-                </AnimatePresence>
-
-                {/* Chat bubble list */}
-                <div id="chat_bubble_viewport" className="flex-1 overflow-y-auto p-2 sm:p-4 space-y-4 overflow-x-hidden min-w-0 bg-white dark:bg-[#0F1929]">
-                  {chatMessages.map(msg => (
-                    <div 
-                      key={msg.id} 
-                      className={`group relative flex flex-col w-full max-w-[92%] sm:max-w-[85%] ${
-                        msg.sender === 'user' ? 'ml-auto items-end' : 'mr-auto items-start'
-                      }`}
-                    >
-                      {/* EDIT MODE OR NORMAL MESSAGE BUBBLE */}
-                      {editingMessageId === msg.id ? (
-                        <div className="w-full space-y-2.5 bg-slate-900 border-2 border-indigo-500 p-3.5 rounded-2xl shadow-xl transition-all animate-in fade-in duration-150">
-                          <div className="flex items-center justify-between text-[11px] font-semibold text-indigo-300 font-sans">
-                            <span className="flex items-center gap-1">
-                              <Edit3 className="w-3.5 h-3.5 text-indigo-400" />
-                              {currentLanguage.startsWith('pt') ? "A editar mensagem do utilizador..." : "Editing user message..."}
-                            </span>
-                            <span className="text-[10px] text-slate-400">Esc = {currentLanguage.startsWith('pt') ? "Cancelar" : "Cancel"} | Enter = {currentLanguage.startsWith('pt') ? "Guardar" : "Save"}</span>
-                          </div>
-                          <textarea
-                            value={editingText}
-                            onChange={(e) => setEditingText(e.target.value)}
-                            onKeyDown={(e) => {
-                              if (e.key === 'Enter' && !e.shiftKey) {
-                                e.preventDefault();
-                                handleSaveAndResend(msg.id);
-                              } else if (e.key === 'Escape') {
-                                e.preventDefault();
-                                handleCancelEdit();
-                              }
-                            }}
-                            autoFocus
-                            rows={3}
-                            className="w-full bg-slate-800 text-white placeholder-slate-400 text-xs rounded-xl p-2.5 px-3.5 border border-indigo-500/40 focus:outline-none focus:ring-2 focus:ring-indigo-400 resize-y min-h-[60px] max-h-[200px] font-sans"
-                          />
-                          <div className="flex items-center justify-end gap-2 pt-1">
-                            <button
-                              type="button"
-                              onClick={handleCancelEdit}
-                              className="px-3 py-1.5 text-xs font-semibold text-slate-300 hover:text-white bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-lg transition-all cursor-pointer flex items-center gap-1"
-                            >
-                              <X className="w-3.5 h-3.5" />
-                              <span>{currentLanguage.startsWith('pt') ? "Cancelar" : "Cancel"}</span>
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => handleSaveAndResend(msg.id)}
-                              className="px-3.5 py-1.5 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-500 rounded-lg transition-all cursor-pointer shadow-md flex items-center gap-1.5"
-                            >
-                              <Check className="w-3.5 h-3.5" />
-                              <span>{currentLanguage.startsWith('pt') ? "✓ Guardar e Reenviar" : "✓ Save and Resend"}</span>
-                            </button>
-                          </div>
-                        </div>
-                      ) : (
-                        <>
-                          {/* HOVER ACTION BAR */}
-                          <div className={`absolute -top-3.5 z-20 opacity-0 group-hover:opacity-100 transition-opacity duration-150 flex items-center gap-1 bg-slate-900/90 backdrop-blur-xs border border-slate-700/80 px-2 py-1 rounded-md shadow-lg ${
-                            msg.sender === 'user' ? 'right-2' : 'left-2'
-                          }`}>
-                            {msg.sender === 'user' && (
-                              <button
-                                onClick={() => handleStartEdit(msg)}
-                                className="text-[12px] font-medium text-white hover:text-indigo-300 hover:bg-slate-800 px-2.5 py-1 rounded transition-all flex items-center gap-1 cursor-pointer"
-                                title={currentLanguage.startsWith('pt') ? "Editar mensagem" : "Edit message"}
-                              >
-                                <Edit3 className="w-3.5 h-3.5 text-indigo-400" />
-                                <span>{currentLanguage.startsWith('pt') ? "Editar" : "Edit"}</span>
-                              </button>
-                            )}
-
-                            <button
-                              onClick={() => handleCopyText(msg.text)}
-                              className="text-[12px] font-medium text-white hover:text-emerald-300 hover:bg-slate-800 px-2.5 py-1 rounded transition-all flex items-center gap-1 cursor-pointer"
-                              title={currentLanguage.startsWith('pt') ? "Copiar mensagem" : "Copy message"}
-                            >
-                              <Copy className="w-3.5 h-3.5 text-slate-300" />
-                              <span>{currentLanguage.startsWith('pt') ? "Copiar" : "Copy"}</span>
-                            </button>
-
-                            <button
-                              onClick={() => setDeletingMessageId(deletingMessageId === msg.id ? null : msg.id)}
-                              className="text-[12px] font-medium text-white hover:text-rose-400 hover:bg-slate-800 px-2.5 py-1 rounded transition-all flex items-center gap-1 cursor-pointer"
-                              title={currentLanguage.startsWith('pt') ? "Apagar mensagem" : "Delete message"}
-                            >
-                              <Trash2 className="w-3.5 h-3.5 text-rose-400" />
-                              <span>{currentLanguage.startsWith('pt') ? "Apagar" : "Delete"}</span>
-                            </button>
-                          </div>
-
-                          {/* INLINE DELETE CONFIRMATION POPUP */}
-                          {deletingMessageId === msg.id && (
-                            <div className={`absolute top-0 z-30 p-3 bg-white border border-slate-200 rounded-xl shadow-xl animate-in zoom-in-95 duration-150 space-y-2 max-w-xs ${
-                              msg.sender === 'user' ? 'right-0' : 'left-0'
-                            }`}>
-                              <div className="flex items-center gap-2 text-xs font-bold text-slate-800">
-                                <Trash2 className="w-4 h-4 text-rose-500 shrink-0" />
-                                <span>{currentLanguage.startsWith('pt') ? "🗑️ Apagar esta mensagem?" : "🗑️ Delete this message?"}</span>
                               </div>
-                              <p className="text-[11px] text-slate-500 leading-snug font-sans">
-                                {msg.sender === 'user' 
-                                  ? (currentLanguage.startsWith('pt') ? "A resposta da IA associada também será removida." : "The corresponding AI response will also be removed.")
-                                  : (currentLanguage.startsWith('pt') ? "Esta resposta da IA será removida." : "This AI response will be removed.")}
-                              </p>
-                              <div className="flex items-center justify-end gap-2 pt-1">
-                                <button
-                                  onClick={() => setDeletingMessageId(null)}
-                                  className="px-2.5 py-1 text-[11px] font-medium text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-lg transition-all cursor-pointer"
-                                >
-                                  {currentLanguage.startsWith('pt') ? "Cancelar" : "Cancel"}
-                                </button>
-                                <button
-                                  onClick={() => handleDeleteMessageConfirm(msg.id)}
-                                  className="px-2.5 py-1 text-[11px] font-bold text-white bg-rose-600 hover:bg-rose-700 rounded-lg transition-all shadow-xs cursor-pointer"
-                                >
-                                  {currentLanguage.startsWith('pt') ? "Apagar" : "Delete"}
-                                </button>
-                              </div>
-                            </div>
-                          )}
-
-                          {/* BUBBLE CONTENT */}
-                          <div className={`p-3.5 sm:p-4 rounded-2xl text-xs leading-relaxed w-full max-w-full min-w-0 break-words [overflow-wrap:anywhere] ${
-                            msg.sender === 'user' 
-                              ? 'bg-slate-900 dark:bg-[#1B3A6B] text-white rounded-tr-none shadow-sm' 
-                              : 'bg-gray-50 dark:bg-[#1A2540] text-gray-800 dark:text-[#E8EDF5] rounded-tl-none border border-gray-200/60 dark:border-[rgba(255,255,255,0.07)]'
-                          }`}>
-                            {msg.sender === 'assistant' ? (
-                              <MarkdownRenderer content={msg.text} />
-                            ) : (
-                              <p className="whitespace-pre-wrap break-words [overflow-wrap:anywhere] max-w-full font-sans leading-relaxed text-slate-100">{msg.text}</p>
-                            )}
-                            
-                            {/* Render diagram SVG inline if generated */}
-                            {msg.diagramSvg && (
-                              <div className="mt-3 bg-white p-2 rounded-xl border border-gray-200 overflow-hidden shadow-sm max-w-full">
-                                <div className="text-[10px] text-gray-400 font-mono mb-1.5 flex justify-between items-center">
-                                  <span>{currentLanguage.startsWith('pt') ? "Fluxograma Gerado por IA" : "AI Flowchart Render"}</span>
-                                  <Volume2 className="w-3 h-3 text-indigo-500 cursor-pointer hover:text-indigo-700" onClick={() => showToast(currentLanguage.startsWith('pt') ? "Explicando em detalhe..." : "Explaining in detail...")} />
-                                </div>
-                                <div className="w-full overflow-x-auto scroll-smooth" dangerouslySetInnerHTML={{ __html: msg.diagramSvg }} />
-                              </div>
-                            )}
-
-                            {/* Render Grounding Sources if present */}
-                            {msg.groundingSources && msg.groundingSources.length > 0 && (
-                              <div className="mt-3 pt-2 border-t border-gray-200/60 flex flex-col gap-1.5">
-                                <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-500 flex items-center gap-1 font-sans">
-                                  <Globe className="w-3 h-3 text-indigo-500" />
-                                  {currentLanguage.startsWith('pt') ? "Fontes Web Verificadas (Search Grounding):" : "Verified Search Grounding Sources:"}
-                                </span>
-                                <div className="flex flex-wrap gap-1.5">
-                                  {msg.groundingSources.map((source, sIdx) => (
-                                    <a 
-                                      key={sIdx}
-                                      href={source.uri}
-                                      target="_blank"
-                                      rel="noopener noreferrer"
-                                      className="inline-flex items-center gap-1 text-[10px] bg-white hover:bg-indigo-50 hover:text-indigo-700 text-slate-700 px-2 py-1 rounded-md border border-slate-200 transition-all font-sans shadow-2xs"
-                                    >
-                                      <ExternalLink className="w-2.5 h-2.5 text-indigo-500 shrink-0" />
-                                      <span className="truncate max-w-[180px]">{source.title}</span>
-                                    </a>
-                                  ))}
-                                </div>
-                              </div>
-                            )}
+                            );
+                          })}
+                        {chatHistory.length === 0 && (
+                          <div className="text-center py-8 text-gray-400 dark:text-[#6A82A8] text-xs font-sans">
+                            {currentLanguage.startsWith('pt') ? "Nenhuma conversa gravada no histórico." : "No saved conversations."}
                           </div>
-
-                          {/* TIMESTAMP, MODEL, FEEDBACK & EDITED INDICATOR */}
-                          <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
-                            <span className="text-[10px] text-gray-400 px-1 font-mono">
-                              {msg.timestamp}
-                              {msg.isEdited && (
-                                <span className="text-slate-400 text-[11px] italic font-sans ml-1">
-                                  · {currentLanguage.startsWith('pt') ? "editado" : "edited"}
-                                </span>
-                              )}
-                            </span>
-                            {msg.modelUsed && (
-                              <span className="text-[9px] font-mono uppercase bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded-full border border-indigo-100 flex items-center gap-0.5">
-                                <Zap className="w-2.5 h-2.5 text-indigo-500" />
-                                {msg.modelUsed}
-                              </span>
-                            )}
-
-                            {/* Helpful / Not Helpful Feedback Buttons for AI Messages */}
-                            {msg.sender === 'assistant' && (
-                              <div className="flex items-center gap-1 ml-1 bg-gray-50 border border-gray-200/60 rounded-full px-1.5 py-0.5">
-                                <button
-                                  type="button"
-                                  onClick={() => handleFeedback(msg.id, true)}
-                                  className={`p-0.5 rounded hover:bg-emerald-100 transition-all cursor-pointer ${
-                                    messageFeedbackMap[msg.id] === 'up' ? 'text-emerald-600 font-bold' : 'text-gray-400 hover:text-emerald-600'
-                                  }`}
-                                  title={currentLanguage.startsWith('pt') ? "Resposta útil" : "Helpful response"}
-                                >
-                                  <ThumbsUp className="w-3 h-3" />
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => handleFeedback(msg.id, false)}
-                                  className={`p-0.5 rounded hover:bg-rose-100 transition-all cursor-pointer ${
-                                    messageFeedbackMap[msg.id] === 'down' ? 'text-rose-600 font-bold' : 'text-gray-400 hover:text-rose-600'
-                                  }`}
-                                  title={currentLanguage.startsWith('pt') ? "Resposta com incorreção" : "Inaccurate response"}
-                                >
-                                  <ThumbsDown className="w-3 h-3" />
-                                </button>
-                              </div>
-                            )}
-
-                            {msg.suggestedActions?.map((act, i) => (
-                              <button
-                                key={i}
-                                onClick={() => handleActionClick(act)}
-                                className="bg-slate-50 hover:bg-slate-100 border border-slate-200/60 text-slate-700 text-[10px] px-2.5 py-1 rounded-full transition-all flex items-center gap-1 font-medium font-sans cursor-pointer"
-                              >
-                                <Sparkles className="w-2.5 h-2.5 text-indigo-500" />
-                                <span>{act.label}</span>
-                              </button>
-                            ))}
-                          </div>
-                        </>
-                      )}
-                    </div>
-                  ))}
-                  {/* INLINE AI THINKING / LOADING INDICATOR */}
-                  {loading && activeSubtab === 'chat' && (
-                    <div className="group relative flex flex-col w-full max-w-[92%] sm:max-w-[85%] mr-auto items-start animate-in fade-in duration-200">
-                      <div className="p-3.5 rounded-2xl rounded-tl-none bg-indigo-50/80 border border-indigo-200/60 text-indigo-950 text-xs flex items-center gap-3 shadow-xs">
-                        <Loader2 className="w-4 h-4 text-indigo-600 animate-spin shrink-0" />
-                        <div>
-                          <p className="font-bold font-sans text-indigo-900">
-                            {currentLanguage.startsWith('pt') ? "IA Gemini a analisar e a formular resposta..." : "Gemini AI analyzing & formulating response..."}
-                          </p>
-                          <p className="text-[10px] text-indigo-600/80 font-mono mt-0.5">
-                            {enableHighThinking 
-                              ? (currentLanguage.startsWith('pt') ? "Modo Raciocínio Profundo ativo (3.1 Pro)..." : "High Thinking Mode active...") 
-                              : (currentLanguage.startsWith('pt') ? "Norma: PGC Angola | Processando..." : "Standard: PGC Angola | Processing...")}
-                          </p>
-                        </div>
+                        )}
                       </div>
-                    </div>
-                  )}
 
-                  <div ref={chatEndRef} />
-                </div>
+                      {/* Drawer Footer Actions: Memory, Export, Delete All */}
+                      <div className="p-2.5 border-t border-gray-100 dark:border-[rgba(255,255,255,0.07)] bg-white dark:bg-[#0A1628] space-y-1.5">
+                        <div className="grid grid-cols-2 gap-1.5">
+                          <button
+                            onClick={() => {
+                              setShowMemoryModal(true);
+                              setIsHistoryDrawerOpen(false);
+                              setIsMobileHistoryOpen(false);
+                            }}
+                            className="w-full flex items-center justify-center gap-1 px-2 py-1.5 rounded-lg bg-indigo-50 dark:bg-[#1F3050] hover:bg-indigo-100/80 dark:hover:bg-[#2A4070] text-indigo-700 dark:text-[#A8C4E8] text-[11px] font-bold transition-all cursor-pointer border border-indigo-200/50 dark:border-[rgba(255,255,255,0.07)]"
+                            title={currentLanguage.startsWith('pt') ? "Gerir memória da IA" : "Manage AI memory"}
+                          >
+                            <Sparkles className="w-3 h-3 text-indigo-600 dark:text-indigo-400" />
+                            <span>{currentLanguage.startsWith('pt') ? "Memória IA" : "AI Memory"}</span>
+                          </button>
 
-                {/* Bottom Input Drawer */}
-                <div className="p-3 border-t border-gray-100 dark:border-[rgba(255,255,255,0.07)] bg-gray-50/50 dark:bg-[#0F1929] flex flex-col gap-2">
-                  <div className="flex items-center justify-between px-1 flex-wrap gap-2">
-                    {/* Visual Explanation & AI Feature Toggles (Hidden on Mobile) */}
-                    <div className="hidden md:flex items-center gap-2 flex-wrap">
-                      <label className="relative inline-flex items-center cursor-pointer">
-                        <input 
-                          type="checkbox" 
-                          checked={visualExplanationMode}
-                          onChange={(e) => setVisualExplanationMode(e.target.checked)}
-                          className="sr-only peer"
-                        />
-                        <div className="w-7 h-4 bg-gray-200 dark:bg-[#1A2540] peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-slate-900 dark:peer-checked:bg-blue-600"></div>
-                        <span className="ml-1.5 text-[10px] font-semibold uppercase tracking-wider text-gray-500 dark:text-[#A8C4E8] font-sans flex items-center gap-1">
-                          <BarChart3 className="w-3 h-3 text-indigo-500 dark:text-indigo-400" />
-                          {currentLanguage.startsWith('pt') ? "Explicação Visual" : "Visual Mode"}
+                          <button
+                            onClick={() => {
+                              handleExportChat();
+                              setIsHistoryDrawerOpen(false);
+                              setIsMobileHistoryOpen(false);
+                            }}
+                            className="w-full flex items-center justify-center gap-1 px-2 py-1.5 rounded-lg bg-emerald-50 dark:bg-[#1F3050] hover:bg-emerald-100/80 dark:hover:bg-[#2A4070] text-emerald-700 dark:text-[#A8C4E8] text-[11px] font-bold transition-all cursor-pointer border border-emerald-200/50 dark:border-[rgba(255,255,255,0.07)]"
+                            title={currentLanguage.startsWith('pt') ? "Exportar conversa" : "Export chat"}
+                          >
+                            <Download className="w-3 h-3 text-emerald-600 dark:text-emerald-400" />
+                            <span>{currentLanguage.startsWith('pt') ? "Exportar" : "Export"}</span>
+                          </button>
+                        </div>
+
+                        {chatHistory.length > 0 && (
+                          <button
+                            onClick={() => {
+                              setShowDeleteAllModal(true);
+                              setIsHistoryDrawerOpen(false);
+                              setIsMobileHistoryOpen(false);
+                            }}
+                            className="w-full flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 border border-rose-100 dark:border-rose-900/40 text-[11px] font-semibold transition-all cursor-pointer"
+                          >
+                            <Trash2 className="w-3 h-3 text-rose-500" />
+                            <span>{currentLanguage.startsWith('pt') ? "Eliminar Tudo Permanentemente" : "Delete All Permanently"}</span>
+                          </button>
+                        )}
+                      </div>
+                    </motion.div>
+                  </div>
+                )}
+              </AnimatePresence>
+
+              {/* Chat Viewport (Full 100% Width) */}
+              <div className="flex min-h-0 min-w-0 flex-1 flex-col bg-white dark:bg-[#0F1929] overflow-hidden relative w-full">
+                {/* Minimal Top Action Bar: ☰ Conversas Button + Nova Conversa */}
+                <div className="h-10 min-h-[40px] border-b border-gray-100 dark:border-[rgba(255,255,255,0.07)] bg-white/90 dark:bg-[#0F1929]/90 px-3 sm:px-4 flex items-center justify-between shrink-0 z-10 backdrop-blur-xs">
+                  <div className="flex items-center gap-2">
+                    <button
+                      id="btn_open_chat_drawer"
+                      onClick={() => setIsHistoryDrawerOpen(true)}
+                      className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-gray-100 dark:bg-[#1A2540] hover:bg-gray-200 dark:hover:bg-[#253555] text-gray-700 dark:text-[#E8EDF5] text-xs font-semibold border border-gray-200/80 dark:border-[rgba(255,255,255,0.08)] transition-all cursor-pointer shadow-2xs"
+                      title={currentLanguage.startsWith('pt') ? "Abrir painel de conversas" : "Open conversations"}
+                    >
+                      <Menu className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
+                      <span>{currentLanguage.startsWith('pt') ? "Conversas" : "Conversations"}</span>
+                      {chatHistory.length > 0 && (
+                        <span className="text-[10px] bg-indigo-100 dark:bg-[#1F3050] text-indigo-700 dark:text-[#A8C4E8] font-bold px-1.5 py-0.2 rounded-full">
+                          {chatHistory.length}
                         </span>
-                      </label>
+                      )}
+                    </button>
 
-                      {/* Search Grounding Toggle */}
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setIsSearchGroundingEnabled(!isSearchGroundingEnabled);
-                          showToast(isSearchGroundingEnabled ? "Search Grounding desativado." : "Search Grounding (Google Web Data) ativado!");
-                        }}
-                        className={`px-2 py-0.5 rounded-full text-[10px] font-semibold flex items-center gap-1 transition-all ${
-                          isSearchGroundingEnabled
-                            ? 'bg-blue-600 text-white shadow-xs'
-                            : 'bg-white dark:bg-[#1F3050] text-gray-600 dark:text-[#A8C4E8] border border-gray-200 dark:border-[rgba(255,255,255,0.07)] hover:bg-gray-100 dark:hover:bg-[#2A4070]'
-                        }`}
-                      >
-                        <Globe className="w-3 h-3" />
-                        <span>Search Grounding</span>
-                      </button>
+                    <button
+                      onClick={handleClearCurrentChat}
+                      className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium text-gray-600 dark:text-[#A8C4E8] hover:text-indigo-600 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-[#1F3050] transition-all cursor-pointer border border-transparent hover:border-gray-200 dark:hover:border-[rgba(255,255,255,0.08)]"
+                      title={currentLanguage.startsWith('pt') ? "Iniciar nova conversa" : "Start new chat"}
+                    >
+                      <Plus className="w-3.5 h-3.5 text-indigo-500" />
+                      <span className="hidden sm:inline">{currentLanguage.startsWith('pt') ? "Nova" : "New"}</span>
+                    </button>
+                  </div>
 
-                      {/* High Thinking Toggle */}
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setEnableHighThinking(!enableHighThinking);
-                          showToast(enableHighThinking ? "High Thinking Mode desativado." : "High Thinking Mode (Gemini 3.1 Pro) ativado!");
-                        }}
-                        className={`px-2 py-0.5 rounded-full text-[10px] font-semibold flex items-center gap-1 transition-all ${
-                          enableHighThinking
-                            ? 'bg-purple-600 text-white shadow-xs'
-                            : 'bg-white dark:bg-[#1F3050] text-gray-600 dark:text-[#A8C4E8] border border-gray-200 dark:border-[rgba(255,255,255,0.07)] hover:bg-gray-100 dark:hover:bg-[#2A4070]'
-                        }`}
-                      >
-                        <Brain className="w-3 h-3" />
-                        <span>High Thinking (3.1 Pro)</span>
-                      </button>
-                    </div>
-
-                    {isRecording ? (
-                      <span className="text-[10px] font-mono text-red-600 dark:text-red-400 font-bold flex items-center gap-1 bg-red-50 dark:bg-red-950/40 px-2.5 py-0.5 rounded-full animate-pulse border border-red-200 dark:border-red-900/40">
-                        <span className="w-2 h-2 rounded-full bg-red-600 animate-ping" />
-                        <Mic className="w-3 h-3 text-red-600 dark:text-red-400" />
-                        {currentLanguage.startsWith('pt') ? `A ditar por voz (${recordingTime}s)...` : `Dictating audio (${recordingTime}s)...`}
-                      </span>
-                    ) : isTranscribingAudio ? (
-                      <span className="text-[10px] font-mono text-indigo-700 dark:text-[#A8C4E8] font-bold flex items-center gap-1 bg-indigo-50 dark:bg-[#1F3050] px-2.5 py-0.5 rounded-full border border-indigo-200 dark:border-[rgba(255,255,255,0.07)] animate-pulse">
-                        <Loader2 className="w-3 h-3 text-indigo-600 dark:text-indigo-400 animate-spin" />
-                        {currentLanguage.startsWith('pt') ? "A converter áudio em texto..." : "Transcribing audio to text..."}
-                      </span>
-                    ) : (
-                      <span className="hidden sm:inline text-[10px] text-gray-400 dark:text-[#6A82A8] font-sans italic">
-                        {currentLanguage.startsWith('pt') ? "Gemini 3.5 Flash + Grounding + Entrada por Voz" : "Gemini 3.5 Flash + Search Grounding + Voice Input"}
+                  {/* Active Conversation Title */}
+                  <div className="flex items-center gap-2 min-w-0">
+                    {activeHistoryId && (
+                      <span className="text-xs font-medium text-gray-500 dark:text-[#8AA8D0] truncate max-w-[240px] hidden md:inline">
+                        💬 {chatHistory.find(h => h.id === activeHistoryId)?.title || ''}
                       </span>
                     )}
                   </div>
+                </div>
 
-                  {/* Document Extraction Progress Indicator */}
-                  {isExtractingDoc && (
-                    <div className="p-3 bg-indigo-50 dark:bg-[#1A2540] border border-indigo-200/80 dark:border-[rgba(255,255,255,0.1)] rounded-xl space-y-1.5 animate-in fade-in duration-150">
-                      <div className="flex items-center justify-between text-xs font-bold text-indigo-950 dark:text-[#E8EDF5]">
-                        <span className="flex items-center gap-1.5">
-                          <Loader2 className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400 animate-spin" />
-                          <span>{docExtractionStep || (currentLanguage.startsWith('pt') ? "A extrair documento..." : "Extracting document...")}</span>
-                        </span>
-                        <span className="font-mono">{docExtractionProgress}%</span>
-                      </div>
-                      <div className="w-full h-1.5 bg-indigo-200/80 dark:bg-[#1F3050] rounded-full overflow-hidden">
-                        <div 
-                          className="h-full bg-indigo-600 dark:bg-indigo-400 rounded-full transition-all duration-300"
-                          style={{ width: `${docExtractionProgress}%` }}
-                        />
-                      </div>
-                    </div>
-                  )}
+                {/* Chat bubble list - Centered container with Virtualized/Memoized Message List for high performance */}
+                <VirtualizedChatMessagesList
+                  chatMessages={chatMessages}
+                  showAllMessages={showAllMessages}
+                  onShowAllMessages={() => setShowAllMessages(true)}
+                  editingMessageId={editingMessageId}
+                  editingText={editingText}
+                  onEditingTextChange={setEditingText}
+                  onSaveAndResend={handleSaveAndResend}
+                  onCancelEdit={handleCancelEdit}
+                  onStartEdit={handleStartEdit}
+                  onCopyText={handleCopyText}
+                  deletingMessageId={deletingMessageId}
+                  onToggleDelete={(id) => setDeletingMessageId(id || null)}
+                  onConfirmDelete={handleDeleteMessageConfirm}
+                  messageFeedbackMap={messageFeedbackMap}
+                  onFeedback={handleFeedback}
+                  hasUserSentMessage={hasUserSentMessage}
+                  onActionClick={handleActionClick}
+                  onShowToast={showToast}
+                  currentLanguage={currentLanguage}
+                  loading={loading}
+                  activeSubtab={activeSubtab}
+                  enableHighThinking={enableHighThinking}
+                  chatEndRef={chatEndRef}
+                />
 
-                  {/* QUICK ACTION CHIPS - Responsive Horizontal Scrollable Row */}
-                  <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-1 px-0.5 scroll-smooth">
-                    <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400 dark:text-[#6A82A8] shrink-0 flex items-center gap-1">
-                      <Zap className="w-3.5 h-3.5 text-amber-500 shrink-0" />
-                      <span className="hidden sm:inline">{currentLanguage.startsWith('pt') ? "Ações Rápidas:" : "Quick Actions:"}</span>
-                    </span>
-                    {[
-                      { 
-                        label: currentLanguage.startsWith('pt') ? 'Explicar conceito' : 'Explain concept', 
-                        icon: Sparkles, 
-                        prefix: currentLanguage.startsWith('pt') ? 'Explica de forma simples e didática o conceito de: ' : 'Explain clearly the concept of: ' 
-                      },
-                      { 
-                        label: currentLanguage.startsWith('pt') ? 'Lançamento Contabilístico' : 'Accounting Entry', 
-                        icon: Calculator, 
-                        prefix: currentLanguage.startsWith('pt') ? 'Qual é o lançamento contabilístico no PGC Angola (Débito/Credito) para: ' : 'What is the journal entry (Debit/Credit) for: ' 
-                      },
-                      { 
-                        label: currentLanguage.startsWith('pt') ? 'Gerar exercício prático' : 'Generate exercise', 
-                        icon: HelpCircle, 
-                        prefix: currentLanguage.startsWith('pt') ? 'Cria um exercício prático contabilístico com resolução explicada sobre: ' : 'Create a practical exercise with step-by-step resolution on: ' 
-                      },
-                      { 
-                        label: currentLanguage.startsWith('pt') ? 'Resumir tópico' : 'Summarize topic', 
-                        icon: FileText, 
-                        prefix: currentLanguage.startsWith('pt') ? 'Faz um resumo estruturado em tópicos dos pontos essenciais sobre: ' : 'Provide a bulleted summary of key points on: ' 
-                      },
-                      { 
-                        label: currentLanguage.startsWith('pt') ? 'Análise de Rácios' : 'Ratio Analysis', 
-                        icon: BarChart3, 
-                        prefix: currentLanguage.startsWith('pt') ? 'Como calcular e interpretar os rácios de liquidez/solvabilidade para: ' : 'How to calculate & interpret financial ratios for: ' 
-                      },
-                    ].map((chip, idx) => (
+                {/* Bottom Input Drawer - Sticky to bottom with max-w-[780px] centered and border-radius 24px */}
+                <div className="w-full shrink-0 border-t border-gray-100 dark:border-[rgba(255,255,255,0.07)] bg-white/95 dark:bg-[#0F1929]/95 backdrop-blur-md flex flex-col items-center p-2 sm:p-3 md:p-3.5 z-20 sticky bottom-0">
+                  <div className="w-full max-w-full md:max-w-[680px] lg:max-w-[780px] flex flex-col gap-1.5 relative">
+
+                    {/* Document Extraction Progress Indicator */}
+                    {isExtractingDoc && (
+                      <div className="p-2.5 sm:p-3 bg-indigo-50 dark:bg-[#1A2540] border border-indigo-200/80 dark:border-[rgba(255,255,255,0.1)] rounded-xl space-y-1.5 animate-in fade-in duration-150">
+                        <div className="flex items-center justify-between text-xs font-bold text-indigo-950 dark:text-[#E8EDF5]">
+                          <span className="flex items-center gap-1.5">
+                            <Loader2 className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400 animate-spin" />
+                            <span>{docExtractionStep || (currentLanguage.startsWith('pt') ? "A extrair documento..." : "Extracting document...")}</span>
+                          </span>
+                          <span className="font-mono">{docExtractionProgress}%</span>
+                        </div>
+                        <div className="w-full h-1.5 bg-indigo-200/80 dark:bg-[#1F3050] rounded-full overflow-hidden">
+                          <div 
+                            className="h-full bg-indigo-600 dark:bg-indigo-400 rounded-full transition-all duration-300"
+                            style={{ width: `${docExtractionProgress}%` }}
+                          />
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Chat Input Container - Rounded 24px, min-h 52px, lateral padding 16px */}
+                    <form 
+                      onSubmit={(e) => { e.preventDefault(); handleSendChat(); }}
+                      className="flex items-center gap-1 sm:gap-1.5 bg-gray-50 dark:bg-[#1A2540] rounded-[24px] border border-gray-200/90 dark:border-[rgba(255,255,255,0.12)] px-3 sm:px-4 py-1.5 shadow-xs focus-within:border-indigo-500 dark:focus-within:border-indigo-400 focus-within:ring-2 focus-within:ring-indigo-500/10 focus-within:bg-white dark:focus-within:bg-[#162138] transition-all min-h-[52px]"
+                    >
+                      {/* Hidden Document File Input */}
+                      <input 
+                        type="file" 
+                        ref={chatDocFileInputRef} 
+                        onChange={handleChatDocUpload} 
+                        accept=".pdf,.xlsx,.xls,.docx,.doc,.png,.jpg,.jpeg,.txt,.csv" 
+                        className="hidden" 
+                      />
+
+                      {/* ⚡ Quick Actions (Compact 20px icon button without text) */}
+                      <div className="relative shrink-0" ref={quickActionsMenuRef}>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setShowQuickActionsMenu(!showQuickActionsMenu);
+                            setShowSettingsPopover(false);
+                          }}
+                          className="h-7 w-7 sm:h-8 sm:w-8 flex items-center justify-center text-amber-500 hover:bg-amber-50 dark:hover:bg-[#2A4070] rounded-full transition-all cursor-pointer"
+                          title={currentLanguage.startsWith('pt') ? "Modelos de Prompt Rápidos" : "Quick Prompt Templates"}
+                        >
+                          <Zap className="w-4 h-4" />
+                        </button>
+                        {/* Quick actions popup positioned above */}
+                        {showQuickActionsMenu && (
+                          <div className="absolute bottom-full left-0 mb-2 w-64 bg-white dark:bg-[#1A2540] border border-gray-200 dark:border-[rgba(255,255,255,0.1)] rounded-2xl shadow-xl p-2 z-50 animate-in zoom-in-95 duration-150 space-y-1">
+                            <div className="px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-gray-400 dark:text-[#6A82A8]">
+                              {currentLanguage.startsWith('pt') ? "Modelos de Prompt" : "Prompt Templates"}
+                            </div>
+                            {[
+                              { 
+                                label: currentLanguage.startsWith('pt') ? 'Explicar conceito' : 'Explain concept', 
+                                icon: Sparkles, 
+                                prefix: currentLanguage.startsWith('pt') ? 'Explica de forma simples e didática o conceito de: ' : 'Explain clearly the concept of: ' 
+                              },
+                              { 
+                                label: currentLanguage.startsWith('pt') ? 'Lançamento Contabilístico' : 'Accounting Entry', 
+                                icon: Calculator, 
+                                prefix: currentLanguage.startsWith('pt') ? 'Qual é o lançamento contabilístico no PGC Angola (Débito/Credito) para: ' : 'What is the journal entry (Debit/Credit) for: ' 
+                              },
+                              { 
+                                label: currentLanguage.startsWith('pt') ? 'Gerar exercício prático' : 'Generate exercise', 
+                                icon: HelpCircle, 
+                                prefix: currentLanguage.startsWith('pt') ? 'Cria um exercício prático contabilístico com resolução explicada sobre: ' : 'Create a practical exercise with step-by-step resolution on: ' 
+                              },
+                              { 
+                                label: currentLanguage.startsWith('pt') ? 'Resumir tópico' : 'Summarize topic', 
+                                icon: FileText, 
+                                prefix: currentLanguage.startsWith('pt') ? 'Faz um resumo estruturado em tópicos dos pontos essenciais sobre: ' : 'Provide a bulleted summary of key points on: ' 
+                              },
+                              { 
+                                label: currentLanguage.startsWith('pt') ? 'Análise de Rácios' : 'Ratio Analysis', 
+                                icon: BarChart3, 
+                                prefix: currentLanguage.startsWith('pt') ? 'Como calcular e interpretar os rácios de liquidez/solvabilidade para: ' : 'How to calculate & interpret financial ratios for: ' 
+                              },
+                            ].map((chip, idx) => (
+                              <button
+                                key={idx}
+                                type="button"
+                                onClick={() => {
+                                  const baseClean = chatInput.replace(/^(Explica|Explain|Cria|Create|Faz|Provide|Qual|What|Como|How).+?: /, '');
+                                  setChatInput(chip.prefix + baseClean);
+                                  setShowQuickActionsMenu(false);
+                                  textareaRef.current?.focus();
+                                }}
+                                className="w-full text-left px-3 py-2 rounded-xl text-xs font-semibold text-gray-700 dark:text-[#E8EDF5] hover:bg-indigo-50 dark:hover:bg-[#2A4070] hover:text-indigo-700 dark:hover:text-white transition-all flex items-center gap-2 cursor-pointer"
+                              >
+                                <chip.icon className="w-4 h-4 text-indigo-500 dark:text-indigo-400 shrink-0" />
+                                <span>{chip.label}</span>
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* ⚙️ Settings (Compact 20px icon button without text) */}
+                      <div className="relative shrink-0" ref={settingsPopoverRef}>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setShowSettingsPopover(!showSettingsPopover);
+                            setShowQuickActionsMenu(false);
+                          }}
+                          className={`h-7 w-7 sm:h-8 sm:w-8 flex items-center justify-center rounded-full transition-all cursor-pointer ${
+                            showSettingsPopover || visualExplanationMode || isSearchGroundingEnabled || enableHighThinking
+                              ? 'text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-[#1F3050]'
+                              : 'text-gray-500 dark:text-[#A8C4E8] hover:text-indigo-600 dark:hover:text-white hover:bg-gray-200/60 dark:hover:bg-[#2A4070]'
+                          }`}
+                          title={currentLanguage.startsWith('pt') ? "Configurações de IA" : "AI Settings"}
+                        >
+                          <Settings className="w-4 h-4" />
+                        </button>
+                        {/* Settings popup positioned above */}
+                        {showSettingsPopover && (
+                          <div className="absolute bottom-full left-0 mb-2 w-72 bg-white dark:bg-[#1A2540] border border-gray-200 dark:border-[rgba(255,255,255,0.1)] rounded-2xl shadow-xl p-3 z-50 animate-in zoom-in-95 duration-150 space-y-3">
+                            <div className="text-[11px] font-bold uppercase tracking-wider text-gray-500 dark:text-[#A8C4E8] font-sans pb-1 border-b border-gray-100 dark:border-[rgba(255,255,255,0.07)] flex items-center gap-1.5">
+                              <Settings className="w-3.5 h-3.5 text-indigo-500" />
+                              <span>{currentLanguage.startsWith('pt') ? "Opções de IA" : "AI Options"}</span>
+                            </div>
+
+                            {/* Visual Mode */}
+                            <label className="flex items-center justify-between cursor-pointer p-1.5 rounded-xl hover:bg-gray-50 dark:hover:bg-[#1F3050]/60 transition-all">
+                              <span className="text-xs font-semibold text-gray-700 dark:text-[#E8EDF5] flex items-center gap-2">
+                                <BarChart3 className="w-4 h-4 text-indigo-500" />
+                                <span>{currentLanguage.startsWith('pt') ? "Explicação Visual (SVG)" : "Visual Explanation (SVG)"}</span>
+                              </span>
+                              <input 
+                                type="checkbox" 
+                                checked={visualExplanationMode}
+                                onChange={(e) => setVisualExplanationMode(e.target.checked)}
+                                className="w-4 h-4 text-indigo-600 rounded cursor-pointer"
+                              />
+                            </label>
+
+                            {/* Search Grounding */}
+                            <label className="flex items-center justify-between cursor-pointer p-1.5 rounded-xl hover:bg-gray-50 dark:hover:bg-[#1F3050]/60 transition-all">
+                              <span className="text-xs font-semibold text-gray-700 dark:text-[#E8EDF5] flex items-center gap-2">
+                                <Globe className="w-4 h-4 text-blue-500" />
+                                <span>Search Grounding</span>
+                              </span>
+                              <input 
+                                type="checkbox" 
+                                checked={isSearchGroundingEnabled}
+                                onChange={(e) => setIsSearchGroundingEnabled(e.target.checked)}
+                                className="w-4 h-4 text-blue-600 rounded cursor-pointer"
+                              />
+                            </label>
+
+                            {/* High Thinking */}
+                            <label className="flex items-center justify-between cursor-pointer p-1.5 rounded-xl hover:bg-gray-50 dark:hover:bg-[#1F3050]/60 transition-all">
+                              <span className="text-xs font-semibold text-gray-700 dark:text-[#E8EDF5] flex items-center gap-2">
+                                <Brain className="w-4 h-4 text-purple-500" />
+                                <span>High Thinking (3.1 Pro)</span>
+                              </span>
+                              <input 
+                                type="checkbox" 
+                                checked={enableHighThinking}
+                                onChange={(e) => setEnableHighThinking(e.target.checked)}
+                                className="w-4 h-4 text-purple-600 rounded cursor-pointer"
+                              />
+                            </label>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* ⋯ Tools Popover for Mobile & Desktop accessibility */}
+                      <div className="relative shrink-0" ref={bottomToolsPopoverRef}>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setShowBottomToolsPopover(!showBottomToolsPopover);
+                            setShowQuickActionsMenu(false);
+                            setShowSettingsPopover(false);
+                          }}
+                          className={`h-7 w-7 sm:h-8 sm:w-8 flex items-center justify-center rounded-full transition-all cursor-pointer ${
+                            showBottomToolsPopover || activeSubtab !== 'chat'
+                              ? 'text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-[#1F3050]'
+                              : 'text-gray-500 dark:text-[#A8C4E8] hover:text-indigo-600 dark:hover:text-white hover:bg-gray-200/60 dark:hover:bg-[#2A4070]'
+                          }`}
+                          title={currentLanguage.startsWith('pt') ? "Mais Ferramentas (Word, Excel, Rácios, Slides)" : "More Tools (Word, Excel, Ratios, Slides)"}
+                        >
+                          <MoreHorizontal className="w-4 h-4" />
+                        </button>
+
+                        {/* Tools popup positioned above */}
+                        {showBottomToolsPopover && (
+                          <div 
+                            style={{ display: 'flex' }}
+                            className="absolute bottom-full left-0 mb-2 w-64 bg-white dark:bg-[#1A2540] border border-gray-200 dark:border-[rgba(255,255,255,0.12)] rounded-2xl shadow-2xl p-2 z-[9999] flex-col animate-in zoom-in-95 duration-150 space-y-1"
+                            id="bottom-tools-popover"
+                          >
+                            <div className="text-[11px] font-bold uppercase tracking-wider text-gray-500 dark:text-[#A8C4E8] font-sans pb-1 px-2 border-b border-gray-100 dark:border-[rgba(255,255,255,0.07)] flex items-center gap-1.5">
+                              <Sparkles className="w-3.5 h-3.5 text-indigo-500" />
+                              <span>{currentLanguage.startsWith('pt') ? "Módulos Contabilísticos" : "Accounting Modules"}</span>
+                            </div>
+
+                            <button
+                              type="button"
+                              onClick={() => { setActiveSubtab('word'); setShowBottomToolsPopover(false); }}
+                              className="w-full text-left px-3 py-2 text-xs font-semibold flex items-center gap-2 hover:bg-gray-100 dark:hover:bg-[#2A4070] rounded-xl cursor-pointer text-gray-700 dark:text-[#E8EDF5] transition-colors"
+                            >
+                              <FileText className="w-4 h-4 text-indigo-500 shrink-0" />
+                              <span>📄 Relatório Word</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => { setActiveSubtab('excel'); setShowBottomToolsPopover(false); }}
+                              className="w-full text-left px-3 py-2 text-xs font-semibold flex items-center gap-2 hover:bg-gray-100 dark:hover:bg-[#2A4070] rounded-xl cursor-pointer text-gray-700 dark:text-[#E8EDF5] transition-colors"
+                            >
+                              <Grid className="w-4 h-4 text-emerald-500 shrink-0" />
+                              <span>📊 Folha Excel</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => { setActiveSubtab('visualization'); setShowBottomToolsPopover(false); }}
+                              className="w-full text-left px-3 py-2 text-xs font-semibold flex items-center gap-2 hover:bg-gray-100 dark:hover:bg-[#2A4070] rounded-xl cursor-pointer text-gray-700 dark:text-[#E8EDF5] transition-colors"
+                            >
+                              <BarChart3 className="w-4 h-4 text-amber-500 shrink-0" />
+                              <span>📈 Visualizações & Rácios</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => { setActiveSubtab('powerpoint'); setShowBottomToolsPopover(false); }}
+                              className="w-full text-left px-3 py-2 text-xs font-semibold flex items-center gap-2 hover:bg-gray-100 dark:hover:bg-[#2A4070] rounded-xl cursor-pointer text-gray-700 dark:text-[#E8EDF5] transition-colors"
+                            >
+                              <Presentation className="w-4 h-4 text-orange-500 shrink-0" />
+                              <span>📑 Apresentação Slides</span>
+                            </button>
+                            <div className="h-px bg-gray-100 dark:bg-[rgba(255,255,255,0.08)] my-1" />
+                            <button
+                              type="button"
+                              onClick={() => { setIsGlossaryModalOpen(true); setShowBottomToolsPopover(false); }}
+                              className="w-full text-left px-3 py-2 text-xs font-semibold text-amber-700 dark:text-amber-300 flex items-center gap-2 hover:bg-amber-50 dark:hover:bg-amber-950/30 rounded-xl cursor-pointer transition-colors"
+                            >
+                              <BookOpen className="w-4 h-4 text-amber-600 shrink-0" />
+                              <span>📖 Glossário Dinâmico</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => { setIsPgcModalOpen(true); setShowBottomToolsPopover(false); }}
+                              className="w-full text-left px-3 py-2 text-xs font-semibold text-blue-700 dark:text-blue-300 flex items-center gap-2 hover:bg-blue-50 dark:hover:bg-blue-950/30 rounded-xl cursor-pointer transition-colors"
+                            >
+                              <Scale className="w-4 h-4 text-blue-500 shrink-0" />
+                              <span>⚖️ Demonstrações (82/01)</span>
+                            </button>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* 📎 Document Upload Button (Compact 20px icon button without text) */}
                       <button
-                        key={idx}
                         type="button"
-                        onClick={() => {
-                          const baseClean = chatInput.replace(/^(Explica|Explain|Cria|Create|Faz|Provide|Qual|What|Como|How).+?: /, '');
-                          setChatInput(chip.prefix + baseClean);
-                        }}
-                        className="px-3 py-1.5 rounded-full text-xs sm:text-[10px] font-bold bg-white dark:bg-[#1F3050] hover:bg-indigo-50 dark:hover:bg-[#2A4070] text-indigo-700 dark:text-[#A8C4E8] hover:text-indigo-900 dark:hover:text-white border border-indigo-200/80 dark:border-[rgba(255,255,255,0.07)] transition-all shrink-0 cursor-pointer flex items-center gap-1.5 shadow-2xs group min-h-[36px] whitespace-nowrap"
+                        onClick={() => chatDocFileInputRef.current?.click()}
+                        disabled={isExtractingDoc}
+                        className="h-7 w-7 sm:h-8 sm:w-8 flex items-center justify-center text-gray-500 dark:text-[#A8C4E8] hover:text-indigo-600 dark:hover:text-white hover:bg-gray-200/60 dark:hover:bg-[#2A4070] rounded-full transition-all cursor-pointer shrink-0"
+                        title={currentLanguage.startsWith('pt') ? "Anexar documento (PDF, Excel, Word, Imagem)" : "Attach document (PDF, Excel, Word, Image)"}
                       >
-                        <chip.icon className="w-3.5 h-3.5 text-indigo-500 dark:text-[#A8C4E8] group-hover:scale-110 transition-transform shrink-0" />
-                        <span>{chip.label}</span>
+                        {isExtractingDoc ? (
+                          <RefreshCw className="w-4 h-4 animate-spin text-indigo-600 dark:text-indigo-400" />
+                        ) : (
+                          <Paperclip className="w-4 h-4" />
+                        )}
                       </button>
-                    ))}
-                  </div>
 
-                  <form 
-                    onSubmit={(e) => { e.preventDefault(); handleSendChat(); }}
-                    className="flex items-center gap-1.5 sm:gap-2 bg-white dark:bg-[#1A2540] rounded-2xl border border-gray-200 dark:border-[rgba(255,255,255,0.1)] p-1.5 shadow-sm focus-within:border-indigo-500 dark:focus-within:border-indigo-400/60 focus-within:ring-2 focus-within:ring-indigo-500/10 transition-all"
-                  >
-                    <input 
-                      type="text"
-                      value={chatInput}
-                      onChange={(e) => setChatInput(e.target.value)}
-                      placeholder={currentLanguage.startsWith('pt') ? "Pergunte à IA ou grave áudio com o microfone..." : "Ask AI accountant or record voice with mic..."}
-                      className="flex-1 bg-transparent px-3 py-2 text-sm sm:text-xs text-gray-800 dark:text-[#E8EDF5] placeholder-gray-400 dark:placeholder-[#6A82A8] focus:outline-none font-sans min-w-0"
-                    />
+                      {/* Expanding Textarea with 15px font-size */}
+                      <textarea
+                        ref={textareaRef}
+                        value={chatInput}
+                        onChange={(e) => setChatInput(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' && !e.shiftKey) {
+                            e.preventDefault();
+                            handleSendChat();
+                          }
+                        }}
+                        placeholder={currentLanguage.startsWith('pt') ? "Escreva uma mensagem..." : "Ask AI Accountant..."}
+                        rows={1}
+                        className="flex-1 bg-transparent px-2 py-1 text-[15px] text-gray-800 dark:text-[#E8EDF5] placeholder-gray-400 dark:placeholder-[#6A82A8] focus:outline-none font-sans min-w-0 resize-none leading-normal"
+                        style={{ minHeight: '34px', maxHeight: '140px' }}
+                      />
 
-                    {/* Hidden Document File Input */}
-                    <input 
-                      type="file" 
-                      ref={chatDocFileInputRef} 
-                      onChange={handleChatDocUpload} 
-                      accept=".pdf,.xlsx,.xls,.docx,.doc,.png,.jpg,.jpeg,.txt,.csv" 
-                      className="hidden" 
-                    />
-
-                    {/* Document Upload Button */}
-                    <button
-                      type="button"
-                      onClick={() => chatDocFileInputRef.current?.click()}
-                      disabled={isExtractingDoc}
-                      className="min-h-[44px] min-w-[44px] flex items-center justify-center bg-indigo-50 dark:bg-[#1F3050] text-indigo-700 dark:text-[#A8C4E8] hover:bg-indigo-100 dark:hover:bg-[#2A4070] rounded-xl transition-all cursor-pointer border border-indigo-200/50 dark:border-[rgba(255,255,255,0.07)] shrink-0"
-                      title={currentLanguage.startsWith('pt') ? "Anexar documento (PDF, Excel, Word, Imagem)" : "Attach document (PDF, Excel, Word, Image)"}
-                    >
-                      {isExtractingDoc ? (
-                        <RefreshCw className="w-4 h-4 animate-spin text-indigo-600 dark:text-indigo-400" />
-                      ) : (
-                        <Paperclip className="w-4 h-4 text-indigo-600 dark:text-[#A8C4E8]" />
-                      )}
-                    </button>
-
-                    {/* Microphone Recording Affordance */}
-                    <button
-                      type="button"
-                      disabled={isTranscribingAudio}
-                      onClick={() => {
-                        if (isRecording) {
-                          stopRecording();
-                        } else {
-                          startRecording(setChatInput);
+                      {/* Microphone Recording Button */}
+                      <button
+                        type="button"
+                        disabled={isTranscribingAudio}
+                        onClick={() => {
+                          if (isRecording) {
+                            stopRecording();
+                          } else {
+                            startRecording(setChatInput);
+                          }
+                        }}
+                        className={`h-8 w-8 sm:h-9 sm:w-9 flex items-center justify-center rounded-full transition-all cursor-pointer shrink-0 ${
+                          isRecording
+                            ? 'bg-red-600 text-white animate-pulse shadow-md ring-2 ring-red-400'
+                            : isTranscribingAudio
+                              ? 'bg-indigo-100 dark:bg-[#1F3050] text-indigo-700 dark:text-[#A8C4E8] cursor-wait'
+                              : 'text-gray-500 dark:text-[#A8C4E8] hover:text-indigo-600 dark:hover:text-white hover:bg-gray-200/60 dark:hover:bg-[#2A4070]'
+                        }`}
+                        title={
+                          isRecording 
+                            ? (currentLanguage.startsWith('pt') ? "Parar gravação de voz" : "Stop recording voice")
+                            : isTranscribingAudio
+                              ? (currentLanguage.startsWith('pt') ? "A transcrever..." : "Transcribing...")
+                              : (currentLanguage.startsWith('pt') ? "Ditar por voz (Microfone)" : "Dictate query with microphone")
                         }
-                      }}
-                      className={`min-h-[44px] min-w-[44px] flex items-center justify-center rounded-xl transition-all cursor-pointer shrink-0 ${
-                        isRecording
-                          ? 'bg-red-600 text-white animate-pulse shadow-md ring-2 ring-red-400'
-                          : isTranscribingAudio
-                            ? 'bg-indigo-100 dark:bg-[#1F3050] text-indigo-700 dark:text-[#A8C4E8] cursor-wait'
-                            : 'bg-gray-100 dark:bg-[#1F3050] text-gray-700 dark:text-[#A8C4E8] hover:bg-gray-200 dark:hover:bg-[#2A4070]'
-                      }`}
-                      title={
-                        isRecording 
-                          ? (currentLanguage.startsWith('pt') ? "Parar gravação de voz" : "Stop recording voice")
-                          : isTranscribingAudio
-                            ? (currentLanguage.startsWith('pt') ? "A transcrever..." : "Transcribing...")
-                            : (currentLanguage.startsWith('pt') ? "Ditar por voz (Microfone)" : "Dictate query with microphone")
-                      }
-                    >
-                      {isTranscribingAudio ? (
-                        <Loader2 className="w-4 h-4 animate-spin text-indigo-600 dark:text-indigo-400" />
-                      ) : isRecording ? (
-                        <MicOff className="w-4 h-4" />
-                      ) : (
-                        <Mic className="w-4 h-4" />
-                      )}
-                    </button>
+                      >
+                        {isTranscribingAudio ? (
+                          <Loader2 className="w-4 h-4 animate-spin text-indigo-600 dark:text-indigo-400" />
+                        ) : isRecording ? (
+                          <MicOff className="w-4 h-4" />
+                        ) : (
+                          <Mic className="w-4 h-4" />
+                        )}
+                      </button>
 
-                    {/* Send Button */}
-                    <button 
-                      type="submit"
-                      disabled={loading || !chatInput.trim()}
-                      className="min-h-[44px] min-w-[44px] flex items-center justify-center bg-slate-900 dark:bg-[#1B3A6B] text-white rounded-xl hover:bg-slate-800 dark:hover:bg-[#2E5FA3] disabled:opacity-40 transition-all cursor-pointer shrink-0 shadow-xs"
-                      title={currentLanguage.startsWith('pt') ? "Enviar mensagem" : "Send message"}
-                    >
-                      <Send className="w-4 h-4" />
-                    </button>
-                  </form>
+                      {/* Send Button */}
+                      <button 
+                        type="submit"
+                        disabled={loading || !chatInput.trim()}
+                        className="h-8 w-8 sm:h-9 sm:w-9 flex items-center justify-center bg-slate-900 dark:bg-indigo-600 text-white rounded-full hover:bg-slate-800 dark:hover:bg-indigo-500 disabled:opacity-30 transition-all cursor-pointer shrink-0 shadow-xs active:scale-95"
+                        title={currentLanguage.startsWith('pt') ? "Enviar mensagem (Enter)" : "Send message (Enter)"}
+                      >
+                        <Send className="w-4 h-4" />
+                      </button>
+                    </form>
+                  </div>
                 </div>
               </div>
             </motion.div>

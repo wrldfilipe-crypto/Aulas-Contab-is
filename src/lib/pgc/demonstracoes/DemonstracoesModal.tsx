@@ -467,26 +467,24 @@ export const DemonstracoesModal: React.FC<DemonstracoesModalProps> = ({
               <AlertTriangle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
               <div className="whitespace-pre-line">{error}</div>
             </div>
-          )}
-
-          {/* TAB 1: BALANÇO */}
+          )}          {/* TAB 1: BALANÇO */}
           {activeTab === "balanco" && (
-            <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-              <div className="p-3 bg-[#1B3A6B] text-white flex justify-between items-center text-xs font-bold">
+            <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden flex flex-col">
+              <div className="sticky top-0 z-20 p-3 bg-[#1B3A6B] text-white flex justify-between items-center text-xs font-bold shadow-xs">
                 <span>Balanço — Estrutura Vertical Oficial PGC (Decreto n.º 82/2001)</span>
-                <span>Valores em {pacoteCalculado.moeda} {pacoteCalculado.grandezaTexto}</span>
+                <span>Valores em {pacoteCalculado.moeda} (AOA) {pacoteCalculado.grandezaTexto}</span>
               </div>
               <div className="overflow-x-auto">
-                <table className="w-full text-xs text-left border-collapse">
-                  <thead>
+                <table className="w-full text-xs text-left border-collapse table-fixed">
+                  <thead className="sticky top-0 z-10 bg-slate-100 shadow-xs" style={{ position: "sticky", top: 0, zIndex: 10 }}>
                     <tr className="bg-slate-100 border-b border-slate-200 text-slate-700 font-bold">
-                      <th className="py-2.5 px-3">Rubrica Oficial</th>
-                      <th className="py-2.5 px-3 text-center w-16">Notas</th>
-                      <th className="py-2.5 px-3 text-right w-44">Exercício {ano} (Actual)</th>
-                      <th className="py-2.5 px-3 text-right w-44">Exercício {ano - 1} (Anterior)</th>
+                      <th className="py-2.5 px-3 sticky top-0 bg-slate-100 z-10 w-auto min-w-[220px]">Rubrica Oficial</th>
+                      <th className="py-2.5 px-3 text-center w-16 sticky top-0 bg-slate-100 z-10">Notas</th>
+                      <th className="py-2.5 px-3 text-right w-44 sticky top-0 bg-slate-100 z-10">Exercício {ano} (Actual)</th>
+                      <th className="py-2.5 px-3 text-right w-44 sticky top-0 bg-slate-100 z-10">Exercício {ano - 1} (Anterior)</th>
                     </tr>
                   </thead>
-                  <tbody>
+                  <tbody className="divide-y divide-slate-100" style={{ maxHeight: "calc(100dvh - 280px)" }}>
                     {balanco.linhas.map((l, i) => {
                       const isMain = l.ehTotal && !l.rubrica.startsWith("TOTAL") && !l.rubrica.startsWith("  ");
                       const isTotal = l.ehTotal || l.rubrica.startsWith("TOTAL");
@@ -553,22 +551,22 @@ export const DemonstracoesModal: React.FC<DemonstracoesModalProps> = ({
 
           {/* TAB 2: DEMONSTRAÇÃO DE RESULTADOS */}
           {activeTab === "dr" && (
-            <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-              <div className="p-3 bg-[#1B3A6B] text-white flex justify-between items-center text-xs font-bold">
+            <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden flex flex-col">
+              <div className="sticky top-0 z-20 p-3 bg-[#1B3A6B] text-white flex justify-between items-center text-xs font-bold shadow-xs">
                 <span>Demonstração de Resultados por Natureza (Classes 6 e 7)</span>
-                <span>Valores em {pacoteCalculado.moeda} {pacoteCalculado.grandezaTexto}</span>
+                <span>Valores em {pacoteCalculado.moeda} (AOA) {pacoteCalculado.grandezaTexto}</span>
               </div>
               <div className="overflow-x-auto">
-                <table className="w-full text-xs text-left border-collapse">
-                  <thead>
+                <table className="w-full text-xs text-left border-collapse table-fixed">
+                  <thead className="sticky top-0 z-10 bg-slate-100 shadow-xs" style={{ position: "sticky", top: 0, zIndex: 10 }}>
                     <tr className="bg-slate-100 border-b border-slate-200 text-slate-700 font-bold">
-                      <th className="py-2.5 px-3">Rubrica Oficial</th>
-                      <th className="py-2.5 px-3 text-center w-16">Notas</th>
-                      <th className="py-2.5 px-3 text-right w-44">Exercício {ano} (Actual)</th>
-                      <th className="py-2.5 px-3 text-right w-44">Exercício {ano - 1} (Anterior)</th>
+                      <th className="py-2.5 px-3 sticky top-0 bg-slate-100 z-10 w-auto min-w-[220px]">Rubrica Oficial</th>
+                      <th className="py-2.5 px-3 text-center w-16 sticky top-0 bg-slate-100 z-10">Notas</th>
+                      <th className="py-2.5 px-3 text-right w-44 sticky top-0 bg-slate-100 z-10">Exercício {ano} (Actual)</th>
+                      <th className="py-2.5 px-3 text-right w-44 sticky top-0 bg-slate-100 z-10">Exercício {ano - 1} (Anterior)</th>
                     </tr>
                   </thead>
-                  <tbody>
+                  <tbody className="divide-y divide-slate-100" style={{ maxHeight: "calc(100dvh - 280px)" }}>
                     {resultados.linhas.map((l, i) => {
                       const isTotal = l.ehTotal || l.rubrica.startsWith("RESULTADO");
                       const isGrandTotal = l.rubrica === "RESULTADO LÍQUIDO DO EXERCÍCIO";
@@ -630,21 +628,21 @@ export const DemonstracoesModal: React.FC<DemonstracoesModalProps> = ({
 
           {/* TAB 3: FLUXOS DE CAIXA */}
           {activeTab === "fluxos" && (
-            <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-              <div className="p-3 bg-[#1B3A6B] text-white flex justify-between items-center text-xs font-bold">
+            <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden flex flex-col">
+              <div className="sticky top-0 z-20 p-3 bg-[#1B3A6B] text-white flex justify-between items-center text-xs font-bold shadow-xs">
                 <span>Demonstração de Fluxos de Caixa (Método Indirecto)</span>
-                <span>Valores em {pacoteCalculado.moeda}</span>
+                <span>Valores em {pacoteCalculado.moeda} (AOA)</span>
               </div>
               <div className="overflow-x-auto">
-                <table className="w-full text-xs text-left border-collapse">
-                  <thead>
+                <table className="w-full text-xs text-left border-collapse table-fixed">
+                  <thead className="sticky top-0 z-10 bg-slate-100 shadow-xs" style={{ position: "sticky", top: 0, zIndex: 10 }}>
                     <tr className="bg-slate-100 border-b border-slate-200 text-slate-700 font-bold">
-                      <th className="py-2.5 px-3">Actividades / Rubricas</th>
-                      <th className="py-2.5 px-3 text-center w-16">Notas</th>
-                      <th className="py-2.5 px-3 text-right w-44">Exercício {ano}</th>
+                      <th className="py-2.5 px-3 sticky top-0 bg-slate-100 z-10 w-auto min-w-[220px]">Actividades / Rubricas</th>
+                      <th className="py-2.5 px-3 text-center w-16 sticky top-0 bg-slate-100 z-10">Notas</th>
+                      <th className="py-2.5 px-3 text-right w-44 sticky top-0 bg-slate-100 z-10">Exercício {ano}</th>
                     </tr>
                   </thead>
-                  <tbody>
+                  <tbody className="divide-y divide-slate-100" style={{ maxHeight: "calc(100dvh - 280px)" }}>
                     {fluxos.linhas.map((l, i) => {
                       const isMain = l.ehTotal && !l.rubrica.startsWith("Caixa Líquida") && !l.rubrica.startsWith("AUMENTO");
                       const isTotal = l.ehTotal;
@@ -689,21 +687,21 @@ export const DemonstracoesModal: React.FC<DemonstracoesModalProps> = ({
 
           {/* TAB 4: ALTERAÇÕES NOS CAPITAIS PRÓPRIOS */}
           {activeTab === "cp" && (
-            <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-              <div className="p-3 bg-[#1B3A6B] text-white flex justify-between items-center text-xs font-bold">
+            <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden flex flex-col">
+              <div className="sticky top-0 z-20 p-3 bg-[#1B3A6B] text-white flex justify-between items-center text-xs font-bold shadow-xs">
                 <span>Demonstração de Alterações nos Capitais Próprios (Classe 5)</span>
-                <span>Valores em {pacoteCalculado.moeda}</span>
+                <span>Valores em {pacoteCalculado.moeda} (AOA)</span>
               </div>
               <div className="overflow-x-auto">
-                <table className="w-full text-xs text-left border-collapse">
-                  <thead>
+                <table className="w-full text-xs text-left border-collapse table-fixed">
+                  <thead className="sticky top-0 z-10 bg-slate-100 shadow-xs" style={{ position: "sticky", top: 0, zIndex: 10 }}>
                     <tr className="bg-slate-100 border-b border-slate-200 text-slate-700 font-bold">
-                      <th className="py-2.5 px-3">Rubrica de Capital Próprio</th>
-                      <th className="py-2.5 px-3 text-right w-44">Saldo Final ({ano})</th>
-                      <th className="py-2.5 px-3 text-right w-44">Saldo Inicial ({ano - 1})</th>
+                      <th className="py-2.5 px-3 sticky top-0 bg-slate-100 z-10 w-auto min-w-[220px]">Rubrica de Capital Próprio</th>
+                      <th className="py-2.5 px-3 text-right w-44 sticky top-0 bg-slate-100 z-10">Saldo Final ({ano})</th>
+                      <th className="py-2.5 px-3 text-right w-44 sticky top-0 bg-slate-100 z-10">Saldo Inicial ({ano - 1})</th>
                     </tr>
                   </thead>
-                  <tbody>
+                  <tbody className="divide-y divide-slate-100" style={{ maxHeight: "calc(100dvh - 280px)" }}>
                     {alteracoesCP.linhas.map((l, i) => {
                       const isEditable = !l.ehTotal;
                       return (
