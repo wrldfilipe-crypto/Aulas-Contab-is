@@ -23,7 +23,7 @@ const NEXT_ROUTES_PREDICTION: Record<RouteKey, RouteKey[]> = {
 // Map of route keys to their dynamic import functions
 const COMPONENT_IMPORTS: Record<RouteKey, () => Promise<any>> = {
   dashboard: () => Promise.resolve(),
-  ai_accountant: () => import('../components/AiAccountantSuite'),
+  ai_accountant: () => import('../components/YohanAI'),
   learning: () => import('../components/LearningWorkspace'),
   quizzes: () => import('../components/QuizWorkspace'),
   erp_accounting: () => import('../components/ErpAccountingWorkspace')

@@ -15,6 +15,7 @@ import {
   User,
 } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
+import AppLogo from "../../components/AppLogo";
 import {
   entrarComGoogle,
   entrarConta,
@@ -152,12 +153,8 @@ export function LoginPage() {
             <div className="absolute -right-24 top-24 h-64 w-64 rounded-full border border-cyan-300/20 bg-cyan-300/10 blur-2xl" />
             <div className="absolute -bottom-20 -left-20 h-64 w-64 rounded-full border border-violet-300/10 bg-violet-500/10 blur-2xl" />
             <div className="relative z-10">
-              <div className="mb-10 flex items-center gap-3">
-                <img src="/contaestudo-logo.png" alt="Logo ContaEstudo" referrerPolicy="no-referrer" className="h-11 w-11 rounded-2xl object-cover shadow-lg shadow-violet-950/30 ring-1 ring-white/15" />
-                <div>
-                  <p className="text-sm font-black tracking-wide text-white">ContaEstudo</p>
-                  <p className="text-[10px] uppercase tracking-[0.24em] text-blue-200/60">Contabilidade • Aprenda • Evolua</p>
-                </div>
+              <div className="mb-10">
+                <AppLogo isExpanded={true} size="lg" />
               </div>
               <div className="max-w-sm">
                 <p className="mb-4 flex items-center gap-2 text-xs font-bold uppercase tracking-[0.22em] text-cyan-300">
@@ -182,13 +179,7 @@ export function LoginPage() {
 
           <div className="relative bg-[#091426]/95 p-5 sm:p-8 lg:p-10">
             <div className="mb-8 flex items-center justify-between lg:hidden">
-              <div className="flex items-center gap-2.5">
-                <img src="/contaestudo-logo.png" alt="Logo ContaEstudo" referrerPolicy="no-referrer" className="h-10 w-10 rounded-xl object-cover shadow-md shadow-violet-950/30 ring-1 ring-white/15" />
-                <div>
-                  <p className="text-sm font-black">ContaEstudo</p>
-                  <p className="text-[9px] uppercase tracking-[0.2em] text-slate-400">Contabilidade • Aprenda • Evolua</p>
-                </div>
-              </div>
+              <AppLogo isExpanded={true} size="md" />
               <span className="rounded-full border border-emerald-400/20 bg-emerald-400/10 px-2.5 py-1 text-[10px] font-bold text-emerald-300">Seguro</span>
             </div>
 

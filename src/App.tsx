@@ -10,6 +10,7 @@ import { ErrorBoundary } from './components/ErrorBoundary';
 import { ComponentErrorBoundary } from './components/ComponentErrorBoundary';
 import { preloadNextLikelyRoutes } from './services/preloadService';
 import { cancelPendingRequests } from './services/appCacheService';
+import YohanAI from './components/YohanAI';
 import { getPendingOfflineActions, syncOfflineDataWithServer, clearStaleCache, getQuizProgress, notifyDataChanged } from './services/dashboardCache';
 import { processOfflineQueue } from './services/offlineQueue';
 import LanguageSelector from './components/LanguageSelector';
@@ -53,46 +54,20 @@ import {
   ensureDemoUsers,
   isWithinWorkHours
 } from './lib/db';
-import { loadUserProfileMultiStore } from './lib/userProfiles';
+import { loadUserProfileMultiStore, saveUserProfileMultiStore } from './lib/userProfiles';
+import { obterPerfilDoFirestore } from './lib/auth/authService';
 
-// Helper for lazy loading with progressive retry on dynamic chunk load failure
-function lazyWithRetry<T extends React.ComponentType<any>>(
-  componentImport: () => Promise<{ default: T } | T>,
-  retries = 3,
-  interval = 400
-) {
-  return React.lazy(async () => {
-    let lastError: any = null;
-    for (let i = 0; i < retries; i++) {
-      try {
-        const mod = await componentImport();
-        return (mod && 'default' in mod) ? mod : { default: mod as T };
-      } catch (error) {
-        lastError = error;
-        console.warn(`[App] Dynamic import attempt ${i + 1}/${retries} failed, retrying in ${interval * (i + 1)}ms...`, error);
-        await new Promise(resolve => setTimeout(resolve, interval * (i + 1)));
-      }
-    }
-    console.error('[App] All dynamic import attempts failed:', lastError);
-    throw lastError;
-  });
-}
-
-// Lazy loaded page components and modals for code-splitting
-const AuthScreen = lazyWithRetry(() => import('./components/AuthScreen'));
-const LoginPage = lazyWithRetry(() => import('./pages/Login/LoginPage').then(m => ({ default: m.LoginPage })));
-const SupabaseSyncManagerModal = lazyWithRetry(() => import('./components/SupabaseSyncManagerModal'));
-
-// Lazy loaded heavy components to optimize memory & prevent browser crash on initial load
-const AiAccountantSuite = lazyWithRetry(() => import('./components/AiAccountantSuite'));
-const LearningWorkspace = lazyWithRetry(() => import('./components/LearningWorkspace'));
-const QuizWorkspace = lazyWithRetry(() => import('./components/QuizWorkspace'));
-const AdminDashboard = lazyWithRetry(() => import('./components/AdminDashboard'));
-const ErpAccountingWorkspace = lazyWithRetry(() => import('./components/ErpAccountingWorkspace'));
-const NotasPage = lazyWithRetry(() => import('./components/NotasPage'));
-const StudentDashboardView = lazyWithRetry(() => import('./components/StudentDashboardView').then(m => ({ default: m.StudentDashboardView })));
-const UserProfilePanel = lazyWithRetry(() => import('./components/UserProfilePanel'));
-const GlobalSearchPanel = lazyWithRetry(() => import('./components/GlobalSearchPanel'));
+import AuthScreen from './components/AuthScreen';
+import { LoginPage } from './pages/Login/LoginPage';
+import SupabaseSyncManagerModal from './components/SupabaseSyncManagerModal';
+import LearningWorkspace from './components/LearningWorkspace';
+import { QuizWorkspace } from './components/QuizWorkspace';
+import AdminDashboard from './components/AdminDashboard';
+import ErpAccountingWorkspace from './components/ErpAccountingWorkspace';
+import NotasPage from './components/NotasPage';
+import { StudentDashboardView } from './components/StudentDashboardView';
+import UserProfilePanel from './components/UserProfilePanel';
+import GlobalSearchPanel from './components/GlobalSearchPanel';
 
 import { 
   LayoutDashboard, 
@@ -436,35 +411,68 @@ export default function App({ firebaseUser, firebaseUid }: { firebaseUser?: any;
 
   const isSidebarExpanded = isSidebarPinned || isSidebarHovered;
 
-  // Verify user and workspace on mount & sync with Firebase Auth
+  // Verify user and workspace on mount & sync with Firebase Auth / Firestore
   const lastSyncedUserRef = useRef<string>('');
   useEffect(() => {
     ensureDemoUsers();
     if (firebaseUid && firebaseUser) {
-      const savedProfile = loadUserProfileMultiStore(firebaseUid) || 
-        (firebaseUser.email ? loadUserProfileMultiStore(firebaseUser.email.toLowerCase().trim()) : null);
+      const targetUid = firebaseUid;
+      const emailKey = firebaseUser.email ? firebaseUser.email.toLowerCase().trim() : '';
+      let savedProfile = loadUserProfileMultiStore(targetUid) || (emailKey ? loadUserProfileMultiStore(emailKey) : null);
 
-      const userKey = `${firebaseUid}:${firebaseUser.email || ''}:${savedProfile?.name || firebaseUser.nome || firebaseUser.displayName || ''}:${savedProfile?.roleTitle || savedProfile?.profile || firebaseUser.role || ''}`;
-      if (lastSyncedUserRef.current === userKey) return;
-      lastSyncedUserRef.current = userKey;
+      const effectiveName = savedProfile?.name || firebaseUser.nome || firebaseUser.displayName || 'Utilizador';
+      const effectiveRole = savedProfile?.roleTitle || savedProfile?.profile || firebaseUser.role || 'Senior Accountant';
 
-      const authUser: any = {
-        userId: firebaseUid,
-        uid: firebaseUid,
-        id: firebaseUid,
-        email: savedProfile?.email || firebaseUser.email || '',
-        name: savedProfile?.name || firebaseUser.nome || firebaseUser.displayName || 'Utilizador',
-        role: savedProfile?.roleTitle || savedProfile?.profile || firebaseUser.role || 'Senior Accountant',
-        avatar: savedProfile?.fotoUrl || savedProfile?.photoUrl || savedProfile?.avatar || firebaseUser.avatar || firebaseUser.photoURL || firebaseUser.fotoUrl,
-        fotoUrl: savedProfile?.fotoUrl || firebaseUser.fotoUrl || firebaseUser.photoURL,
-        status: 'online'
-      };
-      setCurrentUser(authUser);
-      DB.set('users', authUser.userId, authUser);
-      const ws = getActiveWorkspace();
-      setActiveWorkspace(ws);
-      setWorkspaces(getUserWorkspaces(authUser.userId));
-      setNotifications(getNotifications());
+      const userKey = `${targetUid}:${firebaseUser.email || ''}:${effectiveName}:${effectiveRole}`;
+      if (lastSyncedUserRef.current !== userKey) {
+        lastSyncedUserRef.current = userKey;
+
+        const authUser: any = {
+          userId: targetUid,
+          uid: targetUid,
+          id: targetUid,
+          email: savedProfile?.email || firebaseUser.email || '',
+          name: effectiveName,
+          role: effectiveRole,
+          avatar: savedProfile?.fotoUrl || savedProfile?.photoUrl || savedProfile?.avatar || firebaseUser.avatar || firebaseUser.photoURL || firebaseUser.fotoUrl,
+          fotoUrl: savedProfile?.fotoUrl || firebaseUser.fotoUrl || firebaseUser.photoURL,
+          status: 'online'
+        };
+        setCurrentUser(authUser);
+        DB.set('users', authUser.userId, authUser);
+        const ws = getActiveWorkspace();
+        setActiveWorkspace(ws);
+        setWorkspaces(getUserWorkspaces(authUser.userId));
+        setNotifications(getNotifications());
+      }
+
+      // Background Firestore profile fetch to ensure latest saved profile is synchronized
+      obterPerfilDoFirestore(targetUid).then((fsProfile) => {
+        if (fsProfile && (fsProfile.name || fsProfile.nome || fsProfile.roleTitle)) {
+          const profileName = fsProfile.name || fsProfile.nome || effectiveName;
+          const profileRole = fsProfile.roleTitle || fsProfile.cargo || fsProfile.role || effectiveRole;
+          const merged = {
+            name: profileName,
+            email: fsProfile.email || firebaseUser.email,
+            roleTitle: profileRole,
+            fotoUrl: fsProfile.photoURL || fsProfile.avatar || fsProfile.fotoUrl,
+            country: fsProfile.country,
+            company: fsProfile.company || fsProfile.empresa,
+          };
+          saveUserProfileMultiStore(targetUid, merged);
+          if (emailKey) saveUserProfileMultiStore(emailKey, merged);
+          setCurrentUser((prev: any) => {
+            if (!prev) return prev;
+            return {
+              ...prev,
+              name: profileName,
+              role: profileRole,
+              avatar: merged.fotoUrl || prev.avatar,
+              fotoUrl: merged.fotoUrl || prev.fotoUrl,
+            };
+          });
+        }
+      }).catch(() => {});
     } else {
       const user = getCurrentUser();
       if (user) {
@@ -490,11 +498,21 @@ export default function App({ firebaseUser, firebaseUid }: { firebaseUser?: any;
           setWorkspaces(getUserWorkspaces(user.userId));
           setNotifications(getNotifications());
         }
+
+        if (uid) {
+          obterPerfilDoFirestore(uid).then((fsProfile) => {
+            if (fsProfile && (fsProfile.name || fsProfile.nome)) {
+              const profileName = fsProfile.name || fsProfile.nome;
+              const profileRole = fsProfile.roleTitle || fsProfile.cargo || fsProfile.role;
+              setCurrentUser((prev: any) => prev ? { ...prev, name: profileName, role: profileRole || prev.role } : prev);
+            }
+          }).catch(() => {});
+        }
       }
     }
   }, [firebaseUid, firebaseUser?.email, firebaseUser?.nome, firebaseUser?.displayName, firebaseUser?.role]);
 
-  // Real-time listener for profile changes across components and browser storage
+  // Real-time listener for profile changes across components, custom events and storage
   useEffect(() => {
     const handleProfileUpdate = (e?: any) => {
       const profileData = e?.detail;
@@ -514,11 +532,17 @@ export default function App({ firebaseUser, firebaseUid }: { firebaseUser?: any;
       });
     };
 
+    const handleOpenMobileSidebar = () => {
+      setIsMobileOpen(true);
+    };
+
     window.addEventListener('user_profile_updated', handleProfileUpdate);
     window.addEventListener('storage', handleProfileUpdate);
+    window.addEventListener('ga-open-mobile-sidebar', handleOpenMobileSidebar);
     return () => {
       window.removeEventListener('user_profile_updated', handleProfileUpdate);
       window.removeEventListener('storage', handleProfileUpdate);
+      window.removeEventListener('ga-open-mobile-sidebar', handleOpenMobileSidebar);
     };
   }, [firebaseUid]);
 
@@ -1852,7 +1876,7 @@ export default function App({ firebaseUser, firebaseUid }: { firebaseUser?: any;
             )}
           </motion.div>
 
-          {/* AI Accountant Suite */}
+          {/* Yohan AI Suite */}
           <motion.div
             initial={{ opacity: 0, scale: 0.95, x: -6 }}
             animate={{ opacity: 1, scale: 1, x: 0 }}
@@ -1866,11 +1890,11 @@ export default function App({ firebaseUser, firebaseUid }: { firebaseUser?: any;
               data-active={activeTab === 'assistant'}
               className={`w-full flex items-center ${isSidebarExpanded ? 'px-3.5 py-2.5 justify-start' : 'p-2.5 justify-center relative'} text-sm font-medium rounded-xl transition-all duration-200 ease-out hover:translate-x-1 hover:shadow-md hover:shadow-black/20 ${
                 activeTab === 'assistant' 
-                  ? 'text-white shadow-md shadow-blue-600/20 active border-l-4 border-l-blue-300 scale-[1.01]' 
+                  ? 'text-white shadow-md shadow-indigo-600/20 active border-l-4 border-l-indigo-400 scale-[1.01]' 
                   : 'text-slate-300 hover:bg-slate-800/90 hover:text-white border-l-4 border-l-transparent'
               }`}
             >
-              <Bot className={`w-4 h-4 shrink-0 text-slate-300 group-hover:text-blue-300 ${isSidebarExpanded ? 'mr-3' : ''}`} />
+              <Sparkles className={`w-4 h-4 shrink-0 text-indigo-400 group-hover:text-indigo-300 ${isSidebarExpanded ? 'mr-3' : ''}`} />
               {isSidebarExpanded ? (
                 <div className="w-full flex items-center justify-between min-w-0">
                   <span className="truncate text-slate-200 group-hover:text-white font-medium">{i18n.t('nav.aiAccountant')}</span>
@@ -2841,9 +2865,9 @@ export default function App({ firebaseUser, firebaseUid }: { firebaseUser?: any;
                   exit={{ opacity: 0, x: -20 }}
                   transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
                 >
-                  <ErrorBoundary fallbackTitle="Erro ao carregar o Contador IA">
+                  <ErrorBoundary fallbackTitle="Erro ao carregar o Yohan AI">
                     <div className="flex min-h-0 min-w-0 h-full w-full flex-1 flex-col overflow-hidden">
-                      <AiAccountantSuite 
+                      <YohanAI 
                         currentLanguage={i18n.currentLang} 
                         onSaveToVault={(type, title, content) => {
                           if (!activeWorkspace) return;
@@ -2867,6 +2891,19 @@ export default function App({ firebaseUser, firebaseUid }: { firebaseUser?: any;
                       />
                     </div>
                   </ErrorBoundary>
+
+                  {/* FLOATING MOBILE SIDEBAR BUTTON (Visible only on mobile <= 767px / md:hidden) */}
+                  <button
+                    type="button"
+                    onClick={() => setIsMobileOpen(true)}
+                    className="md:hidden fixed bottom-5 left-4 z-40 flex items-center gap-2 px-3.5 py-2.5 rounded-full bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 active:scale-95 text-white shadow-xl shadow-blue-950/40 border border-white/20 backdrop-blur-md transition-all cursor-pointer select-none"
+                    aria-label="Abrir Menu de Navegação"
+                    title="Abrir Menu de Navegação"
+                    id="mobile-sidebar-assistant-fab"
+                  >
+                    <Menu className="w-4 h-4 text-white shrink-0" />
+                    <span className="text-xs font-bold tracking-tight">Menu</span>
+                  </button>
                 </motion.div>
               )}
 

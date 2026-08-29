@@ -10,6 +10,7 @@ export interface User {
   email: string;
   photoURL?: string | null;
   avatar?: string | null;
+  fotoUrl?: string | null;
   role?: string;
   country?: string;
   standard?: string;
@@ -24,6 +25,7 @@ export interface User {
   roleTitle?: string | null;
   company?: string | null;
   bio?: string | null;
+  [key: string]: any;
 }
 
 export type EstadoAuth =
@@ -176,6 +178,45 @@ export async function garantirPerfil(user: User): Promise<void> {
   } catch (err) {
     console.info("[authService] Perfil sincronizado localmente.");
   }
+}
+
+/** Grava e sincroniza o perfil do utilizador diretamente no Firestore */
+export async function salvarPerfilNoFirestore(uid: string, dados: Partial<User>): Promise<boolean> {
+  if (!uid) return false;
+  try {
+    const userRef = doc(db, "users", uid);
+    const payload: any = {
+      ...dados,
+      id: uid,
+      uid: uid,
+      updatedAt: new Date().toISOString()
+    };
+    if (dados.name) {
+      payload.nome = dados.name;
+      payload.nomeLower = dados.name.toLowerCase().trim();
+      payload.nameLower = dados.name.toLowerCase().trim();
+    }
+    await setDoc(userRef, payload, { merge: true });
+    return true;
+  } catch (e) {
+    console.warn("[authService] Falha ao guardar perfil no Firestore (modo offline/fallback ativo):", e);
+    return false;
+  }
+}
+
+/** Obtém o perfil do utilizador diretamente do Firestore */
+export async function obterPerfilDoFirestore(uid: string): Promise<User | null> {
+  if (!uid) return null;
+  try {
+    const userRef = doc(db, "users", uid);
+    const snap = await getDoc(userRef);
+    if (snap.exists()) {
+      return snap.data() as User;
+    }
+  } catch (e) {
+    console.warn("[authService] Falha ao ler perfil do Firestore:", e);
+  }
+  return null;
 }
 
 /** Login por email e palavra-passe via localStorage */

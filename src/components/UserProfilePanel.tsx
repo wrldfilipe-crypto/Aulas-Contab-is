@@ -53,6 +53,7 @@ import {
   saveUserProfileMultiStore, 
   loadUserProfileMultiStore 
 } from '../lib/userProfiles';
+import { salvarPerfilNoFirestore } from '../lib/auth/authService';
 import { 
   DB, 
   getCurrentUser, 
@@ -63,7 +64,7 @@ import {
   logAuditEvent,
   createNotification
 } from '../lib/db';
-import { useAuditLog } from '../hooks/useAuditLog';
+import { logFormSubmit } from '../hooks/useAuditLog';
 import { clearRuntimeCache, estimateCacheUsage } from '../services/appCacheService';
 import ThemeCustomizationDrawer from './ThemeCustomizationDrawer';
 
@@ -74,7 +75,6 @@ interface UserProfilePanelProps {
 }
 
 export default function UserProfilePanel({ onUpdateUser, onLogout, onNavigateTab }: UserProfilePanelProps) {
-  const { logFormSubmit } = useAuditLog();
   const [activeSubSection, setActiveSubSection] = useState<'info' | 'security' | 'prefs' | 'edu' | 'privacy'>('info');
   const [user, setUser] = useState<UserSession | null>(null);
 
@@ -492,19 +492,24 @@ export default function UserProfilePanel({ onUpdateUser, onLogout, onNavigateTab
       saveUserProfileMultiStore(activeUser.email.toLowerCase().trim(), profilePayload);
     }
 
-    // 2. Sincronizar sessão em memória e storage
+    // 2. Gravar no Firestore se UID estiver disponível
+    if (uid && uid !== 'anonymous') {
+      salvarPerfilNoFirestore(uid, profilePayload).catch(() => {});
+    }
+
+    // 3. Sincronizar sessão em memória e storage
     const updated: UserSession = {
       ...activeUser,
       ...profilePayload
     };
     onUpdateUser(updated);
 
-    // 3. Notificar todos os componentes da aplicação
+    // 4. Notificar todos os componentes da aplicação
     if (typeof window !== 'undefined') {
       window.dispatchEvent(new CustomEvent('user_profile_updated', { detail: profilePayload }));
     }
 
-    // 4. Feedback discreto
+    // 5. Feedback discreto
     showSavedBadge();
   };
 

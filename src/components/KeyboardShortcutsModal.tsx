@@ -13,7 +13,7 @@ const SHORTCUT_GROUPS = [
     title: 'Navegação Rápida entre Abas (Alt + Tecla / Alt + Número)',
     shortcuts: [
       { key: 'Alt + 1', label: 'Painel Principal (Dashboard)', tab: 'dashboard' },
-      { key: 'Alt + 2', label: 'AI Accountant (Consultor IA)', tab: 'assistant' },
+      { key: 'Alt + 2', label: 'Yohan AI (Consultor PGC)', tab: 'assistant' },
       { key: 'Alt + 3', label: 'Aprendizados (Biblioteca)', tab: 'learning' },
       { key: 'Alt + 4', label: 'Quizzes & Duelo Contábil', tab: 'quizzes' },
       { key: 'Alt + A / Alt + 5', label: 'Contabilidade (PGC Angola)', tab: 'accounting' },

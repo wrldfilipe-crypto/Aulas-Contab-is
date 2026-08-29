@@ -208,9 +208,9 @@ export default function GlobalSearchPanel({
       console.warn('Global search failed reading transactions:', e);
     }
 
-    // 3. Search in HISTÓRICO DO CONSULTOR DE IA (LocalStorage)
+    // 3. Search in HISTÓRICO DO YOHAN AI (LocalStorage)
     try {
-      const storedHistory = localStorage.getItem(`ga_ai_accountant_history_${currentUserId}`);
+      const storedHistory = localStorage.getItem(`ga_yohan_ai_history_${currentUserId}`) || localStorage.getItem(`ga_ai_accountant_history_${currentUserId}`);
       if (storedHistory) {
         const aiHistory: any[] = JSON.parse(storedHistory);
         aiHistory
@@ -223,9 +223,9 @@ export default function GlobalSearchPanel({
             listResults.push({
               id: 'aichat_' + h.id,
               type: 'ai_chat',
-              categoryLabel: '🤖 Consultor de IA (Histórico)',
+              categoryLabel: '🤖 Yohan AI (Histórico)',
               icon: MessageSquare,
-              title: h.title || 'Conversa com a IA',
+              title: h.title || 'Conversa com Yohan AI',
               subtitle: `Etiqueta: ${h.tag || '#Geral'} • ${h.messages?.length || 0} mensagens`,
               action: () => {
                 onNavigateTab('assistant');
@@ -261,7 +261,7 @@ export default function GlobalSearchPanel({
     // 5. Search in pages e ações
     const pages = [
       { label: 'Consola de Painel / Dashboard', route: 'dashboard', keywords: 'home inicio dashboard console transacoes' },
-      { label: 'Consultor de IA / AI Accountant', route: 'assistant', keywords: 'ia chat assistente documentos pgciva' },
+      { label: 'Yohan AI / Assistente PGC', route: 'assistant', keywords: 'yohan ia chat assistente documentos pgciva contabilidade auditoria' },
       { label: 'Aprendizados / Materiais de Estudo & IA', route: 'learning', keywords: 'aprendizados estudo pdf word excel materias ia explicacoes exercicios' },
       { label: 'Exercícios & Quizzes / Quizzes', route: 'quizzes', keywords: 'quizzes questoes testes simulados exercicios contabilidade' },
       { label: 'Contabilidade & Diário / Journal', route: 'erp_accounting', keywords: 'contabilidade diario lancamentos balancete razao' },

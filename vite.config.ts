@@ -6,8 +6,6 @@ import {defineConfig} from 'vite';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const reactDir = path.resolve(__dirname, 'node_modules/react');
-const reactDomDir = path.resolve(__dirname, 'node_modules/react-dom');
 
 export default defineConfig(() => {
   return {
@@ -15,9 +13,7 @@ export default defineConfig(() => {
     resolve: {
       dedupe: ['react', 'react-dom'],
       alias: {
-        '@': path.resolve(__dirname, '.'),
-        react: reactDir,
-        'react-dom': reactDomDir,
+        '@': path.resolve(__dirname, './src'),
       },
     },
     optimizeDeps: {

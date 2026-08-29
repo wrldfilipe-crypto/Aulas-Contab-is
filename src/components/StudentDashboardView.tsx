@@ -22,6 +22,7 @@ import { getCurrentUser } from '../lib/db';
 import { OfflineLimitedBanner } from './OfflineLimitedBanner';
 import { getDashboardCache, saveDashboardCache, subscribeToDashboardChanges } from '../services/dashboardCache';
 import { getStudentProgress } from '../services/studentProgressService';
+import { StudentQuizProgressStats } from './StudentQuizProgressStats';
 
 interface InactiveFavoriteItem {
   id: string;
@@ -252,7 +253,7 @@ export const StudentDashboardView: React.FC<StudentDashboardViewProps> = ({
               className="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs rounded-xl shadow-lg transition-all flex items-center gap-2 cursor-pointer active:scale-[0.98]"
             >
               <Sparkles className="w-4 h-4" />
-              <span>AI Accountant</span>
+              <span>Yohan AI</span>
             </button>
           </div>
         </div>
@@ -317,7 +318,10 @@ export const StudentDashboardView: React.FC<StudentDashboardViewProps> = ({
         </motion.div>
       )}
 
-      {/* 2. SECÇÃO DE ACESSO RÁPIDO */}
+      {/* 2. RESUMO ESTATÍSTICO DE QUIZZES & DOMÍNIO PGC (COM FIRESTORE) */}
+      <StudentQuizProgressStats onNavigateTab={onNavigateTab} />
+
+      {/* 3. SECÇÃO DE ACESSO RÁPIDO */}
       <div className="space-y-3" id="quick-access-section">
         <div className="flex items-center justify-between">
           <h2 className="text-xs font-black uppercase tracking-wider text-slate-500 flex items-center gap-1.5">
@@ -380,7 +384,7 @@ export const StudentDashboardView: React.FC<StudentDashboardViewProps> = ({
               </div>
 
               <h3 className="text-sm font-black text-slate-900 group-hover:text-blue-600 transition-colors">
-                AI Accountant — Consultoria & Análise
+                Yohan AI — Consultoria & Auditoria PGC
               </h3>
               <p className="text-xs text-slate-500 font-medium mt-1.5 leading-relaxed">
                 Assistente inteligente para resolução de dúvidas contabilísticas, fiscais, auditoria e geração de relatórios.
@@ -388,7 +392,7 @@ export const StudentDashboardView: React.FC<StudentDashboardViewProps> = ({
             </div>
 
             <div className="pt-4 border-t border-slate-100 mt-4 flex items-center justify-between text-xs font-bold text-blue-600">
-              <span>Aceder ao AI Assistant</span>
+              <span>Aceder ao Yohan AI</span>
               <ChevronRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
             </div>
           </motion.div>
