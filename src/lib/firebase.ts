@@ -1543,4 +1543,49 @@ export function ouvirConversasDoFirestore(
   }
 }
 
+/**
+ * Regista o feedback persistente (positivo ou negativo) do utilizador no Firestore
+ * para auditoria e calibração contínua das respostas de IA do Yohan.
+ */
+export async function salvarFeedbackYohanFirestore(
+  uid: string,
+  messageId: string,
+  rating: 'up' | 'down',
+  conversationId?: string,
+  messageContent?: string,
+  comments?: string
+): Promise<boolean> {
+  const effectiveUid = uid || 'anonymous_user';
+  try {
+    const feedbackDocRef = doc(collection(db, 'users', effectiveUid, 'yohan_feedback'), `fb_${messageId}`);
+    await setDoc(feedbackDocRef, {
+      messageId,
+      rating,
+      conversationId: conversationId || 'default_chat',
+      messagePreview: messageContent ? messageContent.substring(0, 200) : '',
+      comments: comments || '',
+      updatedAt: Date.now(),
+      createdAt: serverTimestamp()
+    }, { merge: true });
+
+    // Registo global de telemetria de feedback para melhorias
+    try {
+      const globalFeedbackRef = doc(collection(db, 'yohan_feedback_telemetry'), `fb_${effectiveUid}_${messageId}`);
+      await setDoc(globalFeedbackRef, {
+        userId: effectiveUid,
+        messageId,
+        rating,
+        conversationId: conversationId || 'default_chat',
+        updatedAt: Date.now()
+      }, { merge: true });
+    } catch (_) {}
+
+    return true;
+  } catch (err) {
+    console.warn('[Firestore Yohan Feedback] Erro ao persistir feedback:', err);
+    return false;
+  }
+}
+
+
 

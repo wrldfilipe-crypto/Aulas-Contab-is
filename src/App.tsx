@@ -2,6 +2,7 @@ import React, { useState, useMemo, useEffect, useRef, Suspense } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { i18n } from './translations';
 import { sairConta } from './lib/auth/authService';
+import { trocarDeConta } from './lib/auth/trocarConta';
 import { formatCurrency, SUPPORTED_CURRENCIES, convertCurrency } from './lib/currencyUtils';
 import { getStoredSessionContext, SessionContext } from './lib/accountingStandards';
 import AppLogo from './components/AppLogo';
@@ -24,6 +25,7 @@ import { OnboardingTour } from './components/OnboardingTour';
 import { KeyboardShortcutsModal } from './components/KeyboardShortcutsModal';
 import { FirestoreStatusModal } from './components/FirestoreStatusModal';
 import OfflineSyncManagerModal from './components/OfflineSyncManagerModal';
+import { MobileBottomNavigation } from './components/MobileBottomNavigation';
 import { SmartSuggestionsWidget } from './components/SmartSuggestionsWidget';
 import { 
   trackUserPresence 
@@ -562,6 +564,22 @@ export default function App({ firebaseUser, firebaseUid }: { firebaseUser?: any;
   const [isMoreOptionsOpen, setIsMoreOptionsOpen] = useState(false);
   const [isMobileDrawerOpen, setIsMobileDrawerOpen] = useState(false);
   const [isStatsCollapsed, setIsStatsCollapsed] = useState(true);
+
+  const handleLogout = async (msg?: string) => {
+    if (msg) setLogoutMessage(msg);
+    if (typeof sessionStorage !== 'undefined') {
+      sessionStorage.setItem('ga_user_logged_out', 'true');
+    }
+    await sairConta();
+    setCurrentUser(null);
+  };
+
+  const handleTrocarConta = async () => {
+    if (typeof sessionStorage !== 'undefined') {
+      sessionStorage.setItem('ga_user_logged_out', 'true');
+    }
+    await trocarDeConta();
+  };
 
   // Multi-Device Session Management, Sync Engine & Preferences Real-Time Sync
   useEffect(() => {
@@ -2198,9 +2216,9 @@ export default function App({ firebaseUser, firebaseUid }: { firebaseUser?: any;
         id="main-content-panel"
       >
 
-        {/* UPPER HEADER - COMPACT & FULLY RESPONSIVE */}
+        {/* UPPER HEADER - COMPACT & FULLY RESPONSIVE (DESKTOP ONLY - HIDDEN ON MOBILE/TABLET <768PX) */}
         <header 
-          className="h-16 sticky top-0 z-[999] bg-white/90 dark:bg-slate-900/90 backdrop-blur-md border-b border-slate-200 dark:border-slate-800 px-3 sm:px-5 lg:px-6 flex items-center justify-between shrink-0 gap-2 sm:gap-4 select-none" 
+          className="hidden md:flex h-16 sticky top-0 z-[999] bg-white/90 dark:bg-slate-900/90 backdrop-blur-md border-b border-slate-200 dark:border-slate-800 px-3 sm:px-5 lg:px-6 items-center justify-between shrink-0 gap-2 sm:gap-4 select-none" 
           style={{ position: 'sticky', top: 0, zIndex: 999, backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)' }}
           id="header-panel"
         >
@@ -2589,12 +2607,25 @@ export default function App({ firebaseUser, firebaseUid }: { firebaseUser?: any;
                       )}
                       <div className="border-t border-slate-100 dark:border-slate-800 my-1"></div>
                       <button
+                        type="button"
+                        onClick={() => {
+                          setIsUserMenuOpen(false);
+                          setIsToolsMenuOpen(false);
+                          handleTrocarConta();
+                        }}
+                        className="w-full text-left px-4 py-2 text-xs font-bold text-slate-700 dark:text-slate-300 hover:bg-indigo-50 dark:hover:bg-indigo-950/40 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors cursor-pointer flex items-center gap-2"
+                        id="btn-trocar-conta-menu"
+                      >
+                        <Users className="w-3.5 h-3.5 text-indigo-500" />
+                        Trocar de Conta Google
+                      </button>
+                      <button
                         onClick={() => {
                           setIsLogoutModalOpen(true);
                           setIsUserMenuOpen(false);
                           setIsToolsMenuOpen(false);
                         }}
-                        className="w-full text-left px-4 py-2.5 text-xs font-bold text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/40 transition-colors cursor-pointer flex items-center gap-2"
+                        className="w-full text-left px-4 py-2 text-xs font-bold text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/40 transition-colors cursor-pointer flex items-center gap-2"
                       >
                         <LogOut className="w-3.5 h-3.5 text-red-600 dark:text-red-400" />
                         Sair do Sistema
@@ -2759,13 +2790,26 @@ export default function App({ firebaseUser, firebaseUid }: { firebaseUser?: any;
                     )}
 
                     <button
+                      type="button"
+                      onClick={() => {
+                        setIsMobileDrawerOpen(false);
+                        handleTrocarConta();
+                      }}
+                      className="w-full text-left p-3 rounded-xl bg-indigo-50/80 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 text-xs font-bold flex items-center gap-2.5 cursor-pointer min-h-[44px]"
+                      id="btn-trocar-conta-mobile-drawer"
+                    >
+                      <Users className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+                      <span>Trocar de Conta Google</span>
+                    </button>
+
+                    <button
                       onClick={() => {
                         setIsLogoutModalOpen(true);
                         setIsMobileDrawerOpen(false);
                       }}
-                      className="w-full text-left p-3 rounded-xl bg-red-50 text-red-600 text-xs font-bold flex items-center gap-2.5 cursor-pointer min-h-[44px]"
+                      className="w-full text-left p-3 rounded-xl bg-red-50 dark:bg-red-950/40 text-red-600 dark:text-red-400 text-xs font-bold flex items-center gap-2.5 cursor-pointer min-h-[44px]"
                     >
-                      <LogOut className="w-4 h-4 text-red-600" />
+                      <LogOut className="w-4 h-4 text-red-600 dark:text-red-400" />
                       <span>Sair do Sistema</span>
                     </button>
                   </div>
@@ -2778,7 +2822,7 @@ export default function App({ firebaseUser, firebaseUid }: { firebaseUser?: any;
 
         {/* WORKSPACE AREA */}
         <div 
-          className={`flex min-h-0 min-w-0 flex-1 flex-col overflow-x-hidden ${activeTab === 'assistant' ? 'overflow-hidden p-0 md:p-6 lg:p-8' : 'overflow-y-auto p-4 sm:p-6 lg:p-8'}`} 
+          className={`flex min-h-0 min-w-0 flex-1 flex-col overflow-x-hidden ${activeTab === 'assistant' ? 'overflow-hidden p-0 md:p-6 lg:p-8 pb-16 md:pb-6' : 'overflow-y-auto p-4 sm:p-6 lg:p-8 pb-24 md:pb-8'}`} 
           id="workspace-scroll-area"
         >
           <Suspense fallback={<PageSkeleton />}>
@@ -3575,6 +3619,14 @@ export default function App({ firebaseUser, firebaseUid }: { firebaseUser?: any;
 
       {/* FLOATING VISUAL THEME & ACCENT CUSTOMIZER 🎨 */}
       <ThemeCustomizerFloatingButton userId={currentUser?.id || 'global'} />
+
+      {/* MOBILE BOTTOM NAVIGATION BAR (<768px) */}
+      <MobileBottomNavigation 
+        activeTab={activeTab as AppTab}
+        onNavigate={(tab) => setActiveTab(tab)}
+        onOpenMenu={() => setIsMobileDrawerOpen(true)}
+        unreadNotificationsCount={notifications.filter(n => !n.read).length}
+      />
 
     </motion.div>
   );

@@ -1,6 +1,7 @@
-import { db } from "../../firebase";
-import { doc, getDoc, setDoc, collection, query, where, getDocs, limit, serverTimestamp } from "firebase/firestore";
-import { hashPassword, isValidEmail } from "../authCrypto";
+import { auth, db } from "../../firebase";
+import { onAuthStateChanged, signOut as fbSignOut, getRedirectResult } from "firebase/auth";
+import { doc, getDoc, setDoc, collection, query, where, getDocs, limit } from "firebase/firestore";
+import { entrarComGoogleFirebase, limparSessaoPersistida } from "./trocarConta";
 
 export interface User {
   uid: string;
@@ -46,8 +47,27 @@ function notifyAuthListeners(state: EstadoAuth) {
   });
 }
 
-/** Obter utilizador atualmente autenticado a partir do localStorage */
+/** Obter utilizador atualmente autenticado a partir do Firebase Auth ou da sessão ativa */
 export function getCurrentUser(): User | null {
+  if (auth && auth.currentUser) {
+    const u = auth.currentUser;
+    return {
+      uid: u.uid,
+      id: u.uid,
+      name: u.displayName || u.email?.split("@")[0] || "Utilizador",
+      nome: u.displayName || u.email?.split("@")[0] || "Utilizador",
+      displayName: u.displayName || u.email?.split("@")[0] || "Utilizador",
+      email: u.email || "",
+      photoURL: u.photoURL,
+      avatar: u.photoURL,
+      fotoUrl: u.photoURL,
+      role: "accountant",
+      country: "Angola",
+      standard: "PGC-Angola",
+      status: "online"
+    };
+  }
+
   if (typeof window === "undefined" || typeof localStorage === "undefined") return null;
   try {
     const raw = localStorage.getItem("ga_session") || localStorage.getItem("ga_user_session");
@@ -93,19 +113,64 @@ export async function verificarEmailExisteNoFirestore(email: string): Promise<bo
   }
 }
 
-/** Ouvir estado de autenticação em tempo real */
+/** Ouvir estado de autenticação em tempo real garantindo que o UID vem exclusivamente de onAuthStateChanged */
 export function ouvirEstadoAuth(cb: (e: EstadoAuth) => void): () => void {
   authListeners.add(cb);
 
-  // Verificação imediata do localStorage ao subscrever
-  const user = getCurrentUser();
-  if (user) {
-    cb({ status: "autenticado", uid: user.uid, usuario: user });
-  } else {
+  // Se o utilizador tiver saído intencionalmente, NÃO entra automaticamente
+  if (typeof sessionStorage !== "undefined" && sessionStorage.getItem("ga_user_logged_out") === "true") {
     cb({ status: "naoAutenticado" });
   }
 
+  const unsubFirebase = onAuthStateChanged(auth, async (fbUser) => {
+    if (typeof sessionStorage !== "undefined" && sessionStorage.getItem("ga_user_logged_out") === "true") {
+      cb({ status: "naoAutenticado" });
+      return;
+    }
+
+    if (fbUser) {
+      const uid = fbUser.uid;
+      let fsProfile: User | null = null;
+      try {
+        fsProfile = await obterPerfilDoFirestore(uid);
+      } catch (_) {}
+
+      const user: User = {
+        uid: uid,
+        id: uid,
+        name: fsProfile?.name || fsProfile?.nome || fbUser.displayName || fbUser.email?.split("@")[0] || "Utilizador",
+        nome: fsProfile?.nome || fsProfile?.name || fbUser.displayName || fbUser.email?.split("@")[0] || "Utilizador",
+        displayName: fsProfile?.displayName || fbUser.displayName || fbUser.email?.split("@")[0] || "Utilizador",
+        email: fbUser.email || fsProfile?.email || "",
+        photoURL: fbUser.photoURL || fsProfile?.photoURL || fsProfile?.fotoUrl,
+        avatar: fbUser.photoURL || fsProfile?.avatar || fsProfile?.fotoUrl,
+        fotoUrl: fbUser.photoURL || fsProfile?.fotoUrl || fsProfile?.avatar,
+        role: fsProfile?.role || "accountant",
+        country: fsProfile?.country || "Angola",
+        standard: fsProfile?.standard || "PGC-Angola",
+        status: "online",
+        createdAt: fsProfile?.createdAt || new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      };
+
+      await garantirPerfil(user).catch(() => {});
+      cb({ status: "autenticado", uid, usuario: user });
+    } else {
+      // Fallback para contas locais se não houver saída intencional
+      const localUser = getCurrentUser();
+      if (localUser && (!sessionStorage || sessionStorage.getItem("ga_user_logged_out") !== "true")) {
+        cb({ status: "autenticado", uid: localUser.uid, usuario: localUser });
+      } else {
+        cb({ status: "naoAutenticado" });
+      }
+    }
+  });
+
   const handleCustomEvent = () => {
+    if (typeof sessionStorage !== "undefined" && sessionStorage.getItem("ga_user_logged_out") === "true") {
+      cb({ status: "naoAutenticado" });
+      return;
+    }
     const u = getCurrentUser();
     if (u) {
       cb({ status: "autenticado", uid: u.uid, usuario: u });
@@ -121,6 +186,7 @@ export function ouvirEstadoAuth(cb: (e: EstadoAuth) => void): () => void {
 
   return () => {
     authListeners.delete(cb);
+    unsubFirebase();
     if (typeof window !== "undefined") {
       window.removeEventListener("ga_auth_changed", handleCustomEvent);
       window.removeEventListener("storage", handleCustomEvent);
@@ -165,8 +231,8 @@ export async function garantirPerfil(user: User): Promise<void> {
       nomeLower: nome.toLowerCase().trim(),
       nameLower: nome.toLowerCase().trim(),
       email: email,
-      fotoUrl: user.photoURL || user.avatar || null,
-      avatar: user.photoURL || user.avatar || null,
+      fotoUrl: user.photoURL || user.avatar || user.fotoUrl || null,
+      avatar: user.photoURL || user.avatar || user.fotoUrl || null,
       status: "online",
       role: user.role || "accountant",
       country: user.country || "Angola",
@@ -176,7 +242,7 @@ export async function garantirPerfil(user: User): Promise<void> {
 
     await setDoc(userRef, payload, { merge: true });
   } catch (err) {
-    console.info("[authService] Perfil sincronizado localmente.");
+    console.info("[authService] Perfil sincronizado.");
   }
 }
 
@@ -219,7 +285,7 @@ export async function obterPerfilDoFirestore(uid: string): Promise<User | null> 
   return null;
 }
 
-/** Login por email e palavra-passe via localStorage */
+/** Login por email e palavra-passe */
 export async function entrarConta(email: string, senha: string): Promise<User> {
   const emailLimpo = email.trim().toLowerCase();
   if (!emailLimpo || !emailLimpo.includes("@")) {
@@ -229,7 +295,11 @@ export async function entrarConta(email: string, senha: string): Promise<User> {
     throw new Error("Palavra-passe inválida.");
   }
 
-  // Verificar utilizador guardado ou utilizadores pré-configurados
+  if (typeof sessionStorage !== "undefined") {
+    sessionStorage.removeItem("ga_user_logged_out");
+  }
+
+  // Verificar utilizador guardado
   let userRecord: any = null;
   const stored = localStorage.getItem(`ga:user_record:${emailLimpo}`);
   if (stored) {
@@ -238,7 +308,7 @@ export async function entrarConta(email: string, senha: string): Promise<User> {
     } catch (_) {}
   }
 
-  let uid = userRecord?.uid || userRecord?.id || `user_${btoa(emailLimpo).replace(/[^a-zA-Z0-9]/g, "").substring(0, 16)}`;
+  const uid = userRecord?.uid || userRecord?.id || `user_${btoa(emailLimpo).replace(/[^a-zA-Z0-9]/g, "").substring(0, 16)}`;
   let nome = userRecord?.name || userRecord?.nome || emailLimpo.split("@")[0];
   nome = nome.charAt(0).toUpperCase() + nome.slice(1);
 
@@ -268,10 +338,8 @@ export async function entrarConta(email: string, senha: string): Promise<User> {
   localStorage.setItem("ga_user_session", JSON.stringify(sessionData));
   localStorage.setItem(`ga:user_record:${emailLimpo}`, JSON.stringify(user));
 
-  // Tentar sincronização em segundo plano no Firestore
   garantirPerfil(user).catch(() => {});
 
-  // Notificar sistema
   notifyAuthListeners({ status: "autenticado", uid: user.uid, usuario: user });
   if (typeof window !== "undefined") {
     window.dispatchEvent(new Event("ga_auth_changed"));
@@ -280,7 +348,7 @@ export async function entrarConta(email: string, senha: string): Promise<User> {
   return user;
 }
 
-/** Registar nova conta via localStorage */
+/** Registar nova conta */
 export async function registarConta(nome: string, email: string, senha: string): Promise<User> {
   const emailLimpo = email.trim().toLowerCase();
   const nomeLimpo = nome.trim() || emailLimpo.split("@")[0];
@@ -290,6 +358,10 @@ export async function registarConta(nome: string, email: string, senha: string):
   }
   if (!senha || senha.length < 6) {
     throw new Error("A palavra-passe precisa de pelo menos 6 caracteres.");
+  }
+
+  if (typeof sessionStorage !== "undefined") {
+    sessionStorage.removeItem("ga_user_logged_out");
   }
 
   const uid = `user_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
@@ -321,10 +393,8 @@ export async function registarConta(nome: string, email: string, senha: string):
   localStorage.setItem("ga_user_session", JSON.stringify(sessionData));
   localStorage.setItem(`ga:user_record:${emailLimpo}`, JSON.stringify(user));
 
-  // Tentar sincronização em segundo plano no Firestore
   garantirPerfil(user).catch(() => {});
 
-  // Notificar sistema
   notifyAuthListeners({ status: "autenticado", uid: user.uid, usuario: user });
   if (typeof window !== "undefined") {
     window.dispatchEvent(new Event("ga_auth_changed"));
@@ -333,15 +403,96 @@ export async function registarConta(nome: string, email: string, senha: string):
   return user;
 }
 
-/** Autenticar com Conta Google */
+/** Autenticar com Conta Google forçando sempre a escolha da conta (prompt: select_account) */
 export async function entrarComGoogle(usarRedirect?: boolean): Promise<User> {
-  const email = "wrldfilipe@gmail.com";
-  const nome = "Filipe";
-  return entrarConta(email, "google_oauth_auth");
+  try {
+    const fbUser = await entrarComGoogleFirebase();
+    const user: User = {
+      uid: fbUser.uid,
+      id: fbUser.uid,
+      name: fbUser.displayName || fbUser.email?.split("@")[0] || "Utilizador",
+      nome: fbUser.displayName || fbUser.email?.split("@")[0] || "Utilizador",
+      displayName: fbUser.displayName || fbUser.email?.split("@")[0] || "Utilizador",
+      email: fbUser.email || "",
+      photoURL: fbUser.photoURL,
+      avatar: fbUser.photoURL,
+      fotoUrl: fbUser.photoURL,
+      role: "accountant",
+      country: "Angola",
+      standard: "PGC-Angola",
+      status: "online",
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+
+    await garantirPerfil(user);
+
+    const sessionData = {
+      user,
+      token: await fbUser.getIdToken().catch(() => `fb_token_${Date.now()}`),
+      authenticatedAt: new Date().toISOString(),
+      expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString()
+    };
+    localStorage.setItem("ga_session", JSON.stringify(sessionData));
+    localStorage.setItem("ga_user_session", JSON.stringify(sessionData));
+
+    notifyAuthListeners({ status: "autenticado", uid: user.uid, usuario: user });
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new Event("ga_auth_changed"));
+    }
+
+    return user;
+  } catch (err: any) {
+    console.error("[authService] Erro ao entrar com Google:", err);
+    throw err;
+  }
 }
 
+/** Tratar resultado de redirect com verificação estrita de TTL (5 minutos) */
 export async function tratarResultadoGoogle(): Promise<void> {
-  // Não requer redirect no modo local de alta performance
+  if (typeof window === "undefined" || !auth) return;
+
+  const TS_REDIRECT = "cu_google_redirect_ts";
+  const ts = Number(sessionStorage.getItem(TS_REDIRECT) ?? 0);
+  const agora = Date.now();
+
+  // Descartar redirect expirado com mais de 5 minutos
+  if (ts && agora - ts > 5 * 60 * 1000) {
+    console.warn("[authService] Redirect Google expirado (> 5 min). Descartado por segurança.");
+    sessionStorage.removeItem(TS_REDIRECT);
+    await limparSessaoPersistida();
+    return;
+  }
+
+  try {
+    const res = await getRedirectResult(auth);
+    if (res && res.user) {
+      sessionStorage.removeItem(TS_REDIRECT);
+      sessionStorage.removeItem("ga_user_logged_out");
+      const u = res.user;
+      const user: User = {
+        uid: u.uid,
+        id: u.uid,
+        name: u.displayName || u.email?.split("@")[0] || "Utilizador",
+        nome: u.displayName || u.email?.split("@")[0] || "Utilizador",
+        displayName: u.displayName || u.email?.split("@")[0] || "Utilizador",
+        email: u.email || "",
+        photoURL: u.photoURL,
+        avatar: u.photoURL,
+        fotoUrl: u.photoURL,
+        role: "accountant",
+        country: "Angola",
+        standard: "PGC-Angola",
+        status: "online",
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      };
+      await garantirPerfil(user);
+      notifyAuthListeners({ status: "autenticado", uid: user.uid, usuario: user });
+    }
+  } catch (err) {
+    console.warn("[authService] Erro ao processar getRedirectResult:", err);
+  }
 }
 
 export async function ligarContaGoogle(): Promise<User> {
@@ -350,10 +501,19 @@ export async function ligarContaGoogle(): Promise<User> {
 
 /** Terminar sessão */
 export async function sairConta(): Promise<void> {
-  if (typeof localStorage !== "undefined") {
-    localStorage.removeItem("ga_session");
-    localStorage.removeItem("ga_user_session");
-  }
+  try {
+    if (auth.currentUser) {
+      await fbSignOut(auth);
+    }
+  } catch (_) {}
+
+  try {
+    const { supabase } = await import("../supabase");
+    await supabase.auth.signOut();
+  } catch (_) {}
+
+  await limparSessaoPersistida();
+
   notifyAuthListeners({ status: "naoAutenticado" });
   if (typeof window !== "undefined") {
     window.dispatchEvent(new Event("ga_auth_changed"));

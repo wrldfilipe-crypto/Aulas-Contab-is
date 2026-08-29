@@ -13,6 +13,7 @@ import {
   ShieldCheck,
   Sparkles,
   User,
+  Users,
 } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import AppLogo from "../../components/AppLogo";
@@ -22,6 +23,7 @@ import {
   registarConta,
   verificarEmailExisteNoFirestore,
 } from "../../lib/auth/authService";
+import { trocarDeConta } from "../../lib/auth/trocarConta";
 
 type AuthMode = "entrar" | "registar";
 
@@ -208,16 +210,38 @@ export function LoginPage() {
                 </motion.div>
               )}
 
-              <button
-                type="button"
-                onClick={entrarGoogle}
-                disabled={aEnviar}
-                className="flex w-full items-center justify-center gap-3 rounded-2xl border border-white/10 bg-white/[0.07] px-4 py-3.5 text-sm font-bold text-white transition hover:bg-white/[0.12] disabled:cursor-not-allowed disabled:opacity-50 cursor-pointer"
-                id="btn-google-login"
-              >
-                <span className="flex h-5 w-5 items-center justify-center rounded-full bg-white text-xs font-black text-blue-600">G</span>
-                Continuar com Google
-              </button>
+              <div className="space-y-2">
+                <button
+                  type="button"
+                  onClick={entrarGoogle}
+                  disabled={aEnviar}
+                  className="flex w-full items-center justify-center gap-3 rounded-2xl border border-white/10 bg-white/[0.07] px-4 py-3.5 text-sm font-bold text-white transition hover:bg-white/[0.12] disabled:cursor-not-allowed disabled:opacity-50 cursor-pointer"
+                  id="btn-google-login"
+                >
+                  <span className="flex h-5 w-5 items-center justify-center rounded-full bg-white text-xs font-black text-blue-600">G</span>
+                  Continuar com Google
+                </button>
+
+                <button
+                  type="button"
+                  onClick={async () => {
+                    setErro("");
+                    setAEnviar(true);
+                    try {
+                      await trocarDeConta();
+                    } catch (e: any) {
+                      setErro(e?.message || "Erro ao alternar de conta Google.");
+                      setAEnviar(false);
+                    }
+                  }}
+                  disabled={aEnviar}
+                  className="flex w-full items-center justify-center gap-2 rounded-xl border border-slate-700/60 bg-slate-800/40 px-3 py-2 text-xs font-semibold text-slate-300 transition hover:bg-slate-800 hover:text-white disabled:opacity-50 cursor-pointer"
+                  id="btn-usar-outra-conta-login"
+                >
+                  <Users className="h-3.5 w-3.5 text-indigo-400" />
+                  <span>Usar outra conta Google</span>
+                </button>
+              </div>
 
               <div className="my-6 flex items-center gap-3 text-[10px] font-bold uppercase tracking-[0.16em] text-slate-500">
                 <span className="h-px flex-1 bg-white/10" /> ou continue com email <span className="h-px flex-1 bg-white/10" />

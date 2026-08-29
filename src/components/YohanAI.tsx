@@ -14,6 +14,10 @@ import pptxgen from 'pptxgenjs';
 import { Document, Packer, Paragraph, TextRun, HeadingLevel } from 'docx';
 import { MarkdownRenderer } from './MarkdownRenderer';
 import { getCurrentUser } from '../lib/db';
+import { salvarFeedbackYohanFirestore } from '../lib/firebase';
+import { PGC_CHART_OF_ACCOUNTS } from '../lib/pgc/pgcKnowledgeBase';
+import { VirtualizedChatMessagesList } from './VirtualizedChatMessagesList';
+import { SparklingAiAura } from './SparklingAiAura';
 
 export interface YohanAIProps {
   currentLanguage?: string;
@@ -114,6 +118,7 @@ export const YohanAI: React.FC<YohanAIProps> = ({
   const [showGlossaryModal, setShowGlossaryModal] = useState(false);
   const [showTemplatesModal, setShowTemplatesModal] = useState(false);
   const [selectedGlossaryClass, setSelectedGlossaryClass] = useState<number | null>(null);
+  const [glossarySearchQuery, setGlossarySearchQuery] = useState('');
 
   // Conversations Storage
   const [conversations, setConversations] = useState<Conversation[]>(() => {
@@ -328,6 +333,8 @@ Como posso ajudar hoje?
 
   // Feedback on Message (Thumbs up / down)
   const handleFeedback = async (msgId: string, rating: 'up' | 'down') => {
+    const targetMsg = messages.find(m => m.id === msgId);
+
     setConversations(prev => prev.map(c => {
       if (c.id !== activeConvId) return c;
       return {
@@ -336,14 +343,34 @@ Como posso ajudar hoje?
       };
     }));
 
+    // 1. Persist directly to Firestore
+    try {
+      await salvarFeedbackYohanFirestore(
+        currentUserId,
+        msgId,
+        rating,
+        activeConvId,
+        targetMsg?.content
+      );
+    } catch (fsErr) {
+      console.warn('[Yohan AI] Firestore feedback write fallback:', fsErr);
+    }
+
+    // 2. Report to backend API endpoint
     try {
       await fetch('/api/yohan/feedback', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ messageId: msgId, rating, conversationId: activeConvId })
+        body: JSON.stringify({
+          messageId: msgId,
+          rating,
+          conversationId: activeConvId,
+          userId: currentUserId,
+          content: targetMsg?.content?.slice(0, 300)
+        })
       });
     } catch (e) {
-      console.warn('Feedback reporting failed:', e);
+      console.warn('[Yohan AI] Backend feedback report failed:', e);
     }
   };
 
@@ -813,7 +840,8 @@ Como posso ajudar hoje?
 
   return (
     <div 
-      className="flex h-full w-full bg-slate-900 text-slate-100 overflow-hidden font-sans select-text relative"
+      id="yohan-ai-workspace"
+      className="ai-accountant-page flex h-full w-full bg-slate-900 text-slate-100 overflow-hidden font-sans select-text relative"
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
@@ -996,9 +1024,23 @@ Como posso ajudar hoje?
 
       {/* MAIN CONTAINER */}
       <div className="flex-1 flex flex-col min-w-0 h-full overflow-hidden">
-        {/* TOP BAR */}
-        <header className="flex flex-wrap items-center justify-between gap-2.5 px-4 sm:px-6 py-3 bg-slate-950 border-b border-slate-800 shrink-0">
-          <div className="flex items-center gap-3">
+        {/* TOP BAR WITH DYNAMIC GENERATION GRADIENT ANIMATION */}
+        <header className={`flex flex-wrap items-center justify-between gap-2.5 px-4 sm:px-6 py-3 bg-slate-950 border-b relative overflow-hidden shrink-0 transition-all duration-500 ${
+          isLoading || isDocGenerating || isSheetGenerating || isPptGenerating || isVizGenerating || isTaxAuditing
+            ? 'border-indigo-500/50 shadow-lg shadow-indigo-500/10'
+            : 'border-slate-800'
+        }`}>
+          {/* Subtle animated gradient overlay during AI generation */}
+          {(isLoading || isDocGenerating || isSheetGenerating || isPptGenerating || isVizGenerating || isTaxAuditing) && (
+            <div className="absolute inset-0 bg-gradient-to-r from-indigo-500/10 via-purple-500/10 to-pink-500/10 animate-pulse pointer-events-none" />
+          )}
+
+          {/* Animated gradient bottom accent bar */}
+          {(isLoading || isDocGenerating || isSheetGenerating || isPptGenerating || isVizGenerating || isTaxAuditing) && (
+            <div className="absolute bottom-0 left-0 right-0 h-[2px] bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 animate-pulse" />
+          )}
+
+          <div className="flex items-center gap-3 relative z-10">
             {/* Sidebar toggle button */}
             <button
               type="button"
@@ -1011,23 +1053,40 @@ Como posso ajudar hoje?
             </button>
 
             <div className="flex items-center gap-2.5">
-              <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-indigo-600 via-indigo-500 to-blue-500 flex items-center justify-center text-white shadow-md shadow-indigo-500/20">
-                <Sparkles className="w-5 h-5" />
+              <div className="relative">
+                <SparklingAiAura 
+                  isActive={isLoading || isDocGenerating || isSheetGenerating || isPptGenerating || isVizGenerating || isTaxAuditing} 
+                  label="Yohan AI a processar consulta contabilística"
+                />
+                <div className={`w-9 h-9 rounded-xl flex items-center justify-center text-white shadow-md transition-all relative z-10 ${
+                  isLoading || isDocGenerating || isSheetGenerating || isPptGenerating || isVizGenerating || isTaxAuditing
+                    ? 'bg-gradient-to-tr from-indigo-500 via-purple-500 to-pink-500 shadow-indigo-500/40 animate-pulse ring-2 ring-indigo-400/50'
+                    : 'bg-gradient-to-tr from-indigo-600 via-indigo-500 to-blue-500 shadow-indigo-500/20'
+                }`}>
+                  <Sparkles className={`w-5 h-5 ${isLoading || isDocGenerating || isSheetGenerating ? 'animate-spin' : ''}`} />
+                </div>
               </div>
               <div>
                 <div className="flex items-center gap-2">
                   <h1 className="text-sm sm:text-base font-black tracking-tight text-white">Yohan AI</h1>
-                  <span className="px-2 py-0.5 text-[10px] font-extrabold uppercase tracking-wider bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 rounded-full">
+                  <span className={`px-2 py-0.5 text-[10px] font-extrabold uppercase tracking-wider rounded-full border transition-all flex items-center gap-1 ${
+                    isLoading || isDocGenerating || isSheetGenerating
+                      ? 'bg-indigo-500/30 text-indigo-200 border-indigo-400/60 shadow-xs shadow-indigo-500/30 animate-pulse'
+                      : 'bg-indigo-500/20 text-indigo-300 border-indigo-500/30'
+                  }`}>
+                    {(isLoading || isDocGenerating || isSheetGenerating) && <span className="animate-spin text-[10px]">✨</span>}
                     PGC Angola
                   </span>
                 </div>
-                <p className="text-[11px] text-slate-400 font-medium hidden sm:block">Consultor & Auditor Contabilístico Sénior</p>
+                <p className="text-[11px] text-slate-400 font-medium hidden sm:block">
+                  {isLoading ? '✨ A consultar Decreto 82/2001 e a gerar resposta...' : 'Consultor & Auditor Contabilístico Sénior'}
+                </p>
               </div>
             </div>
           </div>
 
           {/* MODE SELECTOR TABS & TOOLS */}
-          <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0 scrollbar-none">
+          <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0 scrollbar-none relative z-10">
             <button
               type="button"
               onClick={() => setActiveMode('chat')}
@@ -1111,10 +1170,10 @@ Como posso ajudar hoje?
               type="button"
               onClick={() => setShowGlossaryModal(true)}
               className="px-2.5 py-1.5 rounded-lg text-xs font-bold bg-slate-800/90 hover:bg-slate-750 text-indigo-300 hover:text-indigo-200 border border-slate-700 transition-all flex items-center gap-1 cursor-pointer shrink-0"
-              title="Consultar Glossário das Classes 1 a 8 do PGC"
+              title="Pesquisar contas, regras e glossário do PGC"
             >
               <BookOpen className="w-3.5 h-3.5" />
-              <span className="hidden md:inline">Glossário PGC</span>
+              <span className="hidden md:inline">Glossário & Contas PGC</span>
             </button>
           </div>
         </header>
@@ -1124,143 +1183,25 @@ Como posso ajudar hoje?
           {/* TAB 1: CHAT */}
           {activeMode === 'chat' && (
             <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
-              {/* MESSAGES SCROLL AREA */}
-              <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4">
-                {messages.map((msg) => {
-                  const isUser = msg.role === 'user';
-                  const isSpeaking = speakingMessageId === msg.id;
-
-                  return (
-                    <motion.div
-                      key={msg.id}
-                      initial={{ opacity: 0, y: 8 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      transition={{ duration: 0.2 }}
-                      className={`flex gap-3 max-w-4xl ${isUser ? 'ml-auto flex-row-reverse' : 'mr-auto'}`}
-                    >
-                      {/* ASSISTANT AVATAR */}
-                      {!isUser && (
-                        <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-indigo-600 to-blue-500 text-white flex items-center justify-center shrink-0 shadow-md shadow-indigo-500/20 mt-1">
-                          <Sparkles className="w-4 h-4" />
-                        </div>
-                      )}
-
-                      <div className={`flex flex-col space-y-1.5 max-w-full ${isUser ? 'items-end' : 'items-start'}`}>
-                        {/* ATTACHMENT BADGE IF PRESENT */}
-                        {msg.attachedFile && (
-                          <div className="flex items-center gap-1.5 px-3 py-1 rounded-lg bg-indigo-950/60 border border-indigo-500/30 text-[11px] text-indigo-300">
-                            <Paperclip className="w-3 h-3" />
-                            <span>{msg.attachedFile.name}</span>
-                          </div>
-                        )}
-
-                        {/* MESSAGE BUBBLE */}
-                        <div
-                          className={`rounded-2xl px-4 py-3.5 text-sm leading-relaxed ${
-                            isUser
-                              ? 'bg-indigo-600 text-white rounded-tr-xs shadow-md'
-                              : 'bg-slate-800/90 text-slate-100 border border-slate-700/80 rounded-tl-xs shadow-lg'
-                          }`}
-                        >
-                          {isUser ? (
-                            <p className="whitespace-pre-wrap">{msg.content}</p>
-                          ) : (
-                            <MarkdownRenderer content={msg.content} className="text-slate-100 prose-invert" />
-                          )}
-                        </div>
-
-                        {/* CONTROLS (COPY, SPEECH, FEEDBACK) */}
-                        {!isUser && (
-                          <div className="flex items-center gap-3 px-1 text-[11px] text-slate-400">
-                            <span>{msg.timestamp}</span>
-
-                            {/* Copy button */}
-                            <button
-                              type="button"
-                              onClick={() => handleCopy(msg.content, msg.id)}
-                              className="hover:text-slate-200 transition-colors flex items-center gap-1 cursor-pointer"
-                              title="Copiar texto"
-                            >
-                              {copiedId === msg.id ? (
-                                <>
-                                  <Check className="w-3 h-3 text-emerald-400" />
-                                  <span className="text-emerald-400">Copiado</span>
-                                </>
-                              ) : (
-                                <>
-                                  <Copy className="w-3 h-3" />
-                                  <span>Copiar</span>
-                                </>
-                              )}
-                            </button>
-
-                            {/* Audio Text-to-Speech */}
-                            <button
-                              type="button"
-                              onClick={() => handleToggleSpeech(msg.id, msg.content)}
-                              className={`transition-colors flex items-center gap-1 cursor-pointer font-medium ${
-                                isSpeaking ? 'text-indigo-400 animate-pulse' : 'hover:text-slate-200'
-                              }`}
-                              title={isSpeaking ? 'Parar leitura de áudio' : 'Ouvir resposta'}
-                            >
-                              {isSpeaking ? (
-                                <>
-                                  <VolumeX className="w-3.5 h-3.5 text-indigo-400" />
-                                  <span className="text-indigo-400 font-bold">A reproduzir...</span>
-                                </>
-                              ) : (
-                                <>
-                                  <Volume2 className="w-3.5 h-3.5" />
-                                  <span>Ouvir</span>
-                                </>
-                              )}
-                            </button>
-
-                            {/* Thumbs up / down feedback */}
-                            <div className="flex items-center gap-1 ml-1 border-l border-slate-700 pl-2">
-                              <button
-                                type="button"
-                                onClick={() => handleFeedback(msg.id, 'up')}
-                                className={`p-1 rounded hover:bg-slate-750 transition-colors ${
-                                  msg.feedback === 'up' ? 'text-emerald-400' : 'text-slate-400 hover:text-slate-200'
-                                }`}
-                                title="Útil"
-                              >
-                                <ThumbsUp className="w-3 h-3" />
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => handleFeedback(msg.id, 'down')}
-                                className={`p-1 rounded hover:bg-slate-750 transition-colors ${
-                                  msg.feedback === 'down' ? 'text-rose-400' : 'text-slate-400 hover:text-slate-200'
-                                }`}
-                                title="Não útil"
-                              >
-                                <ThumbsDown className="w-3 h-3" />
-                              </button>
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    </motion.div>
-                  );
-                })}
-
-                {/* LOADING / THINKING INDICATOR */}
-                {isLoading && (
-                  <div className="flex gap-3 items-center text-slate-400 text-xs py-2">
-                    <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-indigo-600 to-blue-500 text-white flex items-center justify-center shrink-0 animate-pulse">
-                      <Sparkles className="w-4 h-4" />
-                    </div>
-                    <div className="flex items-center gap-2 bg-slate-800/80 px-4 py-2.5 rounded-2xl border border-slate-700">
-                      <Loader2 className="w-3.5 h-3.5 animate-spin text-indigo-400" />
-                      <span>Yohan AI está a analisar as normas e legislação PGC Angola...</span>
-                    </div>
-                  </div>
-                )}
-
-                <div ref={chatBottomRef} />
-              </div>
+              {/* MESSAGES VIRTUALIZED / SCROLL LIST */}
+              <VirtualizedChatMessagesList
+                messages={messages.map(m => ({
+                  id: m.id,
+                  role: m.role,
+                  content: m.content,
+                  timestamp: m.timestamp,
+                  rating: (m as any).feedback || undefined
+                }))}
+                isGenerating={isLoading}
+                copiedId={copiedId}
+                speakingMsgId={speakingMessageId}
+                onCopy={handleCopy}
+                onSpeak={(text, id) => handleToggleSpeech(id, text)}
+                onFeedback={handleFeedback}
+                onQuickSearchInsert={(term) => {
+                  setInputMessage(prev => prev ? `${prev} ${term}` : term);
+                }}
+              />
 
               {/* PROMPT TEMPLATES QUICK CHIPS */}
               <div className="px-4 py-2 bg-slate-950/60 border-t border-slate-800/60 overflow-x-auto scrollbar-none flex items-center gap-2">
@@ -1821,57 +1762,259 @@ Como posso ajudar hoje?
         )}
       </AnimatePresence>
 
-      {/* MODAL 2: DYNAMIC PGC GLOSSARY LOOKUP */}
+      {/* MODAL 2: DYNAMIC PGC GLOSSARY & TOOLS LOOKUP */}
       <AnimatePresence>
         {showGlossaryModal && (
-          <div className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-4 backdrop-blur-xs">
+          <div className="fixed inset-0 z-50 bg-black/75 flex items-center justify-center p-4 backdrop-blur-xs">
             <motion.div
               initial={{ scale: 0.95, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.95, opacity: 0 }}
-              className="bg-slate-900 border border-slate-800 rounded-2xl p-6 max-w-3xl w-full max-h-[85vh] flex flex-col space-y-4 shadow-2xl"
+              className="bg-slate-900 border border-slate-800 rounded-2xl p-5 sm:p-6 max-w-3xl w-full max-h-[88vh] flex flex-col space-y-4 shadow-2xl"
             >
               <div className="flex items-center justify-between border-b border-slate-800 pb-3">
                 <div className="flex items-center gap-2.5">
-                  <BookOpen className="w-5 h-5 text-indigo-400" />
-                  <h3 className="text-base font-bold text-white">Glossário & Quadro de Contas PGC Angola</h3>
+                  <div className="w-8 h-8 rounded-lg bg-indigo-600/20 text-indigo-400 border border-indigo-500/30 flex items-center justify-center">
+                    <BookOpen className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <h3 className="text-base font-bold text-white">Ferramentas: Glossário & Contas PGC Angola</h3>
+                    <p className="text-xs text-slate-400">Decreto n.º 82/2001 e Código do IVA (Decreto Presidencial 180/19)</p>
+                  </div>
                 </div>
                 <button
                   type="button"
-                  onClick={() => setShowGlossaryModal(false)}
+                  onClick={() => {
+                    setShowGlossaryModal(false);
+                    setGlossarySearchQuery('');
+                  }}
                   className="p-1.5 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 cursor-pointer"
                 >
                   <X className="w-4 h-4" />
                 </button>
               </div>
 
-              <div className="flex-1 overflow-y-auto space-y-3 pr-1">
-                <p className="text-xs text-slate-400">
-                  O Plano Geral de Contabilidade (Decreto n.º 82/2001) estrutura as contas em 8 Classes fundamentais:
-                </p>
+              {/* Quick Search Input */}
+              <div className="relative">
+                <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                <input
+                  type="text"
+                  value={glossarySearchQuery}
+                  onChange={(e) => setGlossarySearchQuery(e.target.value)}
+                  placeholder="Pesquisar conta (ex: 34.5, 21, 43, 71) ou termo (IVA, Imparidade, FST, Retenção)..."
+                  className="w-full bg-slate-950 border border-slate-700/80 rounded-xl pl-10 pr-10 py-2.5 text-xs sm:text-sm text-white placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 font-sans"
+                />
+                {glossarySearchQuery && (
+                  <button
+                    type="button"
+                    onClick={() => setGlossarySearchQuery('')}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white text-xs"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                  {PGC_CLASSES.map((cls) => (
-                    <div
-                      key={cls.classNum}
-                      onClick={() => {
-                        handleSendMessage(undefined, `Podes detalhar a estrutura e principais contas da ${cls.name}?`);
-                        setShowGlossaryModal(false);
-                      }}
-                      className="p-4 rounded-xl bg-slate-950/80 border border-slate-800 hover:border-indigo-500/50 hover:bg-slate-800/50 transition-all cursor-pointer group"
-                    >
-                      <div className="flex items-center justify-between">
-                        <span className="font-bold text-xs text-white group-hover:text-indigo-300 transition-colors">
-                          {cls.name}
-                        </span>
-                        <ChevronRight className="w-3.5 h-3.5 text-slate-500 group-hover:text-indigo-400 transition-colors" />
+              {/* Class Filter Chips */}
+              <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none">
+                <button
+                  type="button"
+                  onClick={() => setSelectedGlossaryClass(null)}
+                  className={`px-2.5 py-1 rounded-lg text-xs font-semibold shrink-0 transition-colors ${
+                    selectedGlossaryClass === null
+                      ? 'bg-indigo-600 text-white'
+                      : 'bg-slate-800 text-slate-300 hover:bg-slate-750'
+                  }`}
+                >
+                  Todas as Classes
+                </button>
+                {[1, 2, 3, 4, 5, 6, 7, 8].map((cNum) => (
+                  <button
+                    key={cNum}
+                    type="button"
+                    onClick={() => setSelectedGlossaryClass(cNum === selectedGlossaryClass ? null : cNum)}
+                    className={`px-2.5 py-1 rounded-lg text-xs font-semibold shrink-0 transition-colors ${
+                      selectedGlossaryClass === cNum
+                        ? 'bg-indigo-600 text-white'
+                        : 'bg-slate-800 text-slate-300 hover:bg-slate-750'
+                    }`}
+                  >
+                    Classe {cNum}
+                  </button>
+                ))}
+              </div>
+
+              {/* Search Results / Content Area */}
+              <div className="flex-1 overflow-y-auto space-y-3 pr-1">
+                {/* When user searches */}
+                {glossarySearchQuery.trim() ? (
+                  (() => {
+                    const q = glossarySearchQuery.toLowerCase();
+                    const filteredAccounts = PGC_CHART_OF_ACCOUNTS.filter(acc => 
+                      acc.codigo.toLowerCase().includes(q) ||
+                      acc.nome.toLowerCase().includes(q) ||
+                      (acc.descricao && acc.descricao.toLowerCase().includes(q))
+                    );
+
+                    if (filteredAccounts.length === 0) {
+                      return (
+                        <div className="text-center py-8 text-slate-400 space-y-2">
+                          <p className="text-xs">Nenhuma conta encontrada para "{glossarySearchQuery}".</p>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              handleSendMessage(undefined, `Como se classifica e contabiliza "${glossarySearchQuery}" no PGC Angola?`);
+                              setShowGlossaryModal(false);
+                            }}
+                            className="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold"
+                          >
+                            Perguntar ao Yohan AI no Chat
+                          </button>
+                        </div>
+                      );
+                    }
+
+                    return (
+                      <div className="space-y-2.5">
+                        <div className="flex items-center justify-between text-xs text-slate-400">
+                          <span>Resultados encontrados: {filteredAccounts.length}</span>
+                          <span className="text-[11px] text-slate-500">Clique em "Inserir" para usar no chat</span>
+                        </div>
+                        {filteredAccounts.map((acc) => (
+                          <div
+                            key={acc.codigo}
+                            className="p-3.5 rounded-xl bg-slate-950/80 border border-slate-800 hover:border-indigo-500/50 transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-3 group"
+                          >
+                            <div className="min-w-0 space-y-1">
+                              <div className="flex items-center gap-2">
+                                <span className="font-mono text-xs font-bold text-indigo-300 bg-indigo-950/80 px-2 py-0.5 rounded border border-indigo-500/30">
+                                  {acc.codigo}
+                                </span>
+                                <h4 className="text-xs sm:text-sm font-bold text-white group-hover:text-indigo-200 transition-colors">
+                                  {acc.nome}
+                                </h4>
+                                {acc.tipo && (
+                                  <span className="text-[10px] text-slate-500 font-mono">
+                                    ({acc.tipo})
+                                  </span>
+                                )}
+                              </div>
+                              {acc.descricao && (
+                                <p className="text-xs text-slate-300 leading-relaxed">
+                                  {acc.descricao}
+                                </p>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-1.5 shrink-0">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const textToInsert = `[PGC ${acc.codigo} - ${acc.nome}]: ${acc.descricao || 'Conta oficial PGC'}`;
+                                  setInputMessage(prev => prev ? `${prev}\n${textToInsert}` : textToInsert);
+                                  setShowGlossaryModal(false);
+                                }}
+                                className="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold flex items-center gap-1 cursor-pointer transition-colors"
+                                title="Inserir definição na caixa de texto do chat"
+                              >
+                                <span>Inserir no Chat</span>
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  handleSendMessage(undefined, `Explica a movimentação a débito e crédito da conta ${acc.codigo} (${acc.nome}) e exemplos práticos no PGC Angola.`);
+                                  setShowGlossaryModal(false);
+                                }}
+                                className="px-2.5 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold flex items-center gap-1 cursor-pointer transition-colors"
+                              >
+                                <span>Consultar</span>
+                              </button>
+                            </div>
+                          </div>
+                        ))}
                       </div>
-                      <p className="text-[11px] text-slate-400 mt-1 leading-relaxed">
-                        {cls.desc}
-                      </p>
+                    );
+                  })()
+                ) : (
+                  /* Display Classes Overview or selected class accounts */
+                  selectedGlossaryClass ? (
+                    <div className="space-y-2.5">
+                      <div className="flex items-center justify-between pb-1">
+                        <h4 className="text-xs font-bold text-indigo-300">
+                          {PGC_CLASSES.find(c => c.classNum === selectedGlossaryClass)?.name}
+                        </h4>
+                        <span className="text-[11px] text-slate-400">
+                          {PGC_CHART_OF_ACCOUNTS.filter(a => a.classe === selectedGlossaryClass).length} contas registadas
+                        </span>
+                      </div>
+                      {PGC_CHART_OF_ACCOUNTS.filter(a => a.classe === selectedGlossaryClass).map((acc) => (
+                        <div
+                          key={acc.codigo}
+                          className="p-3 rounded-xl bg-slate-950/80 border border-slate-800 hover:border-indigo-500/50 transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 group"
+                        >
+                          <div className="min-w-0 space-y-1">
+                            <div className="flex items-center gap-2">
+                              <span className="font-mono text-xs font-bold text-indigo-300 bg-indigo-950/80 px-2 py-0.5 rounded border border-indigo-500/30">
+                                {acc.codigo}
+                              </span>
+                              <span className="text-xs font-bold text-white group-hover:text-indigo-200">
+                                {acc.nome}
+                              </span>
+                              {acc.tipo && (
+                                <span className="text-[10px] text-slate-500">
+                                  ({acc.tipo})
+                                </span>
+                              )}
+                            </div>
+                            {acc.descricao && <p className="text-xs text-slate-300">{acc.descricao}</p>}
+                          </div>
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const textToInsert = `[PGC ${acc.codigo} - ${acc.nome}]: ${acc.descricao || 'Conta oficial PGC'}`;
+                                setInputMessage(prev => prev ? `${prev}\n${textToInsert}` : textToInsert);
+                                setShowGlossaryModal(false);
+                              }}
+                              className="px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium"
+                            >
+                              Inserir
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                handleSendMessage(undefined, `Explica o funcionamento e lançamentos típicos da conta ${acc.codigo} - ${acc.nome} no PGC Angola.`);
+                                setShowGlossaryModal(false);
+                              }}
+                              className="px-2 py-1 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold"
+                            >
+                              Consultar
+                            </button>
+                          </div>
+                        </div>
+                      ))}
                     </div>
-                  ))}
-                </div>
+                  ) : (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      {PGC_CLASSES.map((cls) => (
+                        <div
+                          key={cls.classNum}
+                          onClick={() => setSelectedGlossaryClass(cls.classNum)}
+                          className="p-4 rounded-xl bg-slate-950/80 border border-slate-800 hover:border-indigo-500/50 hover:bg-slate-800/50 transition-all cursor-pointer group"
+                        >
+                          <div className="flex items-center justify-between">
+                            <span className="font-bold text-xs text-white group-hover:text-indigo-300 transition-colors">
+                              {cls.name}
+                            </span>
+                            <ChevronRight className="w-3.5 h-3.5 text-slate-500 group-hover:text-indigo-400 transition-colors" />
+                          </div>
+                          <p className="text-[11px] text-slate-400 mt-1 leading-relaxed">
+                            {cls.desc}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  )
+                )}
               </div>
             </motion.div>
           </div>
