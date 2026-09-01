@@ -1,0 +1,40 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" fill="none">
+  <defs>
+    <linearGradient id="yh-svg-left" x1="28" y1="32" x2="52" y2="58" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#8B5CF6"/>
+      <stop offset="45%" stop-color="#6366F1"/>
+      <stop offset="100%" stop-color="#2563EB"/>
+    </linearGradient>
+    <linearGradient id="yh-svg-right" x1="68" y1="36" x2="44" y2="60" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#00E5FF"/>
+      <stop offset="50%" stop-color="#0EA5E9"/>
+      <stop offset="100%" stop-color="#2563EB"/>
+    </linearGradient>
+    <linearGradient id="yh-svg-fold" x1="42" y1="52" x2="55" y2="76" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#38BDF8"/>
+      <stop offset="40%" stop-color="#0284C7"/>
+      <stop offset="100%" stop-color="#1E3A8A"/>
+    </linearGradient>
+    <linearGradient id="yh-svg-base" x1="44" y1="55" x2="54" y2="82" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#1E1B4B"/>
+      <stop offset="60%" stop-color="#2E1065"/>
+      <stop offset="100%" stop-color="#3B82F6"/>
+    </linearGradient>
+    <linearGradient id="yh-svg-star" x1="64" y1="24" x2="76" y2="38" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#38BDF8"/>
+      <stop offset="50%" stop-color="#00E5FF"/>
+      <stop offset="100%" stop-color="#0284C7"/>
+    </linearGradient>
+    <radialGradient id="yh-svg-shadow" cx="46" cy="58" r="14" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#0F172A" stop-opacity="0.6"/>
+      <stop offset="100%" stop-color="#0F172A" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <path d="M 29.5 35 C 29.5 33.5 30.5 32.5 32 32.5 L 42.5 32.5 C 44 32.5 45.2 33.5 46 34.8 L 52.5 50 C 50 51.5 47 54.5 45 58 Z" fill="url(#yh-svg-left)"/>
+  <path d="M 45 56 L 54.5 49 L 54 68 C 54 74.5 49.5 78 44 78 C 42.5 78 42 77.2 42.2 76 C 42.5 73.5 44 68 45 56 Z" fill="url(#yh-svg-base)"/>
+  <ellipse cx="48" cy="57" rx="9" ry="6" fill="url(#yh-svg-shadow)"/>
+  <path d="M 66 36 C 64 36 62.5 37 60 40 L 44 60 C 42.8 62.5 42.5 66 43 69.5 C 43.5 73 45.5 75 48.5 74.5 C 52 74 54.5 70 55.5 65.5 L 66 41 C 67.2 39 67.5 37 66 36 Z" fill="url(#yh-svg-right)"/>
+  <path d="M 44 60 C 47.5 54 53.5 48 60 40 C 62.5 37 64 36 66 36 C 65.5 38 64 41 62 45 L 49.5 64 C 47.5 68 45 72 43 69.5 C 42.5 66 42.8 62.5 44 60 Z" fill="url(#yh-svg-fold)"/>
+  <path d="M 70 24 C 70.3 29.5 72 31.2 77.5 31.5 C 72 31.8 70.3 33.5 70 39 C 69.7 33.5 68 31.8 62.5 31.5 C 68 31.2 69.7 29.5 70 24 Z" fill="url(#yh-svg-star)"/>
+  <circle cx="70" cy="31.5" r="1.2" fill="#FFFFFF" opacity="0.9"/>
+</svg>

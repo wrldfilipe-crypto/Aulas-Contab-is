@@ -48,14 +48,21 @@ export default defineConfig(() => {
       cssMinify: true,
       target: 'es2020',
       manifest: 'asset-manifest.json',
+      chunkSizeWarningLimit: 1200,
       rollupOptions: {
         output: {
           manualChunks(id) {
+            if (id.includes('node_modules/react/') || id.includes('node_modules/react-dom/') || id.includes('node_modules/scheduler/')) {
+              return 'react-core';
+            }
             if (id.includes('node_modules/lucide-react')) {
               return 'icons';
             }
-            if (id.includes('node_modules/exceljs')) {
-              return 'exceljs';
+            if (id.includes('node_modules/exceljs') || id.includes('node_modules/xlsx')) {
+              return 'excel';
+            }
+            if (id.includes('node_modules/jspdf') || id.includes('node_modules/docx') || id.includes('node_modules/pptxgenjs')) {
+              return 'office-docs';
             }
             if (id.includes('node_modules/recharts') || id.includes('node_modules/d3')) {
               return 'charts';
@@ -65,6 +72,9 @@ export default defineConfig(() => {
             }
             if (id.includes('node_modules/firebase')) {
               return 'firebase';
+            }
+            if (id.includes('node_modules/@supabase')) {
+              return 'supabase';
             }
           }
         }

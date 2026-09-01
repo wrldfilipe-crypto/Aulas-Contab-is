@@ -33,12 +33,18 @@ export const cancelPendingRequests = (key?: string): void => {
     // Cancelar apenas o pedido com esta chave
     const controller = pendingControllers.get(key);
     if (controller) {
-      controller.abort();
+      try {
+        controller.abort('request_superseded');
+      } catch (_) {}
       pendingControllers.delete(key);
     }
   } else {
     // Cancelar todos os pedidos pendentes
-    pendingControllers.forEach((controller) => controller.abort());
+    pendingControllers.forEach((controller) => {
+      try {
+        controller.abort('all_requests_canceled');
+      } catch (_) {}
+    });
     pendingControllers.clear();
   }
 };

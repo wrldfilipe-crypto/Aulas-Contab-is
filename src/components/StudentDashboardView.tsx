@@ -23,6 +23,7 @@ import { OfflineLimitedBanner } from './OfflineLimitedBanner';
 import { getDashboardCache, saveDashboardCache, subscribeToDashboardChanges } from '../services/dashboardCache';
 import { getStudentProgress } from '../services/studentProgressService';
 import { StudentQuizProgressStats } from './StudentQuizProgressStats';
+import { KpiCardSkeleton, ListItemSkeleton } from './GranularSkeletons';
 
 interface InactiveFavoriteItem {
   id: string;
@@ -43,7 +44,7 @@ export const StudentDashboardView: React.FC<StudentDashboardViewProps> = ({
   onOpenAiAssistant
 }) => {
   const currentUser = getCurrentUser();
-  const userName = currentUser?.name || 'Estudante';
+  const [userName, setUserName] = useState<string>(() => currentUser?.name || 'Estudante');
   const userId = currentUser?.userId || 'usr_default';
 
   // Real user data & Student Progress state
@@ -55,6 +56,24 @@ export const StudentDashboardView: React.FC<StudentDashboardViewProps> = ({
   // Smart Inactive Favorite Alert State
   const [inactiveFavorite, setInactiveFavorite] = useState<InactiveFavoriteItem | null>(null);
   const [dismissedAlert, setDismissedAlert] = useState(false);
+
+  useEffect(() => {
+    const handleProfileSync = (e?: any) => {
+      const updated = e?.detail;
+      if (updated?.name) {
+        setUserName(updated.name);
+      } else {
+        const fresh = getCurrentUser();
+        if (fresh?.name) setUserName(fresh.name);
+      }
+    };
+    window.addEventListener('user_profile_updated', handleProfileSync);
+    window.addEventListener('storage', handleProfileSync);
+    return () => {
+      window.removeEventListener('user_profile_updated', handleProfileSync);
+      window.removeEventListener('storage', handleProfileSync);
+    };
+  }, []);
 
   // Load Recent Materials from User Library
   const loadRecentMaterials = () => {
@@ -330,22 +349,22 @@ export const StudentDashboardView: React.FC<StudentDashboardViewProps> = ({
           </h2>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4" id="quick-access-cards-grid">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4" id="quick-access-cards-grid">
           {/* Card: Contabilidade (PGC) — Lançamentos & Balancete */}
           <motion.div
             initial={{ opacity: 0, y: 12 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.3, delay: 0.05 }}
             onClick={() => onNavigateTab('accounting')}
-            className="bg-white border border-gray-200 hover:border-indigo-300 rounded-2xl p-5 shadow-2xs hover:shadow-md transition-all cursor-pointer group flex flex-col justify-between"
+            className="bg-white border border-gray-200 hover:border-indigo-300 rounded-2xl p-5 shadow-2xs hover:shadow-md transition-all cursor-pointer group flex flex-col justify-between quick-access-card"
             id="card-quick-accounting"
           >
             <div>
-              <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center justify-between mb-3 card-header">
                 <div className="w-10 h-10 rounded-xl bg-indigo-50 text-indigo-600 border border-indigo-100 flex items-center justify-center shadow-2xs group-hover:scale-105 transition-transform">
-                  <Calculator className="w-5 h-5" />
+                  <Calculator className="w-5 h-5 card-icon" />
                 </div>
-                <span className="text-[10px] font-extrabold uppercase tracking-wider bg-indigo-50 text-indigo-600 px-2 py-0.5 rounded-full border border-indigo-100">
+                <span className="text-[10px] font-extrabold uppercase tracking-wider bg-indigo-50 text-indigo-600 px-2 py-0.5 rounded-full border border-indigo-100 card-badge">
                   ERP PGC
                 </span>
               </div>
@@ -358,7 +377,7 @@ export const StudentDashboardView: React.FC<StudentDashboardViewProps> = ({
               </p>
             </div>
 
-            <div className="pt-4 border-t border-slate-100 mt-4 flex items-center justify-between text-xs font-bold text-indigo-600">
+            <div className="pt-4 border-t border-slate-100 mt-4 flex items-center justify-between text-xs font-bold text-indigo-600 card-link">
               <span>Abrir Contabilidade</span>
               <ChevronRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
             </div>
@@ -370,15 +389,15 @@ export const StudentDashboardView: React.FC<StudentDashboardViewProps> = ({
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.3, delay: 0.1 }}
             onClick={() => onNavigateTab('assistant')}
-            className="bg-white border border-gray-200 hover:border-blue-300 rounded-2xl p-5 shadow-2xs hover:shadow-md transition-all cursor-pointer group flex flex-col justify-between"
+            className="bg-white border border-gray-200 hover:border-blue-300 rounded-2xl p-5 shadow-2xs hover:shadow-md transition-all cursor-pointer group flex flex-col justify-between quick-access-card"
             id="card-quick-ai-assistant"
           >
             <div>
-              <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center justify-between mb-3 card-header">
                 <div className="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 border border-blue-100 flex items-center justify-center shadow-2xs group-hover:scale-105 transition-transform">
-                  <Sparkles className="w-5 h-5" />
+                  <Sparkles className="w-5 h-5 card-icon" />
                 </div>
-                <span className="text-[10px] font-extrabold uppercase tracking-wider bg-blue-50 text-blue-600 px-2 py-0.5 rounded-full border border-blue-100">
+                <span className="text-[10px] font-extrabold uppercase tracking-wider bg-blue-50 text-blue-600 px-2 py-0.5 rounded-full border border-blue-100 card-badge">
                   IA Ativa
                 </span>
               </div>
@@ -391,7 +410,7 @@ export const StudentDashboardView: React.FC<StudentDashboardViewProps> = ({
               </p>
             </div>
 
-            <div className="pt-4 border-t border-slate-100 mt-4 flex items-center justify-between text-xs font-bold text-blue-600">
+            <div className="pt-4 border-t border-slate-100 mt-4 flex items-center justify-between text-xs font-bold text-blue-600 card-link">
               <span>Aceder ao Yohan AI</span>
               <ChevronRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
             </div>
@@ -403,15 +422,15 @@ export const StudentDashboardView: React.FC<StudentDashboardViewProps> = ({
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.3, delay: 0.15 }}
             onClick={() => onNavigateTab('learning')}
-            className="bg-white border border-gray-200 hover:border-emerald-300 rounded-2xl p-5 shadow-2xs hover:shadow-md transition-all cursor-pointer group flex flex-col justify-between"
+            className="bg-white border border-gray-200 hover:border-emerald-300 rounded-2xl p-5 shadow-2xs hover:shadow-md transition-all cursor-pointer group flex flex-col justify-between quick-access-card"
             id="card-quick-learnings"
           >
             <div>
-              <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center justify-between mb-3 card-header">
                 <div className="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-600 border border-emerald-100 flex items-center justify-center shadow-2xs group-hover:scale-105 transition-transform">
-                  <BookOpen className="w-5 h-5" />
+                  <BookOpen className="w-5 h-5 card-icon" />
                 </div>
-                <span className="text-[10px] font-extrabold uppercase tracking-wider bg-emerald-50 text-emerald-600 px-2 py-0.5 rounded-full border border-emerald-100">
+                <span className="text-[10px] font-extrabold uppercase tracking-wider bg-emerald-50 text-emerald-600 px-2 py-0.5 rounded-full border border-emerald-100 card-badge">
                   Estudos
                 </span>
               </div>
@@ -424,8 +443,41 @@ export const StudentDashboardView: React.FC<StudentDashboardViewProps> = ({
               </p>
             </div>
 
-            <div className="pt-4 border-t border-slate-100 mt-4 flex items-center justify-between text-xs font-bold text-emerald-600">
+            <div className="pt-4 border-t border-slate-100 mt-4 flex items-center justify-between text-xs font-bold text-emerald-600 card-link">
               <span>Ir para Aprendizados</span>
+              <ChevronRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+            </div>
+          </motion.div>
+
+          {/* Card: Notas — Bloco de Anotações */}
+          <motion.div
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.3, delay: 0.2 }}
+            onClick={() => onNavigateTab('notes')}
+            className="bg-white border border-gray-200 hover:border-amber-300 rounded-2xl p-5 shadow-2xs hover:shadow-md transition-all cursor-pointer group flex flex-col justify-between quick-access-card"
+            id="card-quick-notes"
+          >
+            <div>
+              <div className="flex items-center justify-between mb-3 card-header">
+                <div className="w-10 h-10 rounded-xl bg-amber-50 text-amber-600 border border-amber-100 flex items-center justify-center shadow-2xs group-hover:scale-105 transition-transform">
+                  <span className="card-icon text-lg leading-none" role="img" aria-label="Notas">📄</span>
+                </div>
+                <span className="text-[10px] font-extrabold uppercase tracking-wider bg-amber-50 text-amber-600 px-2 py-0.5 rounded-full border border-amber-100 card-badge">
+                  NOTAS
+                </span>
+              </div>
+
+              <h3 className="text-sm font-black text-slate-900 group-hover:text-amber-600 transition-colors">
+                Notas — Bloco de Anotações
+              </h3>
+              <p className="text-xs text-slate-500 font-medium mt-1.5 leading-relaxed">
+                Cria e gere as tuas anotações pessoais de estudo e contabilidade PGC.
+              </p>
+            </div>
+
+            <div className="pt-4 border-t border-slate-100 mt-4 flex items-center justify-between text-xs font-bold text-amber-600 card-link">
+              <span>Ir para Notas →</span>
               <ChevronRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
             </div>
           </motion.div>

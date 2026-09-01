@@ -1,24 +1,27 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { RefreshCw, WifiOff, AlertTriangle, CheckCircle2, Check, Zap } from 'lucide-react';
+import { RefreshCw, WifiOff, AlertTriangle, CheckCircle2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useOfflineSync } from '../hooks/useOfflineSync';
 import { onFirestoreStatusChanged } from '../lib/firebase';
 import { syncOfflineDataWithServer } from '../services/dashboardCache';
+import { OfflineSyncQueueD3Chart } from './OfflineSyncQueueD3Chart';
 
 interface SyncBannerProps {
   onOpenModal?: () => void;
   onOpenFirestoreModal?: () => void;
   compact?: boolean;
   showForceSyncButton?: boolean;
+  showD3Gauge?: boolean;
 }
 
 export const SyncBanner: React.FC<SyncBannerProps> = ({ 
   onOpenModal, 
   onOpenFirestoreModal, 
   compact = false,
-  showForceSyncButton = true
+  showForceSyncButton = true,
+  showD3Gauge = true
 }) => {
-  const { isOnline, pendingCount, isSyncing, triggerSync, lastSyncTime, lastSyncError } = useOfflineSync();
+  const { isOnline, pendingCount, failedCount, isSyncing, triggerSync, lastSyncTime, lastSyncError } = useOfflineSync();
   const [firestoreOk, setFirestoreOk] = useState<boolean>(true);
   const [showJustSyncedTick, setShowJustSyncedTick] = useState<boolean>(false);
   const [isManualSyncing, setIsManualSyncing] = useState<boolean>(false);
@@ -31,7 +34,7 @@ export const SyncBanner: React.FC<SyncBannerProps> = ({
     return unsub;
   }, []);
 
-  // Monitor transition from isSyncing = true to false (or update in lastSyncTime) to trigger green tick animation
+  // Monitor transition from isSyncing = true to false to trigger green tick animation
   useEffect(() => {
     if (prevSyncingRef.current && !isSyncing && !lastSyncError && isOnline) {
       setShowJustSyncedTick(true);
@@ -59,7 +62,6 @@ export const SyncBanner: React.FC<SyncBannerProps> = ({
 
     setIsManualSyncing(true);
     try {
-      // Trigger both hook sync and syncOfflineDataWithServer
       await Promise.all([
         triggerSync(),
         syncOfflineDataWithServer()
@@ -76,7 +78,15 @@ export const SyncBanner: React.FC<SyncBannerProps> = ({
   const isCurrentlySyncing = isSyncing || isManualSyncing;
 
   return (
-    <div className="inline-flex items-center gap-1.5" id="sync-banner-container">
+    <div className="inline-flex items-center gap-2" id="sync-banner-container">
+      {/* D3 Real-Time Animated Queue Status Ring */}
+      {showD3Gauge && (
+        <OfflineSyncQueueD3Chart 
+          compact={compact} 
+          onOpenModal={onOpenModal} 
+        />
+      )}
+
       <AnimatePresence mode="wait">
         {!isOnline ? (
           <motion.button
@@ -117,6 +127,46 @@ export const SyncBanner: React.FC<SyncBannerProps> = ({
             <span className="w-2 h-2 rounded-full bg-rose-500 animate-pulse shrink-0" />
             <AlertTriangle className="w-3.5 h-3.5 text-rose-600 dark:text-rose-400 shrink-0" />
             {!compact && <span>Firestore Indisponível</span>}
+          </motion.button>
+        ) : failedCount > 0 ? (
+          <motion.button
+            key="failed-sync-banner"
+            type="button"
+            onClick={handleClick}
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.95 }}
+            whileHover={{ scale: 1.02 }}
+            whileTap={{ scale: 0.98 }}
+            className="flex items-center gap-1.5 px-2.5 py-1 bg-rose-50 dark:bg-rose-950/50 hover:bg-rose-100 dark:hover:bg-rose-900/60 border border-rose-300 dark:border-rose-700/70 rounded-full text-[11px] font-bold text-rose-800 dark:text-rose-300 transition-colors cursor-pointer shadow-xs"
+            title={`${failedCount} item(ns) falharam na sincronização. Clique para verificar integridade e reenviar.`}
+            aria-label="Estado da sincronização: Itens com falha"
+          >
+            <span className="w-2 h-2 rounded-full bg-rose-500 animate-ping shrink-0" />
+            <AlertTriangle className="w-3.5 h-3.5 text-rose-600 dark:text-rose-400 shrink-0" />
+            {!compact && (
+              <span>
+                {failedCount} com falha {pendingCount > failedCount ? `(+${pendingCount - failedCount} na fila)` : ''}
+              </span>
+            )}
+          </motion.button>
+        ) : pendingCount > 0 ? (
+          <motion.button
+            key="pending-sync-banner"
+            type="button"
+            onClick={handleClick}
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.95 }}
+            whileHover={{ scale: 1.02 }}
+            whileTap={{ scale: 0.98 }}
+            className="flex items-center gap-1.5 px-2.5 py-1 bg-blue-50 dark:bg-blue-950/40 hover:bg-blue-100 dark:hover:bg-blue-900/50 border border-blue-200/80 dark:border-blue-700/60 rounded-full text-[11px] font-bold text-blue-800 dark:text-blue-300 transition-colors cursor-pointer shadow-xs"
+            title={`${pendingCount} item(ns) na fila de sincronização.`}
+            aria-label="Estado da sincronização: Fila com itens pendentes"
+          >
+            <span className="w-2 h-2 rounded-full bg-blue-500 shrink-0" />
+            <RefreshCw className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400 shrink-0" />
+            {!compact && <span>{pendingCount} na fila</span>}
           </motion.button>
         ) : isCurrentlySyncing ? (
           <motion.button
@@ -224,7 +274,7 @@ export const SyncBanner: React.FC<SyncBannerProps> = ({
           aria-label="Forçar Sincronização manual"
         >
           <RefreshCw className={`w-3 h-3 ${isCurrentlySyncing ? 'animate-spin text-blue-500' : ''}`} />
-          <span>{isCurrentlySyncing ? 'Sincronizando...' : 'Forçar Sincronização'}</span>
+          <span>{isCurrentlySyncing ? 'Sincronizando...' : 'Forçar'}</span>
         </button>
       )}
     </div>
@@ -232,8 +282,3 @@ export const SyncBanner: React.FC<SyncBannerProps> = ({
 };
 
 export default SyncBanner;
-
-
-
-
-

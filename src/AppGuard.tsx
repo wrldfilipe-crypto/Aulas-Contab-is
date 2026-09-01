@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "motion/react";
-import { ouvirEstadoAuth, EstadoAuth, limparSessaoAntiga, tratarResultadoGoogle } from "./lib/auth/authService";
+import { ouvirEstadoAuth, EstadoAuth, limparSessaoAntiga, tratarResultadoGoogle, getCurrentUser } from "./lib/auth/authService";
 import { LoginPage } from "./pages/Login/LoginPage";
 import { Loader2, Building2, ShieldCheck } from "lucide-react";
 
@@ -9,13 +9,56 @@ export interface AppGuardProps {
 }
 
 export function AppGuard({ children }: AppGuardProps) {
-  const [estado, setEstado] = useState<EstadoAuth>({ status: "carregando" });
+  // Verificação síncrona imediata sem bloquear no arranque
+  const [estado, setEstado] = useState<EstadoAuth>(() => {
+    if (typeof sessionStorage !== "undefined" && sessionStorage.getItem("ga_user_logged_out") === "true") {
+      return { status: "naoAutenticado" };
+    }
+    const u = getCurrentUser();
+    if (u && (u.uid || u.id)) {
+      return { status: "autenticado", uid: u.uid || u.id, usuario: u };
+    }
+    return { status: "carregando" };
+  });
 
   useEffect(() => {
+    // Operações em segundo plano não bloqueantes
     limparSessaoAntiga();
-    tratarResultadoGoogle();
-    const unsub = ouvirEstadoAuth((e) => setEstado(e));
-    return () => unsub();
+    tratarResultadoGoogle().catch(() => {});
+
+    // Suporte dinâmico para teclado virtual no Safari iOS (evita quebrar inputs fixos)
+    if (typeof window !== "undefined" && window.visualViewport) {
+      const handleResize = () => {
+        const vv = window.visualViewport;
+        if (!vv) return;
+        const keyboardHeight = window.innerHeight - vv.height;
+        document.documentElement.style.setProperty(
+          "--keyboard-height",
+          `${Math.max(0, keyboardHeight)}px`
+        );
+      };
+
+      window.visualViewport.addEventListener("resize", handleResize);
+      window.visualViewport.addEventListener("scroll", handleResize);
+    }
+
+    // Timeout de segurança ultra-rápido (500ms max) para o ecrã de carregamento
+    // Se a sessão não for resolvida em 500ms, avança imediatamente para login sem bloquear o utilizador
+    const timeoutId = setTimeout(() => {
+      setEstado((atual) => (atual.status === "carregando" ? { status: "naoAutenticado" } : atual));
+    }, 500);
+
+    const unsub = ouvirEstadoAuth((e) => {
+      setEstado(e);
+    });
+
+    return () => {
+      clearTimeout(timeoutId);
+      unsub();
+      if (typeof window !== "undefined" && window.visualViewport) {
+        // cleanup listeners
+      }
+    };
   }, []);
 
   return (

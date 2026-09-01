@@ -19,6 +19,7 @@ import {
 import { login, UserSession, getPersistentUid, setPersistentUid, authenticateUserAccount, registerUserAccount } from '../lib/db';
 import { signInWithFirebaseAuth, signUpWithFirebaseAuth, syncUserProfileToFirestore } from '../lib/firebase';
 import { calculatePasswordStrength, isValidEmail, validatePasswordRequirements } from '../lib/authCrypto';
+import { loadUserProfileMultiStore } from '../lib/userProfiles';
 
 interface AuthScreenProps {
   onSuccess: (user: UserSession) => void;
@@ -102,35 +103,45 @@ export default function AuthScreen({ onSuccess, initialNotificationMessage }: Au
     }, 800);
   };
 
-  const createGoogleUser = (): UserSession => ({
-    userId: 'standard-user-id-0002',
-    email: 'wrldfilipe@gmail.com',
-    name: 'Filipe Carvalho',
-    role: 'user',
-    country: 'Angola',
-    language: i18n.currentLang,
-    profile: 'accountant',
-    plan: 'pro',
-    createdAt: new Date().toISOString(),
-    lastLoginAt: new Date().toISOString(),
-    preferences: {
-      theme: 'light',
-      background: 'dots',
-      language: i18n.currentLang,
-      documentLang: i18n.currentLang,
-      defaultTaxCountry: 'Angola',
-      accountingStandard: 'PGC Angola',
-      defaultCurrency: 'AOA',
-      dateFormat: 'DD/MM/YYYY',
-      notifications: {
-        compliance: true,
-        ai: true,
-        workspace: true,
-        education: true,
-        system: true,
+  const createGoogleUser = (): UserSession => {
+    let dynamicName = 'Usuário';
+    try {
+      const saved = loadUserProfileMultiStore('standard-user-id-0002') || loadUserProfileMultiStore('wrldfilipe@gmail.com');
+      if (saved?.name && saved.name !== 'Filipe Carvalho' && saved.name !== 'Filipe wrld') {
+        dynamicName = saved.name;
       }
-    }
-  });
+    } catch (_) {}
+
+    return {
+      userId: 'standard-user-id-0002',
+      email: 'wrldfilipe@gmail.com',
+      name: dynamicName,
+      role: 'user',
+      country: 'Angola',
+      language: i18n.currentLang,
+      profile: 'accountant',
+      plan: 'pro',
+      createdAt: new Date().toISOString(),
+      lastLoginAt: new Date().toISOString(),
+      preferences: {
+        theme: 'light',
+        background: 'dots',
+        language: i18n.currentLang,
+        documentLang: i18n.currentLang,
+        defaultTaxCountry: 'Angola',
+        accountingStandard: 'PGC Angola',
+        defaultCurrency: 'AOA',
+        dateFormat: 'DD/MM/YYYY',
+        notifications: {
+          compliance: true,
+          ai: true,
+          workspace: true,
+          education: true,
+          system: true,
+        }
+      }
+    };
+  };
 
   const renderGoogleButton = () => (
     <button 
@@ -186,10 +197,18 @@ export default function AuthScreen({ onSuccess, initialNotificationMessage }: Au
         if (isDemoAdmin || isDemoUser) {
           const role = isDemoAdmin ? 'admin' : 'user';
           const assignedUid = isDemoAdmin ? 'admin-user-id-0001' : 'standard-user-id-0002';
+          let dynamicDemoName = isDemoAdmin ? 'Administrador Global' : 'Usuário';
+          try {
+            const saved = loadUserProfileMultiStore(assignedUid) || loadUserProfileMultiStore(formattedEmail);
+            if (saved?.name && saved.name !== 'Filipe Carvalho' && saved.name !== 'Filipe wrld') {
+              dynamicDemoName = saved.name;
+            }
+          } catch (_) {}
+
           const sessionUser: UserSession = {
             userId: assignedUid,
             email: formattedEmail,
-            name: isDemoAdmin ? 'Administrador Global' : 'Filipe Carvalho',
+            name: dynamicDemoName,
             role: role as any,
             country: 'Angola',
             language: i18n.currentLang,
@@ -501,7 +520,7 @@ export default function AuthScreen({ onSuccess, initialNotificationMessage }: Au
                   type="text"
                   value={registerName}
                   onChange={(e) => setRegisterName(e.target.value)}
-                  placeholder="Filipe Carvalho"
+                  placeholder="Nome completo"
                   className="w-full bg-slate-950 border border-slate-800 text-white pl-11 pr-4 py-2.5 text-xs rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 transition-all placeholder:text-slate-600"
                   required
                 />
@@ -516,7 +535,7 @@ export default function AuthScreen({ onSuccess, initialNotificationMessage }: Au
                   type="email"
                   value={registerEmail}
                   onChange={(e) => setRegisterEmail(e.target.value)}
-                  placeholder="filipe@exemplo.com"
+                  placeholder="seu.email@exemplo.com"
                   className="w-full bg-slate-950 border border-slate-800 text-white pl-11 pr-4 py-2.5 text-xs rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 transition-all placeholder:text-slate-600"
                   required
                 />

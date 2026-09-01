@@ -770,3 +770,480 @@ export function exportSingleTransactionVoucherPDF(
     alert('Não foi possível gerar o comprovativo em PDF. Por favor, tente novamente.');
   }
 }
+
+export interface PDFBalanceteAccountItem {
+  code: string;
+  name: string;
+  classNumber?: number;
+  periodDebit: number;
+  periodCredit: number;
+  debtorBalance: number;
+  creditorBalance: number;
+}
+
+export interface PDFBalanceteOptions {
+  companyName: string;
+  taxId?: string;
+  currency?: string;
+  periodDescription?: string;
+  standard?: string;
+  exerciseYear?: number | string;
+  isTrialBalanced?: boolean;
+}
+
+/**
+ * Export official Balancete de Verificação (Trial Balance) adhering strictly to PGC Angola (Dec. 82/01)
+ */
+export function exportBalancetePDF(
+  options: PDFBalanceteOptions,
+  accounts: PDFBalanceteAccountItem[]
+): void {
+  try {
+    const doc = new jsPDF({
+      orientation: 'landscape',
+      unit: 'mm',
+      format: 'a4'
+    });
+
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const pageHeight = doc.internal.pageSize.getHeight();
+    const leftMargin = 12;
+    const rightMargin = 12;
+    const contentWidth = pageWidth - leftMargin - rightMargin;
+    const currency = options.currency || 'AOA';
+    const today = new Date().toLocaleDateString('pt-AO', { day: '2-digit', month: '2-digit', year: 'numeric' });
+
+    let currentY = 12;
+
+    // Header Background
+    doc.setFillColor(15, 23, 42); // slate-900
+    doc.rect(0, 0, pageWidth, 28, 'F');
+
+    // Title
+    doc.setTextColor(255, 255, 255);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(14);
+    doc.text('BALANCETE DE VERIFICAÇÃO DO RAZÃO GERAL (PGC ANGOLA)', leftMargin, 13);
+
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8.5);
+    doc.setTextColor(203, 213, 225);
+    doc.text(`Norma Legal: Plano Geral de Contabilidade de Angola (Decreto n.º 82/2001)`, leftMargin, 20);
+    doc.text(`Emissão: ${today}`, pageWidth - rightMargin, 20, { align: 'right' });
+
+    currentY = 34;
+
+    // Company & Period Summary Box
+    doc.setFillColor(248, 250, 252);
+    doc.setDrawColor(226, 232, 240);
+    doc.roundedRect(leftMargin, currentY, contentWidth, 18, 2, 2, 'FD');
+
+    doc.setTextColor(15, 23, 42);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(10);
+    doc.text(`Empresa: ${options.companyName || 'Empresa Geral Lda'}`, leftMargin + 4, currentY + 6.5);
+
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8);
+    doc.setTextColor(71, 85, 105);
+    doc.text(`NIF: ${options.taxId || 'AO-500000000'}  •  Moeda: ${currency}`, leftMargin + 4, currentY + 12.5);
+
+    doc.text(`Período de Referência: ${options.periodDescription || 'Exercício Corrente'}`, pageWidth - rightMargin - 4, currentY + 6.5, { align: 'right' });
+    const balanceStatus = options.isTrialBalanced !== false ? 'EQUILIBRADO (Débito = Crédito)' : 'DESEQUILIBRADO';
+    doc.text(`Estado do Balancete: ${balanceStatus}`, pageWidth - rightMargin - 4, currentY + 12.5, { align: 'right' });
+
+    currentY += 22;
+
+    // Table Header (Landscape 6 Columns)
+    const colCodeW = 24;
+    const colNameW = 95;
+    const colDebW = 38;
+    const colCredW = 38;
+    const colSalDebW = 38;
+    const colSalCredW = 38;
+
+    const renderTableHeader = (y: number) => {
+      doc.setFillColor(30, 41, 59); // slate-800
+      doc.rect(leftMargin, y, contentWidth, 8, 'F');
+
+      doc.setTextColor(255, 255, 255);
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(7.5);
+
+      doc.text('CONTA PGC', leftMargin + 3, y + 5.5);
+      doc.text('DESIGNAÇÃO DA CONTA', leftMargin + colCodeW + 3, y + 5.5);
+      doc.text(`MOV. DÉBITO (${currency})`, leftMargin + colCodeW + colNameW + colDebW - 3, y + 5.5, { align: 'right' });
+      doc.text(`MOV. CRÉDITO (${currency})`, leftMargin + colCodeW + colNameW + colDebW + colCredW - 3, y + 5.5, { align: 'right' });
+      doc.text(`SALDO DEVEDOR (${currency})`, leftMargin + colCodeW + colNameW + colDebW + colCredW + colSalDebW - 3, y + 5.5, { align: 'right' });
+      doc.text(`SALDO CREDOR (${currency})`, leftMargin + contentWidth - 3, y + 5.5, { align: 'right' });
+    };
+
+    renderTableHeader(currentY);
+    currentY += 8;
+
+    // Table Rows
+    let totalDebit = 0;
+    let totalCredit = 0;
+    let totalDebtorBalance = 0;
+    let totalCreditorBalance = 0;
+
+    doc.setFontSize(7.5);
+
+    accounts.forEach((acc, idx) => {
+      totalDebit += acc.periodDebit;
+      totalCredit += acc.periodCredit;
+      totalDebtorBalance += acc.debtorBalance;
+      totalCreditorBalance += acc.creditorBalance;
+
+      if (currentY > pageHeight - 25) {
+        doc.addPage();
+        currentY = 14;
+        renderTableHeader(currentY);
+        currentY += 8;
+      }
+
+      const isEven = idx % 2 === 0;
+      doc.setFillColor(isEven ? 255 : 248, isEven ? 255 : 250, isEven ? 255 : 252);
+      doc.rect(leftMargin, currentY, contentWidth, 6.5, 'F');
+
+      // Grid border
+      doc.setDrawColor(226, 232, 240);
+      doc.line(leftMargin, currentY + 6.5, leftMargin + contentWidth, currentY + 6.5);
+
+      // Account code
+      doc.setFont('courier', 'bold');
+      doc.setTextColor(27, 58, 107);
+      doc.text(acc.code, leftMargin + 3, currentY + 4.5);
+
+      // Account name
+      doc.setFont('helvetica', 'normal');
+      doc.setTextColor(15, 23, 42);
+      const nameTrunc = acc.name.length > 55 ? acc.name.substring(0, 52) + '...' : acc.name;
+      doc.text(nameTrunc, leftMargin + colCodeW + 3, currentY + 4.5);
+
+      // Numbers
+      doc.setFont('helvetica', 'normal');
+      doc.setTextColor(51, 65, 85);
+
+      const debStr = acc.periodDebit > 0 ? acc.periodDebit.toLocaleString('pt-PT', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '-';
+      const credStr = acc.periodCredit > 0 ? acc.periodCredit.toLocaleString('pt-PT', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '-';
+      const salDebStr = acc.debtorBalance > 0 ? acc.debtorBalance.toLocaleString('pt-PT', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '-';
+      const salCredStr = acc.creditorBalance > 0 ? acc.creditorBalance.toLocaleString('pt-PT', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '-';
+
+      doc.text(debStr, leftMargin + colCodeW + colNameW + colDebW - 3, currentY + 4.5, { align: 'right' });
+      doc.text(credStr, leftMargin + colCodeW + colNameW + colDebW + colCredW - 3, currentY + 4.5, { align: 'right' });
+
+      // Highlight balances
+      if (acc.debtorBalance > 0) doc.setTextColor(5, 150, 105);
+      doc.text(salDebStr, leftMargin + colCodeW + colNameW + colDebW + colCredW + colSalDebW - 3, currentY + 4.5, { align: 'right' });
+
+      if (acc.creditorBalance > 0) doc.setTextColor(79, 70, 229);
+      doc.text(salCredStr, leftMargin + contentWidth - 3, currentY + 4.5, { align: 'right' });
+
+      currentY += 6.5;
+    });
+
+    // Totals Row
+    if (currentY > pageHeight - 30) {
+      doc.addPage();
+      currentY = 14;
+    }
+
+    doc.setFillColor(241, 245, 249);
+    doc.rect(leftMargin, currentY, contentWidth, 8, 'F');
+    doc.setDrawColor(203, 213, 225);
+    doc.line(leftMargin, currentY, leftMargin + contentWidth, currentY);
+    doc.line(leftMargin, currentY + 8, leftMargin + contentWidth, currentY + 8);
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(8);
+    doc.setTextColor(15, 23, 42);
+    doc.text('TOTAIS GERAIS DO BALANCETE:', leftMargin + 3, currentY + 5.5);
+
+    doc.setTextColor(5, 150, 105);
+    doc.text(totalDebit.toLocaleString('pt-PT', { minimumFractionDigits: 2 }), leftMargin + colCodeW + colNameW + colDebW - 3, currentY + 5.5, { align: 'right' });
+
+    doc.setTextColor(79, 70, 229);
+    doc.text(totalCredit.toLocaleString('pt-PT', { minimumFractionDigits: 2 }), leftMargin + colCodeW + colNameW + colDebW + colCredW - 3, currentY + 5.5, { align: 'right' });
+
+    doc.setTextColor(5, 150, 105);
+    doc.text(totalDebtorBalance.toLocaleString('pt-PT', { minimumFractionDigits: 2 }), leftMargin + colCodeW + colNameW + colDebW + colCredW + colSalDebW - 3, currentY + 5.5, { align: 'right' });
+
+    doc.setTextColor(79, 70, 229);
+    doc.text(totalCreditorBalance.toLocaleString('pt-PT', { minimumFractionDigits: 2 }), leftMargin + contentWidth - 3, currentY + 5.5, { align: 'right' });
+
+    currentY += 12;
+
+    // Signatures
+    const sigBoxW = (contentWidth - 20) / 3;
+    doc.setDrawColor(203, 213, 225);
+    doc.line(leftMargin, currentY + 12, leftMargin + sigBoxW, currentY + 12);
+    doc.line(leftMargin + sigBoxW + 10, currentY + 12, leftMargin + sigBoxW * 2 + 10, currentY + 12);
+    doc.line(leftMargin + (sigBoxW + 10) * 2, currentY + 12, leftMargin + contentWidth, currentY + 12);
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(7);
+    doc.setTextColor(100, 116, 139);
+    doc.text('ELABORADO PELO CONTABILISTA', leftMargin + sigBoxW / 2, currentY + 16, { align: 'center' });
+    doc.text('VERIFICADO PELO AUDITOR / OPC', leftMargin + sigBoxW * 1.5 + 10, currentY + 16, { align: 'center' });
+    doc.text('APROVADO PELA GERÊNCIA', leftMargin + (sigBoxW + 10) * 2 + sigBoxW / 2, currentY + 16, { align: 'center' });
+
+    // Footer
+    const footerY = pageHeight - 8;
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(6.5);
+    doc.setTextColor(148, 163, 184);
+    doc.text('Documento Contabilístico Oficial emitido em conformidade com o PGC Angola (Decreto n.º 82/2001).', leftMargin, footerY);
+    doc.text('GlobalAccount AI Studio Angola', pageWidth - rightMargin, footerY, { align: 'right' });
+
+    const safeDate = today.replace(/\//g, '-');
+    doc.save(`Balancete_Verificacao_PGC_Angola_${safeDate}.pdf`);
+  } catch (error) {
+    console.error('[pdfExportService] Erro ao exportar Balancete para PDF:', error);
+    alert('Não foi possível gerar o Balancete em PDF. Por favor tente novamente.');
+  }
+}
+
+export interface PDFDemonstracoesFinanceirasData {
+  companyName: string;
+  taxId?: string;
+  currency?: string;
+  exerciseYear: number | string;
+  // Balanço Data
+  ativoNaoCorrente: { name: string; amount: number }[];
+  ativoCorrente: { name: string; amount: number }[];
+  capitalProprio: { name: string; amount: number }[];
+  passivoNaoCorrente: { name: string; amount: number }[];
+  passivoCorrente: { name: string; amount: number }[];
+  // DRE Data
+  dreItems: { rubric: string; amount: number; isSubtotal?: boolean }[];
+}
+
+/**
+ * Export Financial Statements (Balanço & Demonstração de Resultados) adhering to PGC Angola
+ */
+export function exportDemonstracoesFinanceirasPDF(
+  data: PDFDemonstracoesFinanceirasData
+): void {
+  try {
+    const doc = new jsPDF({
+      orientation: 'portrait',
+      unit: 'mm',
+      format: 'a4'
+    });
+
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const pageHeight = doc.internal.pageSize.getHeight();
+    const leftMargin = 14;
+    const rightMargin = 14;
+    const contentWidth = pageWidth - leftMargin - rightMargin;
+    const currency = data.currency || 'AOA';
+    const today = new Date().toLocaleDateString('pt-AO', { day: '2-digit', month: '2-digit', year: 'numeric' });
+
+    // PAGE 1: BALANÇO (PGC ANGOLA)
+    doc.setFillColor(15, 23, 42); // slate-900
+    doc.rect(0, 0, pageWidth, 28, 'F');
+
+    doc.setTextColor(255, 255, 255);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(14);
+    doc.text('BALANÇO PATRIMONIAL (PGC ANGOLA)', leftMargin, 13);
+
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8.5);
+    doc.setTextColor(203, 213, 225);
+    doc.text(`Empresa: ${data.companyName} | Exercício Fiscal: ${data.exerciseYear}`, leftMargin, 20);
+    doc.text(`Emissão: ${today}`, pageWidth - rightMargin, 20, { align: 'right' });
+
+    let currentY = 34;
+
+    const renderSectionHeader = (title: string, y: number) => {
+      doc.setFillColor(30, 41, 59);
+      doc.rect(leftMargin, y, contentWidth, 7, 'F');
+      doc.setTextColor(255, 255, 255);
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(8.5);
+      doc.text(title, leftMargin + 4, y + 5);
+      doc.text(`VALOR (${currency})`, pageWidth - rightMargin - 4, y + 5, { align: 'right' });
+    };
+
+    // 1. ACTIVO
+    renderSectionHeader('1. ACTIVO NÃO CORRENTE (Imobilizações & Investimentos)', currentY);
+    currentY += 7;
+
+    let totalAtivoNC = 0;
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8);
+    doc.setTextColor(15, 23, 42);
+
+    data.ativoNaoCorrente.forEach((item, idx) => {
+      totalAtivoNC += item.amount;
+      const isEven = idx % 2 === 0;
+      doc.setFillColor(isEven ? 255 : 248, isEven ? 255 : 250, isEven ? 255 : 252);
+      doc.rect(leftMargin, currentY, contentWidth, 6, 'F');
+      doc.setDrawColor(226, 232, 240);
+      doc.line(leftMargin, currentY + 6, leftMargin + contentWidth, currentY + 6);
+      doc.text(item.name, leftMargin + 4, currentY + 4.2);
+      doc.text(item.amount.toLocaleString('pt-PT', { minimumFractionDigits: 2 }), pageWidth - rightMargin - 4, currentY + 4.2, { align: 'right' });
+      currentY += 6;
+    });
+
+    renderSectionHeader('2. ACTIVO CORRENTE (Existências, Clientes, Disponibilidades)', currentY);
+    currentY += 7;
+
+    let totalAtivoC = 0;
+    data.ativoCorrente.forEach((item, idx) => {
+      totalAtivoC += item.amount;
+      const isEven = idx % 2 === 0;
+      doc.setFillColor(isEven ? 255 : 248, isEven ? 255 : 250, isEven ? 255 : 252);
+      doc.rect(leftMargin, currentY, contentWidth, 6, 'F');
+      doc.setDrawColor(226, 232, 240);
+      doc.line(leftMargin, currentY + 6, leftMargin + contentWidth, currentY + 6);
+      doc.text(item.name, leftMargin + 4, currentY + 4.2);
+      doc.text(item.amount.toLocaleString('pt-PT', { minimumFractionDigits: 2 }), pageWidth - rightMargin - 4, currentY + 4.2, { align: 'right' });
+      currentY += 6;
+    });
+
+    // Total Activo
+    const totalActivo = totalAtivoNC + totalAtivoC;
+    doc.setFillColor(241, 245, 249);
+    doc.rect(leftMargin, currentY, contentWidth, 7.5, 'F');
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(8.5);
+    doc.setTextColor(5, 150, 105);
+    doc.text('TOTAL DO ACTIVO:', leftMargin + 4, currentY + 5.2);
+    doc.text(`${totalActivo.toLocaleString('pt-PT', { minimumFractionDigits: 2 })} ${currency}`, pageWidth - rightMargin - 4, currentY + 5.2, { align: 'right' });
+    currentY += 12;
+
+    // 2. CAPITAL PRÓPRIO E PASSIVO
+    renderSectionHeader('3. CAPITAL PRÓPRIO (Capital, Reservas, Resultados)', currentY);
+    currentY += 7;
+
+    let totalCP = 0;
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8);
+    doc.setTextColor(15, 23, 42);
+
+    data.capitalProprio.forEach((item, idx) => {
+      totalCP += item.amount;
+      const isEven = idx % 2 === 0;
+      doc.setFillColor(isEven ? 255 : 248, isEven ? 255 : 250, isEven ? 255 : 252);
+      doc.rect(leftMargin, currentY, contentWidth, 6, 'F');
+      doc.setDrawColor(226, 232, 240);
+      doc.line(leftMargin, currentY + 6, leftMargin + contentWidth, currentY + 6);
+      doc.text(item.name, leftMargin + 4, currentY + 4.2);
+      doc.text(item.amount.toLocaleString('pt-PT', { minimumFractionDigits: 2 }), pageWidth - rightMargin - 4, currentY + 4.2, { align: 'right' });
+      currentY += 6;
+    });
+
+    renderSectionHeader('4. PASSIVO NÃO CORRENTE & CORRENTE', currentY);
+    currentY += 7;
+
+    let totalPassivo = 0;
+    const allPassivo = [...data.passivoNaoCorrente, ...data.passivoCorrente];
+    allPassivo.forEach((item, idx) => {
+      totalPassivo += item.amount;
+      const isEven = idx % 2 === 0;
+      doc.setFillColor(isEven ? 255 : 248, isEven ? 255 : 250, isEven ? 255 : 252);
+      doc.rect(leftMargin, currentY, contentWidth, 6, 'F');
+      doc.setDrawColor(226, 232, 240);
+      doc.line(leftMargin, currentY + 6, leftMargin + contentWidth, currentY + 6);
+      doc.text(item.name, leftMargin + 4, currentY + 4.2);
+      doc.text(item.amount.toLocaleString('pt-PT', { minimumFractionDigits: 2 }), pageWidth - rightMargin - 4, currentY + 4.2, { align: 'right' });
+      currentY += 6;
+    });
+
+    // Total Capital Próprio + Passivo
+    const totalCPPassivo = totalCP + totalPassivo;
+    doc.setFillColor(241, 245, 249);
+    doc.rect(leftMargin, currentY, contentWidth, 7.5, 'F');
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(8.5);
+    doc.setTextColor(79, 70, 229);
+    doc.text('TOTAL DO CAPITAL PRÓPRIO E PASSIVO:', leftMargin + 4, currentY + 5.2);
+    doc.text(`${totalCPPassivo.toLocaleString('pt-PT', { minimumFractionDigits: 2 })} ${currency}`, pageWidth - rightMargin - 4, currentY + 5.2, { align: 'right' });
+    currentY += 14;
+
+    // Balance verification
+    const isBalanEquil = Math.abs(totalActivo - totalCPPassivo) < 0.01;
+    doc.setFillColor(isBalanEquil ? 236 : 254, isBalanEquil ? 253 : 242, isBalanEquil ? 245 : 242);
+    doc.setDrawColor(isBalanEquil ? 167 : 254, isBalanEquil ? 243 : 202, isBalanEquil ? 208 : 202);
+    doc.roundedRect(leftMargin, currentY, contentWidth, 10, 2, 2, 'FD');
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(8);
+    doc.setTextColor(isBalanEquil ? 5 : 185, isBalanEquil ? 150 : 28, isBalanEquil ? 105 : 28);
+    doc.text(
+      isBalanEquil 
+        ? '✓ Equação Fundamental Verificada: Activo = Capital Próprio + Passivo (Conforme PGC Angola).'
+        : '⚠ Divergência detectada no Balanço entre o Activo e o Capital Próprio + Passivo.',
+      leftMargin + 4,
+      currentY + 6.2
+    );
+
+    // PAGE 2: DEMONSTRAÇÃO DE RESULTADOS POR NATUREZA (DRE)
+    doc.addPage();
+    doc.setFillColor(15, 23, 42);
+    doc.rect(0, 0, pageWidth, 28, 'F');
+
+    doc.setTextColor(255, 255, 255);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(14);
+    doc.text('DEMONSTRAÇÃO DE RESULTADOS POR NATUREZA (DRE)', leftMargin, 13);
+
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8.5);
+    doc.setTextColor(203, 213, 225);
+    doc.text(`Empresa: ${data.companyName} | Exercício: ${data.exerciseYear} | PGC Angola (Dec. 82/01)`, leftMargin, 20);
+    doc.text(`Página 2/2`, pageWidth - rightMargin, 20, { align: 'right' });
+
+    currentY = 34;
+
+    renderSectionHeader('RUBRICAS DA DEMONSTRAÇÃO DE RESULTADOS', currentY);
+    currentY += 7;
+
+    data.dreItems.forEach((item, idx) => {
+      const isSubtotal = item.isSubtotal;
+      doc.setFillColor(isSubtotal ? 241 : (idx % 2 === 0 ? 255 : 248), isSubtotal ? 245 : (idx % 2 === 0 ? 255 : 250), isSubtotal ? 249 : (idx % 2 === 0 ? 255 : 252));
+      doc.rect(leftMargin, currentY, contentWidth, isSubtotal ? 7.5 : 6.5, 'F');
+      doc.setDrawColor(226, 232, 240);
+      doc.line(leftMargin, currentY + (isSubtotal ? 7.5 : 6.5), leftMargin + contentWidth, currentY + (isSubtotal ? 7.5 : 6.5));
+
+      doc.setFont('helvetica', isSubtotal ? 'bold' : 'normal');
+      doc.setFontSize(isSubtotal ? 8.5 : 8);
+      doc.setTextColor(isSubtotal ? 15 : 51, isSubtotal ? 23 : 65, isSubtotal ? 42 : 85);
+      doc.text(item.rubric, leftMargin + (isSubtotal ? 4 : 8), currentY + (isSubtotal ? 5.2 : 4.5));
+
+      const valStr = item.amount.toLocaleString('pt-PT', { minimumFractionDigits: 2 });
+      if (item.amount < 0) {
+        doc.setTextColor(225, 29, 72);
+      } else if (isSubtotal) {
+        doc.setTextColor(5, 150, 105);
+      }
+      doc.text(valStr, pageWidth - rightMargin - 4, currentY + (isSubtotal ? 5.2 : 4.5), { align: 'right' });
+
+      currentY += isSubtotal ? 7.5 : 6.5;
+    });
+
+    currentY += 12;
+
+    // Signatures
+    const sigBoxW = (contentWidth - 20) / 3;
+    doc.setDrawColor(203, 213, 225);
+    doc.line(leftMargin, currentY + 12, leftMargin + sigBoxW, currentY + 12);
+    doc.line(leftMargin + sigBoxW + 10, currentY + 12, leftMargin + sigBoxW * 2 + 10, currentY + 12);
+    doc.line(leftMargin + (sigBoxW + 10) * 2, currentY + 12, leftMargin + contentWidth, currentY + 12);
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(7);
+    doc.setTextColor(100, 116, 139);
+    doc.text('CONTABILISTA CERTIFICADO', leftMargin + sigBoxW / 2, currentY + 16, { align: 'center' });
+    doc.text('AUDITORIA / CONSELHO FISCAL', leftMargin + sigBoxW * 1.5 + 10, currentY + 16, { align: 'center' });
+    doc.text('DIRECÇÃO GERAL / ADMINISTRAÇÃO', leftMargin + (sigBoxW + 10) * 2 + sigBoxW / 2, currentY + 16, { align: 'center' });
+
+    const safeDate = today.replace(/\//g, '-');
+    doc.save(`Demonstracoes_Financeiras_PGC_Angola_${safeDate}.pdf`);
+  } catch (error) {
+    console.error('[pdfExportService] Erro ao exportar Demonstrações Financeiras para PDF:', error);
+    alert('Não foi possível gerar as Demonstrações Financeiras em PDF. Por favor tente novamente.');
+  }
+}

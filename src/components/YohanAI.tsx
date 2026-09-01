@@ -18,6 +18,7 @@ import { salvarFeedbackYohanFirestore } from '../lib/firebase';
 import { PGC_CHART_OF_ACCOUNTS } from '../lib/pgc/pgcKnowledgeBase';
 import { VirtualizedChatMessagesList } from './VirtualizedChatMessagesList';
 import { SparklingAiAura } from './SparklingAiAura';
+import { YohanLogo } from './YohanLogo';
 
 export interface YohanAIProps {
   currentLanguage?: string;
@@ -30,6 +31,8 @@ export interface ChatMessage {
   content: string;
   timestamp: string;
   feedback?: 'up' | 'down' | null;
+  edited?: boolean;
+  editedAt?: string;
   attachedFile?: { name: string; size?: number };
 }
 
@@ -374,7 +377,7 @@ Como posso ajudar hoje?
     }
   };
 
-  // Speech Synthesis
+  // Speech Synthesis - Natural human male consultant voice
   const handleToggleSpeech = (msgId: string, text: string) => {
     if (typeof window === 'undefined' || !('speechSynthesis' in window)) {
       alert('A síntese de voz não é suportada neste navegador.');
@@ -388,10 +391,29 @@ Como posso ajudar hoje?
     }
 
     window.speechSynthesis.cancel();
-    const cleanText = text.replace(/[*#`_~[\]()]/g, ' ').replace(/\s+/g, ' ').trim();
+    const cleanText = text
+      .replace(/```[a-z]*[\s\S]*?```/gi, ' ')
+      .replace(/[*#`_~[\]()]/g, ' ')
+      .replace(/>+/g, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+
     const utterance = new SpeechSynthesisUtterance(cleanText);
-    utterance.lang = currentLanguage.startsWith('pt') ? 'pt-PT' : 'en-US';
-    utterance.rate = 1.0;
+    const voices = window.speechSynthesis.getVoices();
+
+    // Prioritizar voz masculina em português (Angola, Portugal ou Brasil)
+    const ptVoices = voices.filter(v => v.lang.startsWith('pt'));
+    const preferredMaleVoice = ptVoices.find(v => 
+      /male|homem|jorge|duarte|antonio|gabriel|felipe|ricardo|pt-pt/i.test(v.name)
+    ) || ptVoices[0] || voices.find(v => v.lang.startsWith('pt'));
+
+    if (preferredMaleVoice) {
+      utterance.voice = preferredMaleVoice;
+    }
+
+    utterance.lang = currentLanguage.startsWith('pt') ? (preferredMaleVoice?.lang || 'pt-PT') : 'en-US';
+    utterance.rate = 0.96; // Cadência humana e calma
+    utterance.pitch = 0.98; // Timbre masculino equilibrado
 
     utterance.onend = () => setSpeakingMessageId(null);
     utterance.onerror = () => setSpeakingMessageId(null);
@@ -513,11 +535,25 @@ Como posso ajudar hoje?
     setTimeout(() => setCopiedId(null), 2000);
   };
 
-  // Send Chat Message
+function hashString(str: string): string {
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) {
+    const char = str.charCodeAt(i);
+    hash = ((hash << 5) - hash) + char;
+    hash |= 0;
+  }
+  return Math.abs(hash).toString(36);
+}
+
+// Send Chat Message with Streaming, 24h Cache, 15s Timeout, and Auto-Retry
   const handleSendMessage = async (e?: React.FormEvent, customText?: string) => {
     if (e) e.preventDefault();
     const userText = (customText || inputMessage).trim();
     if (!userText || isLoading) return;
+
+    // 1. Immediate visual feedback (< 100ms)
+    setIsLoading(true);
+    setInputMessage('');
 
     const userMsg: ChatMessage = {
       id: `msg-${Date.now()}`,
@@ -526,6 +562,9 @@ Como posso ajudar hoje?
       timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       attachedFile: attachedFile ? { name: attachedFile.name, size: attachedFile.size } : undefined
     };
+
+    const currentAttached = attachedFile;
+    setAttachedFile(null);
 
     // Update conversation with user message
     const updatedMessages = [...messages, userMsg];
@@ -546,75 +585,420 @@ Como posso ajudar hoje?
       };
     }));
 
-    const fileContext = attachedFile ? `\n\n[DOCUMENTO ANEXADO: ${attachedFile.name}]\n${attachedFile.content}\n` : '';
-    setInputMessage('');
-    setAttachedFile(null);
+    // 2. Cache 24h lookup for common queries
+    const cacheKey = 'ga_ai_cache:' + hashString(userText.toLowerCase().trim());
+    if (!currentAttached) {
+      try {
+        const cached = localStorage.getItem(cacheKey);
+        if (cached) {
+          const { response, timestamp } = JSON.parse(cached);
+          const age = Date.now() - timestamp;
+          if (age < 24 * 60 * 60 * 1000 && response) {
+            const cachedBotMsg: ChatMessage = {
+              id: `msg-${Date.now() + 1}`,
+              role: 'assistant',
+              content: response,
+              timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+            };
+            setConversations(prev => prev.map(c => {
+              if (c.id !== activeConvId) return c;
+              return {
+                ...c,
+                updatedAt: new Date().toISOString(),
+                messages: [...c.messages, cachedBotMsg]
+              };
+            }));
+            setIsLoading(false);
+            return;
+          }
+        }
+      } catch (_) {}
+    }
+
+    const fileContext = currentAttached ? `\n\n[DOCUMENTO ANEXADO: ${currentAttached.name}]\n${currentAttached.content}\n` : '';
+
+    // 3. Limit history sent to API to the last 10 messages
+    const recentHistory = updatedMessages.slice(-10).map(m => ({
+      role: m.role,
+      content: m.content
+    }));
+
+    const botMsgId = `msg-${Date.now() + 1}`;
+    const botTimestamp = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+    // 4. Timeout de 60 segundos com gestão resiliente de sinal e retry
+    const executeChatRequest = async (maxRetries = 1): Promise<Response> => {
+      for (let attempt = 0; attempt <= maxRetries; attempt++) {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => {
+          try {
+            controller.abort('timeout');
+          } catch (_) {}
+        }, 60000); // 60s para acomodar respostas complexas e streaming de IA
+
+        try {
+          const res = await fetch('/api/chat', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              message: `${userText}${fileContext}`,
+              history: recentHistory,
+              language: currentLanguage,
+              stream: true,
+              systemContext: 'Yohan AI - Consultor Sénior de Contabilidade PGC Angola (Decreto 82/2001)'
+            }),
+            signal: controller.signal
+          });
+          clearTimeout(timeoutId);
+          if (res.ok || attempt === maxRetries) {
+            return res;
+          }
+        } catch (err: any) {
+          clearTimeout(timeoutId);
+          const isAbort = err?.name === 'AbortError' || (err?.message && String(err.message).toLowerCase().includes('abort'));
+          if (attempt === maxRetries) {
+            if (isAbort) {
+              throw new Error('Tempo de resposta excedido. Por favor, tente novamente.');
+            }
+            throw err;
+          }
+          await new Promise(r => setTimeout(r, 800));
+        }
+      }
+      throw new Error('Tempo limite excedido.');
+    };
+
+    try {
+      const res = await executeChatRequest(1);
+
+      let accumulatedText = '';
+      const updateAssistantMsg = (fullText: string) => {
+        accumulatedText = fullText;
+        setConversations(prev => prev.map(c => {
+          if (c.id !== activeConvId) return c;
+          const msgExists = c.messages.some(m => m.id === botMsgId);
+          const newMsgs = msgExists
+            ? c.messages.map(m => m.id === botMsgId ? { ...m, content: accumulatedText } : m)
+            : [...c.messages, { id: botMsgId, role: 'assistant' as const, content: accumulatedText, timestamp: botTimestamp }];
+          return {
+            ...c,
+            updatedAt: new Date().toISOString(),
+            messages: newMsgs
+          };
+        }));
+      };
+
+      // 5. Streaming decoding via ReadableStream & SSE
+      if (res.body && (res.headers.get('content-type')?.includes('text/event-stream') || res.headers.get('content-type')?.includes('text/plain'))) {
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder('utf-8');
+        let buffer = '';
+
+        try {
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split('\n');
+            buffer = lines.pop() || '';
+
+            for (const line of lines) {
+              const trimmed = line.trim();
+              if (!trimmed || trimmed === 'data: [DONE]') continue;
+              if (trimmed.startsWith('data: ')) {
+                try {
+                  const parsed = JSON.parse(trimmed.slice(6));
+                  if (parsed.text) {
+                    accumulatedText += parsed.text;
+                    updateAssistantMsg(accumulatedText);
+                  } else if (parsed.error) {
+                    accumulatedText += `\n⚠️ ${parsed.error}`;
+                    updateAssistantMsg(accumulatedText);
+                  }
+                } catch (_) {
+                  accumulatedText += trimmed.slice(6);
+                  updateAssistantMsg(accumulatedText);
+                }
+              } else {
+                accumulatedText += trimmed;
+                updateAssistantMsg(accumulatedText);
+              }
+            }
+          }
+        } catch (streamErr: any) {
+          console.warn('[YohanAI] Stream read interrupted:', streamErr);
+          // Se já tiver acumulado texto, preserva a resposta parcial em vez de falhar
+          if (!accumulatedText) {
+            throw streamErr;
+          }
+        }
+      } else {
+        const contentType = res.headers.get('content-type') || '';
+        if (contentType.includes('application/json')) {
+          const data = await res.json();
+          accumulatedText = data.text || data.reply || data.response || 'Desculpe, ocorreu um erro ao gerar a resposta.';
+        } else {
+          accumulatedText = await res.text();
+        }
+        updateAssistantMsg(accumulatedText);
+      }
+
+      // Guardar no cache 24h se for resposta válida
+      if (accumulatedText && !accumulatedText.startsWith('⚠️') && !currentAttached) {
+        try {
+          localStorage.setItem(cacheKey, JSON.stringify({
+            response: accumulatedText,
+            timestamp: Date.now()
+          }));
+        } catch (_) {}
+      }
+    } catch (err: any) {
+      console.error('Yohan AI Chat error:', err);
+      const rawErrMsg = err?.message || '';
+      const isAbort = err?.name === 'AbortError' || rawErrMsg.toLowerCase().includes('abort');
+      const userFriendlyError = isAbort 
+        ? 'O tempo de resposta do assistente foi excedido. Por favor, tente enviar a mensagem novamente.' 
+        : (rawErrMsg || 'Erro de conexão');
+
+      const errorMsg: ChatMessage = {
+        id: botMsgId,
+        role: 'assistant',
+        content: `⚠️ Não foi possível obter resposta em tempo real (${userFriendlyError}).\n\n*Sugestão:* Pode clicar no botão abaixo para tentar novamente ou consultar o **Glossário PGC** acima.`,
+        timestamp: botTimestamp
+      };
+
+      setConversations(prev => prev.map(c => {
+        if (c.id !== activeConvId) return c;
+        const msgExists = c.messages.some(m => m.id === botMsgId);
+        const newMsgs = msgExists
+          ? c.messages.map(m => m.id === botMsgId ? errorMsg : m)
+          : [...c.messages, errorMsg];
+        return {
+          ...c,
+          updatedAt: new Date().toISOString(),
+          messages: newMsgs
+        };
+      }));
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Re-generate AI response for an edited user message
+  const sendEditedToAPI = async (editedUserText: string, currentHistory: ChatMessage[]) => {
     setIsLoading(true);
+    const botMsgId = `msg-${Date.now() + 1}`;
+    const botTimestamp = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+    const recentHistory = currentHistory.slice(-10).map(m => ({
+      role: m.role,
+      content: m.content
+    }));
 
     try {
       const res = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          message: `${userText}${fileContext}`,
+          message: editedUserText,
+          history: recentHistory.slice(0, -1),
           language: currentLanguage,
-          systemContext: 'Yohan AI - Consultor Sénior de Contabilidade PGC Angola (Decreto 82/2001), OCPCA e Fiscalidade AGT'
+          stream: true,
+          systemContext: 'Yohan AI - Consultor Sénior de Contabilidade PGC Angola (Decreto 82/2001)'
         })
       });
 
-      let replyText = '';
-      const contentType = res.headers.get('content-type') || '';
+      let accumulatedText = '';
+      const updateAssistantMsg = (fullText: string) => {
+        accumulatedText = fullText;
+        setConversations(prev => prev.map(c => {
+          if (c.id !== activeConvId) return c;
+          const msgExists = c.messages.some(m => m.id === botMsgId);
+          const newMsgs = msgExists
+            ? c.messages.map(m => m.id === botMsgId ? { ...m, content: accumulatedText } : m)
+            : [...c.messages, { id: botMsgId, role: 'assistant' as const, content: accumulatedText, timestamp: botTimestamp }];
+          return {
+            ...c,
+            updatedAt: new Date().toISOString(),
+            messages: newMsgs
+          };
+        }));
+      };
 
-      if (contentType.includes('application/json')) {
-        const data = await res.json();
-        if (!res.ok) {
-          replyText = data.error || `⚠️ Erro ${res.status}: Não foi possível processar a mensagem de momento.`;
-        } else {
-          replyText = data.text || data.reply || data.response || 'Desculpe, ocorreu um erro ao gerar a resposta.';
+      if (res.body && (res.headers.get('content-type')?.includes('text/event-stream') || res.headers.get('content-type')?.includes('text/plain'))) {
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder('utf-8');
+        let buffer = '';
+
+        try {
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split('\n');
+            buffer = lines.pop() || '';
+
+            for (const line of lines) {
+              const trimmed = line.trim();
+              if (!trimmed || trimmed === 'data: [DONE]') continue;
+              if (trimmed.startsWith('data: ')) {
+                try {
+                  const parsed = JSON.parse(trimmed.slice(6));
+                  if (parsed.text) {
+                    accumulatedText += parsed.text;
+                    updateAssistantMsg(accumulatedText);
+                  } else if (parsed.error) {
+                    accumulatedText += `\n⚠️ ${parsed.error}`;
+                    updateAssistantMsg(accumulatedText);
+                  }
+                } catch (_) {
+                  accumulatedText += trimmed.slice(6);
+                  updateAssistantMsg(accumulatedText);
+                }
+              } else {
+                accumulatedText += trimmed;
+                updateAssistantMsg(accumulatedText);
+              }
+            }
+          }
+        } catch (streamErr: any) {
+          console.warn('[YohanAI Edit] Stream read interrupted:', streamErr);
+          if (!accumulatedText) {
+            throw streamErr;
+          }
         }
       } else {
-        const textResponse = await res.text();
-        if (!res.ok) {
-          replyText = `⚠️ Erro ${res.status}: Servidor temporariamente indisponível.`;
+        const contentType = res.headers.get('content-type') || '';
+        if (contentType.includes('application/json')) {
+          const data = await res.json();
+          accumulatedText = data.text || data.reply || data.response || 'Desculpe, ocorreu um erro ao gerar a resposta.';
         } else {
-          replyText = textResponse || 'Resposta recebida.';
+          accumulatedText = await res.text();
         }
+        updateAssistantMsg(accumulatedText);
       }
-
-      const botMsg: ChatMessage = {
-        id: `msg-${Date.now() + 1}`,
-        role: 'assistant',
-        content: replyText,
-        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-      };
-
-      setConversations(prev => prev.map(c => {
-        if (c.id !== activeConvId) return c;
-        return {
-          ...c,
-          updatedAt: new Date().toISOString(),
-          messages: [...c.messages, botMsg]
-        };
-      }));
     } catch (err: any) {
-      console.error('Yohan AI Chat error:', err);
+      console.error('Yohan AI Edit Chat error:', err);
+      const rawErrMsg = err?.message || '';
+      const isAbort = err?.name === 'AbortError' || rawErrMsg.toLowerCase().includes('abort');
+      const userFriendlyError = isAbort 
+        ? 'O tempo de resposta do assistente foi excedido. Por favor, tente novamente.' 
+        : (rawErrMsg || 'Erro de conexão');
+
       const errorMsg: ChatMessage = {
-        id: `msg-${Date.now() + 1}`,
+        id: botMsgId,
         role: 'assistant',
-        content: `⚠️ Não foi possível obter resposta em tempo real (${err?.message || 'Erro de conexão'}).\n\n*Sugestão:* Pode consultar o **Glossário PGC** e as **Demonstrações Financeiras** diretamente no menu de Ferramentas acima.`,
-        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+        content: `⚠️ Não foi possível obter resposta após a edição (${userFriendlyError}).`,
+        timestamp: botTimestamp
       };
 
       setConversations(prev => prev.map(c => {
         if (c.id !== activeConvId) return c;
+        const msgExists = c.messages.some(m => m.id === botMsgId);
+        const newMsgs = msgExists
+          ? c.messages.map(m => m.id === botMsgId ? errorMsg : m)
+          : [...c.messages, errorMsg];
         return {
           ...c,
           updatedAt: new Date().toISOString(),
-          messages: [...c.messages, errorMsg]
+          messages: newMsgs
         };
       }));
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  // 1. Edit User Message & Regenerate AI Response
+  const handleEditMessage = async (messageId: string, newContent: string) => {
+    if (!newContent.trim() || isLoading) return;
+
+    // Atualizar o conteúdo da mensagem no histórico com flag edited
+    const updatedMessages = messages.map(m =>
+      m.id === messageId
+        ? { ...m, content: newContent, edited: true, editedAt: new Date().toISOString() }
+        : m
+    );
+
+    // Remover mensagens subsequentes após a mensagem editada
+    const messageIndex = messages.findIndex(m => m.id === messageId);
+    if (messageIndex === -1) return;
+    const trimmedMessages = updatedMessages.slice(0, messageIndex + 1);
+
+    // Atualizar o estado
+    setConversations(prev => prev.map(c => {
+      if (c.id !== activeConvId) return c;
+      return {
+        ...c,
+        updatedAt: new Date().toISOString(),
+        messages: trimmedMessages
+      };
+    }));
+
+    try {
+      const updatedConvs = conversations.map(c => 
+        c.id === activeConvId ? { ...c, messages: trimmedMessages, updatedAt: new Date().toISOString() } : c
+      );
+      localStorage.setItem(`ga_yohan_conversations_${currentUserId}`, JSON.stringify(updatedConvs));
+      localStorage.setItem(`ga_yohan_chat_history`, JSON.stringify(trimmedMessages));
+    } catch (_) {}
+
+    // Reenviar para a API
+    await sendEditedToAPI(newContent, trimmedMessages);
+  };
+
+  // 2. Delete Message
+  const handleDeleteMessage = (messageId: string) => {
+    const messageIndex = messages.findIndex(m => m.id === messageId);
+    if (messageIndex === -1) return;
+    const message = messages[messageIndex];
+
+    let newMessages = [...messages];
+
+    if (message.role === 'user') {
+      // Apagar a mensagem do utilizador E a resposta da IA seguinte
+      const nextMessage = messages[messageIndex + 1];
+      if (nextMessage && nextMessage.role === 'assistant') {
+        newMessages = messages.filter(m =>
+          m.id !== messageId && m.id !== nextMessage.id
+        );
+      } else {
+        newMessages = messages.filter(m => m.id !== messageId);
+      }
+    } else {
+      // Apagar apenas a mensagem da IA
+      newMessages = messages.filter(m => m.id !== messageId);
+    }
+
+    // Se a conversa ficar vazia, repõe mensagem inicial
+    if (newMessages.length === 0) {
+      newMessages = [
+        {
+          id: `msg-welcome-${Date.now()}`,
+          role: 'assistant',
+          content: 'Olá! Sou o Yohan AI, o teu consultor sénior de contabilidade. Diz-me o que precisas: lançamentos PGC, dúvidas de IVA, amortizações ou fecho de contas.',
+          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+        }
+      ];
+    }
+
+    setConversations(prev => prev.map(c => {
+      if (c.id !== activeConvId) return c;
+      return {
+        ...c,
+        updatedAt: new Date().toISOString(),
+        messages: newMessages
+      };
+    }));
+
+    try {
+      const updatedConvs = conversations.map(c => 
+        c.id === activeConvId ? { ...c, messages: newMessages, updatedAt: new Date().toISOString() } : c
+      );
+      localStorage.setItem(`ga_yohan_conversations_${currentUserId}`, JSON.stringify(updatedConvs));
+      localStorage.setItem(`ga_yohan_chat_history`, JSON.stringify(newMessages));
+    } catch (e) {
+      console.warn('Failed saving deleted message to storage:', e);
     }
   };
 
@@ -879,7 +1263,7 @@ Como posso ajudar hoje?
               {/* Sidebar Header */}
               <div className="p-4 border-b border-slate-800 flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                  <History className="w-4 h-4 text-indigo-400" />
+                  <YohanLogo size={18} />
                   <h2 className="text-sm font-bold text-white">Conversas</h2>
                 </div>
 
@@ -1025,7 +1409,7 @@ Como posso ajudar hoje?
       {/* MAIN CONTAINER */}
       <div className="flex-1 flex flex-col min-w-0 h-full overflow-hidden">
         {/* TOP BAR WITH DYNAMIC GENERATION GRADIENT ANIMATION */}
-        <header className={`flex flex-wrap items-center justify-between gap-2.5 px-4 sm:px-6 py-3 bg-slate-950 border-b relative overflow-hidden shrink-0 transition-all duration-500 ${
+        <header className={`ai-models-bar flex flex-wrap items-center justify-between gap-2.5 px-4 sm:px-6 py-3 bg-slate-950 border-b relative overflow-hidden shrink-0 transition-all duration-500 ${
           isLoading || isDocGenerating || isSheetGenerating || isPptGenerating || isVizGenerating || isTaxAuditing
             ? 'border-indigo-500/50 shadow-lg shadow-indigo-500/10'
             : 'border-slate-800'
@@ -1058,17 +1442,19 @@ Como posso ajudar hoje?
                   isActive={isLoading || isDocGenerating || isSheetGenerating || isPptGenerating || isVizGenerating || isTaxAuditing} 
                   label="Yohan AI a processar consulta contabilística"
                 />
-                <div className={`w-9 h-9 rounded-xl flex items-center justify-center text-white shadow-md transition-all relative z-10 ${
+                <div className={`w-9 h-9 rounded-xl flex items-center justify-center bg-slate-900 border border-indigo-500/40 p-1 shadow-md transition-all relative z-10 ${
                   isLoading || isDocGenerating || isSheetGenerating || isPptGenerating || isVizGenerating || isTaxAuditing
-                    ? 'bg-gradient-to-tr from-indigo-500 via-purple-500 to-pink-500 shadow-indigo-500/40 animate-pulse ring-2 ring-indigo-400/50'
-                    : 'bg-gradient-to-tr from-indigo-600 via-indigo-500 to-blue-500 shadow-indigo-500/20'
+                    ? 'shadow-indigo-500/40 animate-pulse ring-2 ring-indigo-400/50'
+                    : 'shadow-indigo-500/20'
                 }`}>
-                  <Sparkles className={`w-5 h-5 ${isLoading || isDocGenerating || isSheetGenerating ? 'animate-spin' : ''}`} />
+                  <YohanLogo size={24} showGlow={true} />
                 </div>
               </div>
               <div>
                 <div className="flex items-center gap-2">
-                  <h1 className="text-sm sm:text-base font-black tracking-tight text-white">Yohan AI</h1>
+                  <h1 className="text-sm sm:text-base font-black tracking-tight text-white flex items-center gap-1.5">
+                    Yohan AI
+                  </h1>
                   <span className={`px-2 py-0.5 text-[10px] font-extrabold uppercase tracking-wider rounded-full border transition-all flex items-center gap-1 ${
                     isLoading || isDocGenerating || isSheetGenerating
                       ? 'bg-indigo-500/30 text-indigo-200 border-indigo-400/60 shadow-xs shadow-indigo-500/30 animate-pulse'
@@ -1079,7 +1465,7 @@ Como posso ajudar hoje?
                   </span>
                 </div>
                 <p className="text-[11px] text-slate-400 font-medium hidden sm:block">
-                  {isLoading ? '✨ A consultar Decreto 82/2001 e a gerar resposta...' : 'Consultor & Auditor Contabilístico Sénior'}
+                  {isLoading ? '✨ A analisar o PGC Angola e a redigir...' : 'Consultor & Auditor Contabilístico Sénior'}
                 </p>
               </div>
             </div>
@@ -1182,7 +1568,7 @@ Como posso ajudar hoje?
         <main className="flex-1 min-h-0 overflow-hidden relative flex flex-col">
           {/* TAB 1: CHAT */}
           {activeMode === 'chat' && (
-            <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
+            <div className="ai-chat-area flex-1 flex flex-col min-h-0 overflow-hidden">
               {/* MESSAGES VIRTUALIZED / SCROLL LIST */}
               <VirtualizedChatMessagesList
                 messages={messages.map(m => ({
@@ -1190,7 +1576,10 @@ Como posso ajudar hoje?
                   role: m.role,
                   content: m.content,
                   timestamp: m.timestamp,
-                  rating: (m as any).feedback || undefined
+                  rating: (m as any).feedback || undefined,
+                  edited: m.edited,
+                  editedAt: m.editedAt,
+                  attachedFile: m.attachedFile
                 }))}
                 isGenerating={isLoading}
                 copiedId={copiedId}
@@ -1198,13 +1587,15 @@ Como posso ajudar hoje?
                 onCopy={handleCopy}
                 onSpeak={(text, id) => handleToggleSpeech(id, text)}
                 onFeedback={handleFeedback}
+                onEditMessage={handleEditMessage}
+                onDeleteMessage={handleDeleteMessage}
                 onQuickSearchInsert={(term) => {
                   setInputMessage(prev => prev ? `${prev} ${term}` : term);
                 }}
               />
 
               {/* PROMPT TEMPLATES QUICK CHIPS */}
-              <div className="px-4 py-2 bg-slate-950/60 border-t border-slate-800/60 overflow-x-auto scrollbar-none flex items-center gap-2">
+              <div className="px-4 py-2 bg-slate-950/60 border-t border-slate-800/60 overflow-x-auto scrollbar-none flex items-center gap-2 shrink-0">
                 <span className="text-[10px] uppercase tracking-wider font-extrabold text-slate-500 shrink-0">
                   Modelos:
                 </span>
@@ -1230,7 +1621,7 @@ Como posso ajudar hoje?
               </div>
 
               {/* INPUT CONTAINER */}
-              <div className="p-3 sm:p-4 bg-slate-950 border-t border-slate-800">
+              <div className="ai-input-container p-3 sm:p-4 bg-slate-950 border-t border-slate-800 mb-0">
                 {/* ATTACHED FILE PREVIEW */}
                 {attachedFile && (
                   <div className="max-w-4xl mx-auto mb-2 flex items-center justify-between px-3 py-1.5 bg-indigo-950/70 border border-indigo-500/40 rounded-xl text-xs text-indigo-200">

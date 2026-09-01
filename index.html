@@ -2,30 +2,80 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no" />
     <link rel="icon" type="image/svg+xml" href="/logo.svg" />
     <link rel="manifest" href="/manifest.json"/>
     <meta name="theme-color" content="#1E3A8A"/>
     <meta name="apple-mobile-web-app-capable" content="yes"/>
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
     <meta name="apple-mobile-web-app-title" content="ContaGlobal"/>
+    <meta name="apple-touch-fullscreen" content="yes"/>
     <link rel="apple-touch-icon" href="/logo_icone_192.png"/>
-    <title>Contabilidade Unificada — Global Account</title>
+    <title>Remix Contabilidade Unificada</title>
+    <meta name="description" content="App de estudos de contabilidade com IA especializada. Tire dúvidas, envie documentos e receba explicações detalhadas na hora." />
+    <meta property="og:title" content="Remix Contabilidade Unificada" />
+    <meta property="og:description" content="App de estudos de contabilidade com IA especializada. Tire dúvidas, envie documentos e receba explicações detalhadas na hora." />
+
+    <!-- DNS Prefetch & Preconnect for High-Priority External Services -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link rel="dns-prefetch" href="https://generativelanguage.googleapis.com" />
+    <link rel="dns-prefetch" href="https://firebaseapp.com" />
+    <link rel="dns-prefetch" href="https://firestore.googleapis.com" />
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" />
+
+    <!-- Critical Zero-FOUC Fast Inline Style -->
+    <style>
+      html, body, #root {
+        margin: 0;
+        padding: 0;
+        width: 100%;
+        min-height: 100%;
+        background-color: #0A1628;
+        color: #E8EDF5;
+        font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        -webkit-font-smoothing: antialiased;
+      }
+    </style>
     <script>
+      // iOS Safari Private Browsing Global localStorage Protection Guard
+      (function() {
+        try {
+          var test = '__cg_test__';
+          window.localStorage.setItem(test, '1');
+          window.localStorage.removeItem(test);
+        } catch(e) {
+          try {
+            var mem = {};
+            var safeMock = {
+              length: 0,
+              clear: function() { mem = {}; },
+              getItem: function(k) { return mem.hasOwnProperty(k) ? mem[k] : null; },
+              key: function(i) { return Object.keys(mem)[i] || null; },
+              removeItem: function(k) { delete mem[k]; },
+              setItem: function(k, v) { mem[k] = String(v); }
+            };
+            Object.defineProperty(window, 'localStorage', { value: safeMock, configurable: true, writable: true });
+          } catch(err) {}
+        }
+      })();
+
       // Immediate theme & appearance initialization from localStorage to prevent flash of white (zero FOUC)
       (function() {
         try {
-          var appearanceRaw = localStorage.getItem('ga:global:appearance') || localStorage.getItem('ga_appearance_preferences');
-          if (!appearanceRaw) {
-            // Check if there is any user-specific key
-            for (var i = 0; i < localStorage.length; i++) {
-              var k = localStorage.key(i);
-              if (k && k.startsWith('ga:') && k.endsWith(':appearance')) {
-                appearanceRaw = localStorage.getItem(k);
-                break;
+          var appearanceRaw = null;
+          try {
+            appearanceRaw = localStorage.getItem('ga:global:appearance') || localStorage.getItem('ga_appearance_preferences');
+            if (!appearanceRaw) {
+              for (var i = 0; i < localStorage.length; i++) {
+                var k = localStorage.key(i);
+                if (k && k.startsWith('ga:') && k.endsWith(':appearance')) {
+                  appearanceRaw = localStorage.getItem(k);
+                  break;
+                }
               }
             }
-          }
+          } catch (e) {}
 
           var baseTheme = 'navy-dark';
           var accentHex = '#4A90E2';
@@ -41,8 +91,10 @@
               if (parsed.halosEnabled !== undefined) halosEnabled = parsed.halosEnabled;
             } catch(e) {}
           } else {
-            var oldTheme = localStorage.getItem('app_theme');
-            if (oldTheme === 'light') baseTheme = 'light-pro';
+            try {
+              var oldTheme = localStorage.getItem('app_theme');
+              if (oldTheme === 'light') baseTheme = 'light-pro';
+            } catch(e) {}
           }
 
           var root = document.documentElement;
@@ -64,42 +116,47 @@
       })();
     </script>
     <script>
-      // Registo e ativação do Service Worker ContaGlobal v5 (Modo Offline Cache API)
-      if ('serviceWorker' in navigator) {
-        window.addEventListener('load', function() {
-          navigator.serviceWorker.register('/sw.js')
-            .then(function(registration) {
-              console.log('[SW Registration] Service Worker v5 registado:', registration.scope);
-              
-              // Se já estiver ativo, solicitar aquecimento de páginas offline
-              if (registration.active) {
-                registration.active.postMessage({ type: 'WARM_OFFLINE_PAGES' });
-              }
+      // Registo e ativação do Service Worker ContaGlobal (com suporte diferenciado para iOS Safari)
+      (function() {
+        if ('serviceWorker' in navigator) {
+          window.addEventListener('load', function() {
+            var isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+              (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 
-              // Escutar atualizações de versão
-              registration.addEventListener('updatefound', function() {
-                var installingWorker = registration.installing;
-                if (installingWorker) {
-                  installingWorker.addEventListener('statechange', function() {
-                    if (installingWorker.state === 'installed' && navigator.serviceWorker.controller) {
-                      console.log('[SW Update] Nova versão disponível. A atualizar caches...');
-                      window.dispatchEvent(new CustomEvent('sw_update_ready'));
-                    }
-                  });
+            var swScript = isIOS ? '/sw-ios.js' : '/sw.js';
+
+            navigator.serviceWorker.register(swScript)
+              .then(function(registration) {
+                console.log('[SW Registration] Service Worker registado (' + swScript + '):', registration.scope);
+                
+                if (registration.active) {
+                  registration.active.postMessage({ type: 'WARM_OFFLINE_PAGES' });
                 }
-              });
-            })
-            .catch(function(err) {
-              console.debug('[SW Registration] Info no registo do Service Worker:', err);
-            });
 
-          navigator.serviceWorker.addEventListener('controllerchange', function() {
-            if (navigator.serviceWorker.controller) {
-              navigator.serviceWorker.controller.postMessage({ type: 'WARM_OFFLINE_PAGES' });
-            }
+                registration.addEventListener('updatefound', function() {
+                  var installingWorker = registration.installing;
+                  if (installingWorker) {
+                    installingWorker.addEventListener('statechange', function() {
+                      if (installingWorker.state === 'installed' && navigator.serviceWorker.controller) {
+                        console.log('[SW Update] Nova versão disponível. A atualizar caches...');
+                        window.dispatchEvent(new CustomEvent('sw_update_ready'));
+                      }
+                    });
+                  }
+                });
+              })
+              .catch(function(err) {
+                console.debug('[SW Registration] Info no registo do Service Worker:', err);
+              });
+
+            navigator.serviceWorker.addEventListener('controllerchange', function() {
+              if (navigator.serviceWorker.controller) {
+                navigator.serviceWorker.controller.postMessage({ type: 'WARM_OFFLINE_PAGES' });
+              }
+            });
           });
-        });
-      }
+        }
+      })();
     </script>
     <script>
       // Suppress benign Vite WebSocket HMR disconnection errors in sandboxed iframe environment
@@ -121,57 +178,60 @@
     </script>
   </head>
   <body>
-    <div id="root"></div>
-
-    <!-- Safety startup fallback for low-memory mobile devices if React fails to mount in 5s -->
-    <div id="app-startup-fallback" style="display: none; position: fixed; inset: 0; background: #0A1628; color: #E8EDF5; z-index: 99999; font-family: system-ui, -apple-system, sans-serif; padding: 24px; text-align: center; flex-direction: column; align-items: center; justify-content: center;">
-      <div style="max-width: 380px; width: 100%; background: #132238; border: 1px solid rgba(255,255,255,0.1); border-radius: 20px; padding: 28px; box-shadow: 0 20px 40px rgba(0,0,0,0.5);">
-        <div style="width: 54px; height: 54px; background: #1E3A8A; border-radius: 16px; margin: 0 auto 16px; display: flex; align-items: center; justify-content: center; font-size: 26px;">
-          🇦🇴
-        </div>
-        <h2 style="font-size: 17px; font-weight: 800; margin-bottom: 8px; color: #FFFFFF;">ContaGlobal — PGC Angola</h2>
-        <p style="font-size: 13px; color: #A8C4E8; line-height: 1.5; margin-bottom: 20px;">
-          O arranque do sistema está a demorar mais do que o previsto no seu dispositivo.
-        </p>
-        <div style="display: flex; flex-direction: column; gap: 10px;">
-          <button onclick="window.location.reload()" style="background: #2563EB; color: #FFFFFF; font-weight: 700; font-size: 13px; border: none; padding: 12px 18px; border-radius: 12px; cursor: pointer;">
-            🔄 Recarregar Aplicação
-          </button>
-          <button onclick="try { localStorage.clear(); sessionStorage.clear(); window.location.reload(); } catch(e){ window.location.reload(); }" style="background: rgba(255,255,255,0.08); color: #E8EDF5; font-weight: 600; font-size: 12px; border: 1px solid rgba(255,255,255,0.15); padding: 10px 16px; border-radius: 12px; cursor: pointer;">
-            🧹 Limpar Cache & Reiniciar
-          </button>
-        </div>
-      </div>
+    <!-- Fallback visível de arranque imediato para evitar ecrã negro antes da montagem do React -->
+    <div id="app-fallback" style="
+      position: fixed; inset: 0;
+      background: #0A1628;
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      font-family: 'Inter', system-ui, -apple-system, sans-serif;
+      color: #E8EDF5; gap: 16px;
+      z-index: 999999;
+    ">
+      <div style="font-size: 48px; filter: drop-shadow(0 4px 12px rgba(0,0,0,0.4));">🇦🇴</div>
+      <div style="font-size: 22px; font-weight: 700; letter-spacing: -0.5px; color: #FFFFFF;">ContaGlobal</div>
+      <div style="font-size: 13px; font-weight: 500; color: #94A3B8; margin-top: -8px;">Sistema de Gestão & Contabilidade PGC Angola</div>
+      <div style="
+        width: 36px; height: 36px;
+        border: 3px solid rgba(74,144,226,0.25);
+        border-top-color: #4A90E2;
+        border-radius: 50%;
+        margin-top: 8px;
+        animation: cgFallbackSpin 0.9s cubic-bezier(0.5, 0, 0.5, 1) infinite;
+      "></div>
+      <style>
+        @keyframes cgFallbackSpin { to { transform: rotate(360deg); } }
+      </style>
     </div>
 
-    <script>
-      // Startup Safety Watchdog: If #root is empty after 5 seconds, show graceful fallback UI
-      (function() {
-        var timeoutId = setTimeout(function() {
-          var rootEl = document.getElementById('root');
-          var fallbackEl = document.getElementById('app-startup-fallback');
-          if (rootEl && (!rootEl.hasChildNodes() || rootEl.children.length === 0)) {
-            if (fallbackEl) {
-              fallbackEl.style.display = 'flex';
-            }
-          }
-        }, 5000);
+    <div id="root"></div>
 
-        // Hide fallback once root has rendered
-        var observer = new MutationObserver(function(mutations, obs) {
-          var rootEl = document.getElementById('root');
-          if (rootEl && rootEl.hasChildNodes() && rootEl.children.length > 0) {
-            clearTimeout(timeoutId);
-            var fallbackEl = document.getElementById('app-startup-fallback');
-            if (fallbackEl) fallbackEl.style.display = 'none';
-            obs.disconnect();
-          }
-        });
-        var target = document.getElementById('root');
-        if (target) {
-          observer.observe(target, { childList: true, subtree: true });
+    <script>
+      // Esconder fallback quando o React montar com sucesso
+      window.__hideAppFallback = function() {
+        var fb = document.getElementById('app-fallback');
+        if (fb) {
+          fb.style.opacity = '0';
+          fb.style.transition = 'opacity 0.25s ease-out';
+          setTimeout(function() {
+            if (fb && fb.parentNode) fb.parentNode.removeChild(fb);
+          }, 300);
         }
-      })();
+      };
+
+      // Fallback de emergência se o bundle demorar mais de 6 segundos
+      setTimeout(function() {
+        var fb = document.getElementById('app-fallback');
+        if (fb && fb.style.display !== 'none' && !document.getElementById('root')?.hasChildNodes()) {
+          var btn = document.createElement('div');
+          btn.style.marginTop = '20px';
+          btn.style.display = 'flex';
+          btn.style.gap = '10px';
+          btn.innerHTML = '<button onclick="localStorage.clear(); window.location.reload();" style="padding: 10px 18px; background: #2563EB; color: white; border: none; border-radius: 10px; font-size: 13px; font-weight: 600; cursor: pointer; box-shadow: 0 4px 12px rgba(37,99,235,0.3);">Limpar Cache & Recarregar</button>' +
+                          '<button onclick="window.location.reload();" style="padding: 10px 18px; background: rgba(255,255,255,0.1); color: #E2E8F0; border: 1px solid rgba(255,255,255,0.2); border-radius: 10px; font-size: 13px; font-weight: 600; cursor: pointer;">Recarregar App</button>';
+          fb.appendChild(btn);
+        }
+      }, 6000);
     </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>

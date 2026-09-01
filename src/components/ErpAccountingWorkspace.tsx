@@ -31,9 +31,17 @@ import {
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { getCurrentUser, getActiveWorkspace } from '../lib/db';
-import { exportTransactionsReportPDF, exportCurrentAccountPDF, exportSingleTransactionVoucherPDF } from '../services/pdfExportService';
+import { 
+  exportTransactionsReportPDF, 
+  exportCurrentAccountPDF, 
+  exportSingleTransactionVoucherPDF,
+  exportBalancetePDF,
+  exportDemonstracoesFinanceirasPDF
+} from '../services/pdfExportService';
 import { exportTransactionsToExcel } from '../services/excelExportService';
 import { DemonstracoesModal } from '../lib/pgc/demonstracoes/DemonstracoesModal';
+import { AccountingLogo } from './AccountingLogo';
+import { KpiCardSkeleton, TableSkeleton } from './GranularSkeletons';
 
 export interface JournalLine {
   id: string;
@@ -215,6 +223,12 @@ export const ErpAccountingWorkspace: React.FC<ErpAccountingWorkspaceProps> = ({ 
       return matchesSearch && matchesDate && matchesStatus;
     });
   }, [entries, searchTerm, startDate, endDate, statusFilter]);
+
+  // Windowing / Virtual List Chunking for Smooth Scrolling
+  const [visibleLimit, setVisibleLimit] = useState(25);
+  const visibleEntries = useMemo(() => {
+    return filteredEntries.slice(0, visibleLimit);
+  }, [filteredEntries, visibleLimit]);
 
   // Reconciliation summary
   const pendingCount = useMemo(() => entries.filter(e => e.status === 'Pendente').length, [entries]);
@@ -545,6 +559,33 @@ export const ErpAccountingWorkspace: React.FC<ErpAccountingWorkspaceProps> = ({ 
     });
   };
 
+  // Export Filtered Balancete in Official PDF (PGC Angola)
+  const handleExportBalancetePDF = () => {
+    let periodText = 'Exercício Fiscal Completo';
+    if (startDate && endDate) periodText = `De ${startDate} a ${endDate}`;
+    else if (startDate) periodText = `A partir de ${startDate}`;
+    else if (endDate) periodText = `Até ${endDate}`;
+
+    const accountsData = trialBalanceData.accounts.map(acc => ({
+      code: acc.code,
+      name: acc.name,
+      periodDebit: acc.debit,
+      periodCredit: acc.credit,
+      debtorBalance: acc.saldoDevedor,
+      creditorBalance: acc.saldoCredor
+    }));
+
+    exportBalancetePDF({
+      companyName: activeWorkspace?.name || 'GlobalAccount Angola Lda',
+      taxId: activeWorkspace?.settings?.taxId || 'AO-541289001',
+      currency,
+      periodDescription: periodText,
+      standard: 'PGC Angola (Decreto n.º 82/2001)',
+      exerciseYear: new Date().getFullYear(),
+      isTrialBalanced: trialBalanceData.isTrialBalanced
+    }, accountsData);
+  };
+
   // Export Filtered Balancete in CSV
   const handleExportBalanceteCSV = () => {
     let periodText = 'Todo o histórico';
@@ -646,15 +687,23 @@ export const ErpAccountingWorkspace: React.FC<ErpAccountingWorkspaceProps> = ({ 
         </div>
       )}
 
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 p-6 rounded-2xl text-white shadow-xl border border-slate-800">
-        <div>
-          <div className="inline-flex items-center gap-2 px-3 py-1 bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 rounded-full text-xs font-bold uppercase tracking-wider mb-2">
-            <Calculator className="w-4 h-4" />
-            <span>Módulo de Contabilidade / Diário & Razão</span>
+      {/* Header com LOGO OFICIAL */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 p-5 sm:p-6 rounded-2xl text-white shadow-xl border border-slate-800">
+        <div className="flex items-center gap-3.5">
+          <div className="shrink-0 p-1 bg-slate-800/80 rounded-2xl border border-blue-500/30 shadow-md">
+            <AccountingLogo size={44} showGlow={true} />
           </div>
-          <h1 className="text-2xl font-black tracking-tight">Diário & Balancete de Verificação</h1>
-          <p className="text-xs text-slate-300 mt-1">Conformidade PGC Angola e IFRS com validação automática de partidas dobradas e reconciliação interativa.</p>
+          <div>
+            <div className="flex items-center gap-2">
+              <h1 className="text-xl sm:text-2xl font-black tracking-tight text-white">Contabilidade</h1>
+              <span className="hidden sm:inline-flex items-center gap-1 px-2.5 py-0.5 bg-blue-500/20 text-blue-300 border border-blue-400/30 rounded-full text-[10px] font-bold uppercase tracking-wider">
+                PGC Angola
+              </span>
+            </div>
+            <p className="text-xs sm:text-sm text-slate-300 font-medium mt-0.5">
+              Diário, Razão e Demonstrações
+            </p>
+          </div>
         </div>
 
         <div className="flex flex-wrap gap-2.5 shrink-0">
@@ -675,6 +724,16 @@ export const ErpAccountingWorkspace: React.FC<ErpAccountingWorkspaceProps> = ({ 
           >
             <FileSpreadsheet className="w-4 h-4 text-emerald-200" />
             <span>Exportar Diário ({filteredEntries.length})</span>
+          </button>
+
+          <button
+            onClick={handleExportBalancetePDF}
+            className="px-4 py-2.5 bg-rose-700 hover:bg-rose-600 text-white font-bold text-xs rounded-xl border border-rose-600 shadow-md transition-all flex items-center gap-2 cursor-pointer"
+            title="Exportar Balancete de Verificação oficial em PDF (PGC Angola Dec. 82/01)"
+            id="btn-export-balancete-pdf"
+          >
+            <FileText className="w-4 h-4 text-rose-200" />
+            <span>Balancete (PDF)</span>
           </button>
 
           <button
@@ -1229,7 +1288,7 @@ export const ErpAccountingWorkspace: React.FC<ErpAccountingWorkspaceProps> = ({ 
           ) : (
             <div className="space-y-4">
               <AnimatePresence initial={false}>
-                {filteredEntries.map(je => {
+                {visibleEntries.map(je => {
                   const isPending = je.status === 'Pendente';
                   const isSelected = selectedEntry?.id === je.id;
                   const isNewlyAdded = lastAddedEntryId === je.id;
@@ -1360,6 +1419,17 @@ export const ErpAccountingWorkspace: React.FC<ErpAccountingWorkspaceProps> = ({ 
                   );
                 })}
               </AnimatePresence>
+
+              {filteredEntries.length > visibleLimit && (
+                <div className="py-4 text-center">
+                  <button
+                    onClick={() => setVisibleLimit(prev => prev + 25)}
+                    className="px-6 py-2.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-900 text-xs font-bold rounded-xl border border-indigo-200 transition-all cursor-pointer shadow-xs active:scale-98"
+                  >
+                    Carregar Mais Lançamentos ({filteredEntries.length - visibleLimit} restantes)
+                  </button>
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -1395,9 +1465,20 @@ export const ErpAccountingWorkspace: React.FC<ErpAccountingWorkspaceProps> = ({ 
 
             <div className="flex items-center gap-2">
               <button
+                onClick={handleExportBalancetePDF}
+                className="px-3.5 py-2 bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs rounded-xl shadow-xs transition-all flex items-center gap-1.5 cursor-pointer"
+                title="Descarregar Balancete oficial em PDF (PGC Angola)"
+                id="btn-balancete-table-export-pdf"
+              >
+                <FileText className="w-4 h-4 text-rose-100" />
+                <span>Exportar PDF</span>
+              </button>
+
+              <button
                 onClick={handleExportBalanceteCSV}
                 className="px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold text-xs rounded-xl transition-all flex items-center gap-1.5 cursor-pointer"
                 title="Descarregar Balancete em CSV"
+                id="btn-balancete-table-export-csv"
               >
                 <Download className="w-4 h-4 text-slate-600" />
                 <span>Descarregar CSV</span>

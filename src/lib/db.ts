@@ -1033,10 +1033,26 @@ export function ensureDemoUsers() {
   };
   
   const standardId = 'standard-user-id-0002';
+  let initialStandardName = 'Usuário';
+  if (typeof localStorage !== 'undefined') {
+    try {
+      const p1 = localStorage.getItem('ga:standard-user-id-0002:profile');
+      const p2 = localStorage.getItem('ga:wrldfilipe@gmail.com:profile');
+      const p3 = localStorage.getItem('ga_session');
+      const item = p1 || p2 || p3;
+      if (item) {
+        const parsed = JSON.parse(item);
+        if (parsed?.name && parsed.name !== 'Filipe Carvalho' && parsed.name !== 'Filipe wrld') {
+          initialStandardName = parsed.name;
+        }
+      }
+    } catch (_) {}
+  }
+
   const standardUser: UserSession = {
     userId: standardId,
     email: 'wrldfilipe@gmail.com', // Match the requested user email for convenience
-    name: 'Filipe Carvalho',
+    name: initialStandardName,
     role: 'user',
     country: 'Angola',
     language: 'pt-PT',

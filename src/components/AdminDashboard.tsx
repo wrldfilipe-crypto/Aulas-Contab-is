@@ -161,7 +161,7 @@ export default function AdminDashboard() {
 
   const mockUsers = [
     { name: 'Administrador Global', email: 'admin@globalaccount.com', role: 'admin', active: true, joined: '01/01/2026' },
-    { name: 'Filipe Carvalho', email: 'wrldfilipe@gmail.com', role: 'user', active: true, joined: '08/07/2026' },
+    { name: currentUser?.name || 'Utilizador', email: currentUser?.email || 'wrldfilipe@gmail.com', role: currentUser?.role || 'user', active: true, joined: '08/07/2026' },
     { name: 'Maria Santos (Contabilista)', email: 'maria.santos@partner.com', role: 'accountant', active: false, joined: '08/07/2026' }
   ];
 

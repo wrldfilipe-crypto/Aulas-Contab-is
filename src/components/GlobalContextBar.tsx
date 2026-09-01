@@ -7,6 +7,7 @@ interface GlobalContextBarProps {
   sessionContext: SessionContext;
   onOpenStandardModal: () => void;
   onNavigateTo: (page: string, payload?: any) => void;
+  onOpenTour?: () => void;
   currentTopic?: string;
 }
 
@@ -14,6 +15,7 @@ export const GlobalContextBar: React.FC<GlobalContextBarProps> = ({
   sessionContext,
   onOpenStandardModal,
   onNavigateTo,
+  onOpenTour,
   currentTopic = 'Lançamentos Contabilísticos PGC'
 }) => {
   const [recommendedTopic, setRecommendedTopic] = useState<string>('');
@@ -36,6 +38,20 @@ export const GlobalContextBar: React.FC<GlobalContextBarProps> = ({
           <Globe className="w-3 h-3 text-cyan-300" />
           <span>Norma: <strong className="text-white font-bold">{sessionContext.standard || 'PGC Angola'} (🇦🇴 AO)</strong></span>
         </button>
+
+        {/* Tutorial Guiado PGC Angola Shortcut Button */}
+        {onOpenTour && (
+          <button
+            id="btn-open-pgc-tutorial-contextbar"
+            type="button"
+            onClick={onOpenTour}
+            className="flex items-center gap-1 bg-amber-500/20 hover:bg-amber-500/30 text-amber-200 border border-amber-400/40 px-2 py-0.5 rounded text-[10px] font-bold transition-all cursor-pointer shadow-2xs active:scale-95"
+            title="Abrir Tutorial Guiado dos Fundamentos do PGC Angola"
+          >
+            <Sparkles className="w-3 h-3 text-amber-300 animate-pulse" />
+            <span>📖 Tutorial PGC Angola</span>
+          </button>
+        )}
 
         <span className="text-blue-400/60">|</span>
 

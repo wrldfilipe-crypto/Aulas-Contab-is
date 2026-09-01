@@ -101,10 +101,15 @@ export function useOfflineSync() {
     setDrafts(updatedDrafts);
   }, []);
 
+  const syncSingleItem = useCallback(async (actionId: string) => {
+    return await offlineSyncService.syncSingleAction(actionId);
+  }, []);
+
   return {
     isOnline: syncStatus.isOnline,
     isSyncing: syncStatus.isSyncing,
     pendingCount: syncStatus.pendingCount,
+    failedCount: syncStatus.failedCount,
     lastSyncTime: syncStatus.lastSyncTime,
     lastSyncError: syncStatus.lastSyncError,
     successfulSyncCount: syncStatus.successfulSyncCount,
@@ -112,6 +117,7 @@ export function useOfflineSync() {
     installPrompt,
     isInstalled,
     triggerSync,
+    syncSingleItem,
     promptPWAInstall,
     addOfflineInvoice,
     addOfflineEntry,

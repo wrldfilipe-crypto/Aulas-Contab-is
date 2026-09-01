@@ -224,6 +224,49 @@ export async function getPendingActions(): Promise<PendingAction[]> {
   }
 }
 
+export async function getPendingActionById(id: string): Promise<PendingAction | null> {
+  try {
+    return await runWithStore('pendingActions', 'readonly', (store) => {
+      return new Promise((resolve, reject) => {
+        const request = store.get(id);
+        request.onsuccess = () => resolve(request.result || null);
+        request.onerror = () => reject(request.error);
+      });
+    });
+  } catch {
+    return null;
+  }
+}
+
+export async function updatePendingAction(id: string, updates: Partial<PendingAction>): Promise<PendingAction | null> {
+  try {
+    return await runWithStore('pendingActions', 'readwrite', (store) => {
+      return new Promise((resolve, reject) => {
+        const getReq = store.get(id);
+        getReq.onsuccess = () => {
+          const action = getReq.result;
+          if (!action) {
+            resolve(null);
+            return;
+          }
+          const updated = { ...action, ...updates };
+          const putReq = store.put(updated);
+          putReq.onsuccess = () => resolve(updated);
+          putReq.onerror = () => reject(putReq.error);
+        };
+        getReq.onerror = () => reject(getReq.error);
+      });
+    });
+  } catch {
+    return null;
+  }
+}
+
+export async function getFailedPendingActions(): Promise<PendingAction[]> {
+  const all = await getPendingActions();
+  return all.filter(a => a.status === 'failed' || a.retryCount > 0);
+}
+
 export async function deletePendingAction(id: string): Promise<void> {
   try {
     await runWithStore('pendingActions', 'readwrite', (store) => {

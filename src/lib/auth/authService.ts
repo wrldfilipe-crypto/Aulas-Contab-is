@@ -2,6 +2,7 @@ import { auth, db } from "../../firebase";
 import { onAuthStateChanged, signOut as fbSignOut, getRedirectResult } from "firebase/auth";
 import { doc, getDoc, setDoc, collection, query, where, getDocs, limit } from "firebase/firestore";
 import { entrarComGoogleFirebase, limparSessaoPersistida } from "./trocarConta";
+import { safeStorage } from "../safeStorage";
 
 export interface User {
   uid: string;
@@ -113,15 +114,21 @@ export async function verificarEmailExisteNoFirestore(email: string): Promise<bo
   }
 }
 
-/** Ouvir estado de autenticação em tempo real garantindo que o UID vem exclusivamente de onAuthStateChanged */
+/** Ouvir estado de autenticação em tempo real garantindo resposta instantânea síncrona */
 export function ouvirEstadoAuth(cb: (e: EstadoAuth) => void): () => void {
   authListeners.add(cb);
 
-  // Se o utilizador tiver saído intencionalmente, NÃO entra automaticamente
+  // 1. Verificação síncrona imediata via localStorage / sessionStorage sem esperar por rede
   if (typeof sessionStorage !== "undefined" && sessionStorage.getItem("ga_user_logged_out") === "true") {
     cb({ status: "naoAutenticado" });
+  } else {
+    const localUser = getCurrentUser();
+    if (localUser && (localUser.uid || localUser.id)) {
+      cb({ status: "autenticado", uid: localUser.uid || localUser.id, usuario: localUser });
+    }
   }
 
+  // 2. Sincronização em segundo plano via Firebase sem bloquear o carregamento inicial
   const unsubFirebase = onAuthStateChanged(auth, async (fbUser) => {
     if (typeof sessionStorage !== "undefined" && sessionStorage.getItem("ga_user_logged_out") === "true") {
       cb({ status: "naoAutenticado" });
@@ -130,31 +137,43 @@ export function ouvirEstadoAuth(cb: (e: EstadoAuth) => void): () => void {
 
     if (fbUser) {
       const uid = fbUser.uid;
-      let fsProfile: User | null = null;
-      try {
-        fsProfile = await obterPerfilDoFirestore(uid);
-      } catch (_) {}
-
-      const user: User = {
+      const initialUser: User = {
         uid: uid,
         id: uid,
-        name: fsProfile?.name || fsProfile?.nome || fbUser.displayName || fbUser.email?.split("@")[0] || "Utilizador",
-        nome: fsProfile?.nome || fsProfile?.name || fbUser.displayName || fbUser.email?.split("@")[0] || "Utilizador",
-        displayName: fsProfile?.displayName || fbUser.displayName || fbUser.email?.split("@")[0] || "Utilizador",
-        email: fbUser.email || fsProfile?.email || "",
-        photoURL: fbUser.photoURL || fsProfile?.photoURL || fsProfile?.fotoUrl,
-        avatar: fbUser.photoURL || fsProfile?.avatar || fsProfile?.fotoUrl,
-        fotoUrl: fbUser.photoURL || fsProfile?.fotoUrl || fsProfile?.avatar,
-        role: fsProfile?.role || "accountant",
-        country: fsProfile?.country || "Angola",
-        standard: fsProfile?.standard || "PGC-Angola",
+        name: fbUser.displayName || fbUser.email?.split("@")[0] || "Utilizador",
+        nome: fbUser.displayName || fbUser.email?.split("@")[0] || "Utilizador",
+        displayName: fbUser.displayName || fbUser.email?.split("@")[0] || "Utilizador",
+        email: fbUser.email || "",
+        photoURL: fbUser.photoURL,
+        avatar: fbUser.photoURL,
+        fotoUrl: fbUser.photoURL,
+        role: "accountant",
+        country: "Angola",
+        standard: "PGC-Angola",
         status: "online",
-        createdAt: fsProfile?.createdAt || new Date().toISOString(),
+        createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString()
       };
 
-      await garantirPerfil(user).catch(() => {});
-      cb({ status: "autenticado", uid, usuario: user });
+      // Notificar imediatamente com dados básicos sem bloquear na rede
+      cb({ status: "autenticado", uid, usuario: initialUser });
+
+      // Atualizar perfil do Firestore e sincronizar em segundo plano
+      (async () => {
+        try {
+          const fsProfile = await obterPerfilDoFirestore(uid);
+          if (fsProfile) {
+            const updatedUser: User = {
+              ...initialUser,
+              ...fsProfile,
+              uid: uid,
+              id: uid
+            };
+            cb({ status: "autenticado", uid, usuario: updatedUser });
+          }
+          await garantirPerfil(initialUser).catch(() => {});
+        } catch (_) {}
+      })();
     } else {
       // Fallback para contas locais se não houver saída intencional
       const localUser = getCurrentUser();
@@ -404,9 +423,14 @@ export async function registarConta(nome: string, email: string, senha: string):
 }
 
 /** Autenticar com Conta Google forçando sempre a escolha da conta (prompt: select_account) */
-export async function entrarComGoogle(usarRedirect?: boolean): Promise<User> {
+export async function entrarComGoogle(usarRedirect?: boolean): Promise<User | null> {
   try {
     const fbUser = await entrarComGoogleFirebase();
+    if (!fbUser) {
+      // Redirect iniciado no iOS/Safari
+      return null;
+    }
+
     const user: User = {
       uid: fbUser.uid,
       id: fbUser.uid,
@@ -433,8 +457,8 @@ export async function entrarComGoogle(usarRedirect?: boolean): Promise<User> {
       authenticatedAt: new Date().toISOString(),
       expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString()
     };
-    localStorage.setItem("ga_session", JSON.stringify(sessionData));
-    localStorage.setItem("ga_user_session", JSON.stringify(sessionData));
+    safeStorage.set("ga_session", JSON.stringify(sessionData));
+    safeStorage.set("ga_user_session", JSON.stringify(sessionData));
 
     notifyAuthListeners({ status: "autenticado", uid: user.uid, usuario: user });
     if (typeof window !== "undefined") {
@@ -453,13 +477,17 @@ export async function tratarResultadoGoogle(): Promise<void> {
   if (typeof window === "undefined" || !auth) return;
 
   const TS_REDIRECT = "cu_google_redirect_ts";
-  const ts = Number(sessionStorage.getItem(TS_REDIRECT) ?? 0);
+  let ts = 0;
+  try {
+    ts = Number(sessionStorage.getItem(TS_REDIRECT) ?? safeStorage.get(TS_REDIRECT) ?? 0);
+  } catch (_) {}
   const agora = Date.now();
 
   // Descartar redirect expirado com mais de 5 minutos
   if (ts && agora - ts > 5 * 60 * 1000) {
     console.warn("[authService] Redirect Google expirado (> 5 min). Descartado por segurança.");
-    sessionStorage.removeItem(TS_REDIRECT);
+    try { sessionStorage.removeItem(TS_REDIRECT); } catch (_) {}
+    safeStorage.remove(TS_REDIRECT);
     await limparSessaoPersistida();
     return;
   }
@@ -467,8 +495,13 @@ export async function tratarResultadoGoogle(): Promise<void> {
   try {
     const res = await getRedirectResult(auth);
     if (res && res.user) {
-      sessionStorage.removeItem(TS_REDIRECT);
-      sessionStorage.removeItem("ga_user_logged_out");
+      try {
+        sessionStorage.removeItem(TS_REDIRECT);
+        sessionStorage.removeItem("ga_user_logged_out");
+      } catch (_) {}
+      safeStorage.remove(TS_REDIRECT);
+      safeStorage.remove("ga_user_logged_out");
+
       const u = res.user;
       const user: User = {
         uid: u.uid,
@@ -488,7 +521,20 @@ export async function tratarResultadoGoogle(): Promise<void> {
         updatedAt: new Date().toISOString()
       };
       await garantirPerfil(user);
+
+      const sessionData = {
+        user,
+        token: await u.getIdToken().catch(() => `fb_token_${Date.now()}`),
+        authenticatedAt: new Date().toISOString(),
+        expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString()
+      };
+      safeStorage.set("ga_session", JSON.stringify(sessionData));
+      safeStorage.set("ga_user_session", JSON.stringify(sessionData));
+
       notifyAuthListeners({ status: "autenticado", uid: user.uid, usuario: user });
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new Event("ga_auth_changed"));
+      }
     }
   } catch (err) {
     console.warn("[authService] Erro ao processar getRedirectResult:", err);

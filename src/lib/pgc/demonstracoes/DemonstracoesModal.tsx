@@ -23,6 +23,7 @@ import {
 import { useDemonstracoes } from "./useDemonstracoes";
 import { gerarPptx } from "./geradorPptx";
 import { abrirInfograficoHTML } from "./geradorInfografico";
+import { exportDemonstracoesFinanceirasPDF } from "../../../services/pdfExportService";
 import type { PacoteDemonstracoes, Demonstracao } from "./tipos";
 
 interface DemonstracoesModalProps {
@@ -273,6 +274,56 @@ export const DemonstracoesModal: React.FC<DemonstracoesModalProps> = ({
     abrirInfograficoHTML(pacoteCalculado);
   };
 
+  const handleDownloadPdf = () => {
+    try {
+      const ancItems: { name: string; amount: number }[] = [];
+      const acItems: { name: string; amount: number }[] = [];
+      const cpItems: { name: string; amount: number }[] = [];
+      const pncItems: { name: string; amount: number }[] = [];
+      const pcItems: { name: string; amount: number }[] = [];
+
+      let secao: "anc" | "ac" | "cp" | "pnc" | "pc" | null = null;
+      pacoteCalculado.balanco.linhas.forEach((l) => {
+        if (l.rubrica === "ACTIVO NÃO CORRENTE") { secao = "anc"; return; }
+        if (l.rubrica === "ACTIVO CORRENTE") { secao = "ac"; return; }
+        if (l.rubrica === "CAPITAL PRÓPRIO") { secao = "cp"; return; }
+        if (l.rubrica === "PASSIVO NÃO CORRENTE") { secao = "pnc"; return; }
+        if (l.rubrica === "PASSIVO CORRENTE") { secao = "pc"; return; }
+
+        if (!l.ehTotal && l.actual !== 0) {
+          if (secao === "anc") ancItems.push({ name: l.rubrica, amount: l.actual });
+          if (secao === "ac") acItems.push({ name: l.rubrica, amount: l.actual });
+          if (secao === "cp") cpItems.push({ name: l.rubrica, amount: l.actual });
+          if (secao === "pnc") pncItems.push({ name: l.rubrica, amount: l.actual });
+          if (secao === "pc") pcItems.push({ name: l.rubrica, amount: l.actual });
+        }
+      });
+
+      const dreItems = pacoteCalculado.resultados.linhas.map((l) => ({
+        rubric: l.rubrica,
+        amount: l.actual,
+        isSubtotal: l.ehTotal || l.rubrica.startsWith("RESULTADO")
+      }));
+
+      exportDemonstracoesFinanceirasPDF({
+        companyName: entidade,
+        exerciseYear: ano,
+        currency: pacoteCalculado.moeda,
+        ativoNaoCorrente: ancItems.length ? ancItems : [{ name: 'Imobilizações Corpóreas', amount: 0 }],
+        ativoCorrente: acItems.length ? acItems : [{ name: 'Disponibilidades / Bancos', amount: 0 }],
+        capitalProprio: cpItems.length ? cpItems : [{ name: 'Capital Social', amount: 0 }],
+        passivoNaoCorrente: pncItems,
+        passivoCorrente: pcItems.length ? pcItems : [{ name: 'Fornecedores / Contas a Pagar', amount: 0 }],
+        dreItems: dreItems
+      });
+
+      setDownloadSuccess('Demonstrações Financeiras em PDF (PGC Angola) descarregadas com sucesso!');
+      setTimeout(() => setDownloadSuccess(null), 5000);
+    } catch (e: any) {
+      console.error('Erro ao gerar PDF de demonstrações:', e);
+    }
+  };
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-900/60 backdrop-blur-xs overflow-y-auto">
       <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-6xl max-h-[94vh] flex flex-col overflow-hidden">
@@ -291,6 +342,16 @@ export const DemonstracoesModal: React.FC<DemonstracoesModalProps> = ({
           </div>
 
           <div className="flex items-center gap-2 flex-wrap">
+            <button
+              onClick={handleDownloadPdf}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white bg-rose-600 hover:bg-rose-500 rounded-lg transition shadow cursor-pointer"
+              id="btn-modal-download-pdf-top"
+              title="Descarregar Demonstrações Financeiras em PDF (PGC Angola)"
+            >
+              <FileText className="w-3.5 h-3.5" />
+              <span>Exportar PDF</span>
+            </button>
+
             <button
               onClick={handleDownloadWord}
               disabled={isGenerating}
@@ -787,6 +848,15 @@ export const DemonstracoesModal: React.FC<DemonstracoesModalProps> = ({
             >
               <PieChart className="w-3.5 h-3.5 text-indigo-600" />
               <span>Infográfico</span>
+            </button>
+
+            <button
+              onClick={handleDownloadPdf}
+              className="flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-white bg-rose-600 hover:bg-rose-700 rounded-lg transition shadow-xs cursor-pointer"
+              id="btn-modal-download-pdf-footer"
+            >
+              <FileText className="w-3.5 h-3.5" />
+              <span>PDF (PGC Angola)</span>
             </button>
 
             <button

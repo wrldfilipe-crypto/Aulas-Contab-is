@@ -12,6 +12,8 @@ import { ComponentErrorBoundary } from './components/ComponentErrorBoundary';
 import { preloadNextLikelyRoutes } from './services/preloadService';
 import { cancelPendingRequests } from './services/appCacheService';
 import YohanAI from './components/YohanAI';
+import { YohanLogo } from './components/YohanLogo';
+import { AccountingLogo } from './components/AccountingLogo';
 import { getPendingOfflineActions, syncOfflineDataWithServer, clearStaleCache, getQuizProgress, notifyDataChanged } from './services/dashboardCache';
 import { processOfflineQueue } from './services/offlineQueue';
 import LanguageSelector from './components/LanguageSelector';
@@ -565,15 +567,6 @@ export default function App({ firebaseUser, firebaseUid }: { firebaseUser?: any;
   const [isMobileDrawerOpen, setIsMobileDrawerOpen] = useState(false);
   const [isStatsCollapsed, setIsStatsCollapsed] = useState(true);
 
-  const handleLogout = async (msg?: string) => {
-    if (msg) setLogoutMessage(msg);
-    if (typeof sessionStorage !== 'undefined') {
-      sessionStorage.setItem('ga_user_logged_out', 'true');
-    }
-    await sairConta();
-    setCurrentUser(null);
-  };
-
   const handleTrocarConta = async () => {
     if (typeof sessionStorage !== 'undefined') {
       sessionStorage.setItem('ga_user_logged_out', 'true');
@@ -872,6 +865,9 @@ export default function App({ firebaseUser, firebaseUid }: { firebaseUser?: any;
   }, []);
 
   const handleLogout = async (message?: string) => {
+    if (typeof sessionStorage !== 'undefined') {
+      sessionStorage.setItem('ga_user_logged_out', 'true');
+    }
     try {
       await sairConta();
     } catch (e) {
@@ -1700,7 +1696,9 @@ export default function App({ firebaseUser, firebaseUid }: { firebaseUser?: any;
               activeTab === 'accounting' ? 'bg-blue-600 text-white shadow-md' : 'text-slate-400 hover:bg-slate-800 hover:text-white'
             }`}
           >
-            <Calculator className="mr-3 w-5 h-5 shrink-0" />
+            <div className="mr-3 w-5 h-5 shrink-0 flex items-center justify-center">
+              <AccountingLogo size={20} showGlow={activeTab === 'accounting'} />
+            </div>
             Contabilidade
             <span className="ml-auto bg-blue-500/20 text-blue-400 text-[10px] uppercase font-bold px-2 py-0.5 rounded">
               PGC
@@ -1912,7 +1910,9 @@ export default function App({ firebaseUser, firebaseUid }: { firebaseUser?: any;
                   : 'text-slate-300 hover:bg-slate-800/90 hover:text-white border-l-4 border-l-transparent'
               }`}
             >
-              <Sparkles className={`w-4 h-4 shrink-0 text-indigo-400 group-hover:text-indigo-300 ${isSidebarExpanded ? 'mr-3' : ''}`} />
+              <div className={`shrink-0 ${isSidebarExpanded ? 'mr-3' : ''}`}>
+                <YohanLogo size={18} showGlow={activeTab === 'assistant'} />
+              </div>
               {isSidebarExpanded ? (
                 <div className="w-full flex items-center justify-between min-w-0">
                   <span className="truncate text-slate-200 group-hover:text-white font-medium">{i18n.t('nav.aiAccountant')}</span>
@@ -1966,7 +1966,9 @@ export default function App({ firebaseUser, firebaseUid }: { firebaseUser?: any;
                   : 'text-slate-300 hover:bg-slate-800/90 hover:text-white border-l-4 border-l-transparent'
               }`}
             >
-              <Calculator className={`w-4 h-4 shrink-0 text-slate-300 group-hover:text-blue-300 ${isSidebarExpanded ? 'mr-3' : ''}`} />
+              <div className={`shrink-0 flex items-center justify-center ${isSidebarExpanded ? 'mr-3' : ''}`}>
+                <AccountingLogo size={18} showGlow={activeTab === 'accounting'} />
+              </div>
               {isSidebarExpanded ? (
                 <div className="w-full flex items-center justify-between min-w-0">
                   <span className="truncate text-slate-200 group-hover:text-white font-medium">Contabilidade</span>
@@ -2216,10 +2218,10 @@ export default function App({ firebaseUser, firebaseUid }: { firebaseUser?: any;
         id="main-content-panel"
       >
 
-        {/* UPPER HEADER - COMPACT & FULLY RESPONSIVE (DESKTOP ONLY - HIDDEN ON MOBILE/TABLET <768PX) */}
+        {/* UPPER HEADER - FIXED & PERMANENT ON DESKTOP & TABLET (>=768px) - HIDDEN COMPLETELY ON MOBILE (<768px) */}
         <header 
-          className="hidden md:flex h-16 sticky top-0 z-[999] bg-white/90 dark:bg-slate-900/90 backdrop-blur-md border-b border-slate-200 dark:border-slate-800 px-3 sm:px-5 lg:px-6 items-center justify-between shrink-0 gap-2 sm:gap-4 select-none" 
-          style={{ position: 'sticky', top: 0, zIndex: 999, backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)' }}
+          className="topbar hidden md:flex h-16 shrink-0 z-[999] bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-b border-slate-200 dark:border-slate-800 px-3 sm:px-5 lg:px-6 items-center justify-between gap-2 sm:gap-4 select-none" 
+          style={{ zIndex: 999, backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)' }}
           id="header-panel"
         >
           
@@ -2582,6 +2584,19 @@ export default function App({ firebaseUser, firebaseUid }: { firebaseUser?: any;
 
                       <button
                         onClick={() => {
+                          setIsTourOpen(true);
+                          setIsUserMenuOpen(false);
+                          setIsToolsMenuOpen(false);
+                        }}
+                        className="w-full text-left px-4 py-2.5 text-xs font-bold text-amber-600 dark:text-amber-400 hover:bg-amber-50/60 dark:hover:bg-amber-950/40 transition-colors flex items-center gap-2 cursor-pointer border-t border-slate-100 dark:border-slate-800"
+                        id="btn-open-pgc-tutorial-user-menu"
+                      >
+                        <Sparkles className="w-3.5 h-3.5 text-amber-500" />
+                        Tutorial PGC Angola
+                      </button>
+
+                      <button
+                        onClick={() => {
                           setIsSupabaseModalOpen(true);
                           setIsUserMenuOpen(false);
                           setIsToolsMenuOpen(false);
@@ -2822,7 +2837,7 @@ export default function App({ firebaseUser, firebaseUid }: { firebaseUser?: any;
 
         {/* WORKSPACE AREA */}
         <div 
-          className={`flex min-h-0 min-w-0 flex-1 flex-col overflow-x-hidden ${activeTab === 'assistant' ? 'overflow-hidden p-0 md:p-6 lg:p-8 pb-16 md:pb-6' : 'overflow-y-auto p-4 sm:p-6 lg:p-8 pb-24 md:pb-8'}`} 
+          className={`flex min-h-0 min-w-0 flex-1 flex-col overflow-x-hidden ${activeTab === 'assistant' ? 'overflow-hidden p-0 m-0 h-full w-full' : 'overflow-y-auto p-4 sm:p-6 lg:p-8 pb-24 md:pb-8'}`} 
           id="workspace-scroll-area"
         >
           <Suspense fallback={<PageSkeleton />}>
@@ -3620,10 +3635,12 @@ export default function App({ firebaseUser, firebaseUid }: { firebaseUser?: any;
       {/* FLOATING VISUAL THEME & ACCENT CUSTOMIZER 🎨 */}
       <ThemeCustomizerFloatingButton userId={currentUser?.id || 'global'} />
 
-      {/* MOBILE BOTTOM NAVIGATION BAR (<768px) */}
+      {/* MOBILE & TABLET BOTTOM NAVIGATION BAR (<1024px) */}
       <MobileBottomNavigation 
         activeTab={activeTab as AppTab}
         onNavigate={(tab) => setActiveTab(tab)}
+        currentUser={currentUser}
+        onLogout={() => setIsLogoutModalOpen(true)}
         onOpenMenu={() => setIsMobileDrawerOpen(true)}
         unreadNotificationsCount={notifications.filter(n => !n.read).length}
       />
