@@ -5,6 +5,7 @@ import OfflineStatusBanner from './OfflineStatusBanner';
 import { FlashcardWorkspace } from './FlashcardWorkspace';
 import { saveModuleForOffline, removeModuleOffline } from '../services/offlineQueue';
 import { ModuleCompletionChart } from './ModuleCompletionChart';
+import { FocusedStudyMode } from './FocusedStudyMode';
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
 import confetti from 'canvas-confetti';
@@ -52,7 +53,9 @@ import {
   Eye,
   MoreVertical,
   Pencil,
-  BookMarked
+  BookMarked,
+  Timer,
+  Flame
 } from 'lucide-react';
 import { DB, getCurrentUser } from '../lib/db';
 import { enqueueOfflineAction, syncOfflineDataWithServer } from '../services/dashboardCache';
@@ -271,21 +274,72 @@ const INITIAL_SAMPLE_LEARNINGS: LearningItem[] = [
     language: 'Português',
     fileType: 'pdf',
     fileName: 'Manual_IVA_Angola_2025.pdf',
-    summary: 'Este guia explica em pormenor a incidência do Imposto sobre o Valor Acrescentado (IVA) a 14% nas prestações de serviços e operações comerciais em Angola, o mecanismo de dedução na Conta 34.5 e o procedimento de retenção na fonte do Imposto Industrial a 6.5%.',
+    summary: 'Este guia didático aprofundado cobre integralmente o regime jurídico e a operacionalização contabilística do Imposto sobre o Valor Acrescentado (IVA) à taxa geral de 14%, o direito à dedução na Conta 34.5 do PGC Angola, o mecanismo de Retenção na Fonte do Imposto Industrial a 6,5% e os procedimentos legais de apuramento e liquidação à Administração Geral Tributária (AGT).',
     keyTakeaways: [
-      'Identificar o IVA Liquidado (34.5.2) vs IVA Dedutível (34.5.1)',
-      'Regra de retenção de 6.5% de Imposto Industrial em serviços prestados por nacionais',
-      'Prazos legais de liquidação e submissão da declaração periódica'
+      'Identificar o IVA Liquidado nas Vendas (34.5.2) vs IVA Dedutível nas Compras (34.5.1)',
+      'Regra e responsabilidade na Retenção na Fonte de 6,5% de Imposto Industrial em serviços',
+      'Articulação entre o Balancete de Verificação do Razão e a Declaração Periódica do IVA (Modelo 7)',
+      'Prazos legais de submissão e liquidação à AGT até ao último dia do mês seguinte'
     ],
     sections: [
       {
         id: 'sec-1',
-        title: '1. Mecanismo de Funcionamento do IVA no PGC Angola',
-        explanation: 'O IVA é um imposto indireto sobre o consumo. A empresa atua como fiel depositária do Estado: cobra IVA aos clientes nas vendas (IVA Liquidado), deduz o IVA pago aos fornecedores (IVA Suportado) e entrega a diferença líquida à AGT.',
+        title: '1. Fundamentos, Incidência e Mecanismo do IVA no PGC Angola',
+        explanation: 'O Imposto sobre o Valor Acrescentado (IVA), instituído em Angola pela Lei n.º 7/19 de 24 de Abril, é um imposto plurifásico de matriz neutra sobre o consumo das famílias e das empresas. A sua neutralidade económica decorre do método das deduções sucessivas (método do crédito de imposto), segundo o qual cada operador económico na cadeia de valor apenas entrega ao Estado a fração de imposto correspondente ao valor efetivo que agregou ao produto ou serviço.\n\nNa contabilidade do PGC Angola, a empresa atua na qualidade de fiel depositária do Estado. Isso significa que o IVA nunca representa, por si só, um gasto operacional (classe 7) nem um proveito próprio (classe 6). As cobranças de imposto efetuadas aos clientes nas transações de vendas constituem obrigações perante a Administração Geral Tributária (AGT), enquanto os pagamentos de IVA efetuados aos fornecedores de bens e serviços geram direitos de crédito fiscal.\n\nA movimentação estrutural no PGC concentra-se na subconta 34.5 (Estado e Outros Entes Públicos — IVA). Esta conta desdobra-se em subcontas analíticas fundamentais: 34.5.1 (IVA Suportado / Dedutível), 34.5.2 (IVA Liquidado), 34.5.5 (IVA Apuramento), 34.5.6 (IVA a Pagar) e 34.5.7 (IVA a Recuperar). Assegurar que os saldos destas subcontas correspondam rigorosamente às faturas certificadas pelo software de faturação é um imperativo técnico e fiscal incontornável.',
         practicalExample: {
-          scenario: 'Venda de serviços no valor de 10.000.000 AOA com IVA de 14%.',
-          stepByStep: '1. Valor base: 10.000.000 AOA.\n2. IVA (14%): 1.400.000 AOA.\n3. Total a faturar ao cliente: 11.400.000 AOA.\n4. Lançamento: Débito Conta 31 (Clientes) 11.400.000 | Crédito Conta 61 (Vendas) 10.000.000 | Crédito Conta 34.5.2 (IVA Liquidável) 1.400.000.',
-          conclusion: 'O IVA de 1.400.000 AOA não é proveito da empresa, mas sim uma dívida ao Estado.'
+          scenario: 'Venda a pronto pagamento de serviços de consultoria no valor base de 10.000.000 AOA, sujeita à taxa geral de IVA de 14%.',
+          stepByStep: '1. Apuramento da base tributável: 10.000.000 AOA.\n2. Cálculo do IVA Liquidado (14%): 10.000.000 × 0,14 = 1.400.000 AOA.\n3. Total a faturar e receber do cliente: 11.400.000 AOA.\n4. Lançamento no Razão do PGC Angola:\n   - Débito: Conta 43.1 (Depósitos à Ordem) — 11.400.000 AOA\n   - Crédito: Conta 61.2 (Prestações de Serviços) — 10.000.000 AOA\n   - Crédito: Conta 34.5.2 (Estado — IVA Liquidado) — 1.400.000 AOA.',
+          conclusion: 'O montante de 1.400.000 AOA figura no Passivo Corrente da empresa como responsabilidade fiscal exigível pelo Estado e não transita pela Demonstração de Resultados.'
+        }
+      },
+      {
+        id: 'sec-2',
+        title: '2. Taxas Aplicáveis, Isenções e Regimes de Enquadramento',
+        explanation: 'O sistema do IVA em Angola estabelece taxas e regimes diferenciados consoante a natureza dos bens transacionados e o volume de negócios do contribuinte. A taxa padrão do IVA situa-se em 14%, aplicável genericamente à importação e transmissão de bens e às prestações de serviços realizadas no território nacional. Paralelamente, vigora a taxa reduzida de 7% e 5% para determinados produtos da cesta básica e insumos agropecuários estratégicos, visando mitigar o impacto inflacionário sobre o consumo alimentar essencial.\n\nNo que tange aos regimes de enquadramento, os sujeitos passivos classificam-se em dois regimes principais:\n1. Regime Geral: Aplicável obrigatoriamente às empresas cujo volume de negócios anual ou operações de importação excedam o equivalente a 25.000.000 AOA. Os sujeitos passivos deste regime têm direito à dedução integral do IVA incorrido na aquisição de bens e serviços afetos à atividade tributada, devendo submeter mensalmente a declaração periódica eletrónica.\n2. Regime Simplificado: Destinado a micro e pequenas empresas com volume anual de negócios igual ou inferior a 25.000.000 AOA. Neste regime, o sujeito passivo entrega à AGT uma percentagem fixa (habitualmente 7%) sobre o volume de receitas cobradas, dispondo de direito restrito à dedução do imposto suportado nas importações.\n\nCumpre sublinhar que os sujeitos passivos isentos ao abrigo do artigo 12.º do Código do IVA (ex: serviços médicos, certas operações bancárias e financeiras, locação de imóveis para habitação) não liquidam imposto nas suas saídas e, correlativamente, não podem deduzir o IVA suportado nas suas compras, passando esse imposto a integrar o custo de aquisição na respetiva conta de gasto ou ativo.',
+        practicalExample: {
+          scenario: 'Compra de matérias-primas no Regime Geral no valor de 4.000.000 AOA com taxa reduzida de 7% para indústria agroalimentar.',
+          stepByStep: '1. Base tributável: 4.000.000 AOA.\n2. IVA Suportado (7%): 4.000.000 × 0,07 = 280.000 AOA.\n3. Total da fatura do fornecedor: 4.280.000 AOA.\n4. Lançamento contabilístico:\n   - Débito: Conta 21.1 (Compras de Matérias-Primas) — 4.000.000 AOA\n   - Débito: Conta 34.5.1 (Estado — IVA Dedutível) — 280.000 AOA\n   - Crédito: Conta 32.1 (Fornecedores C/C) — 4.280.000 AOA.',
+          conclusion: 'O IVA de 280.000 AOA é contabilizado como direito a deduzir no apuramento mensal e não encarece o custo dos inventários.'
+        }
+      },
+      {
+        id: 'sec-3',
+        title: '3. Mecanismo de Dedução e Movimentação Contabilística na Conta 34.5',
+        explanation: 'O direito à dedução constitui a espinha dorsal do IVA. Para que o imposto suportado a montante possa ser legitimamente deduzido pelo sujeito passivo no PGC Angola, devem verificar-se cumulativamente três requisitos fundamentais previstos no Código do IVA:\n1. Requisito Formal: O imposto deve constar de fatura emitida na forma legal por software certificado pela AGT, contendo o NIF de ambas as partes, a identificação clara dos bens ou serviços e a discriminação expressa da taxa e do valor do IVA.\n2. Requisito Material ou de Afeção: Os bens ou serviços adquiridos devem estar direta e estritamente afetos à realização de operações tributáveis da empresa.\n3. Requisito Temporal: A dedução só pode ser exercida no período de imposto em que a fatura foi recebida ou em períodos subsequentes dentro do prazo de caducidade legal.\n\nExclusões Legais do Direito à Dedução: O Código do IVA exclui expressamente da dedução o imposto suportado em despesas de lazer, viagens de turismo, espetáculos, alimentação e bebidas, despesas de representação de gerência e aquisição ou manutenção de viaturas ligeiras de passageiros não afetadas a fins estritamente produtivos (excluindo frotas de táxi ou rent-a-car). Nestas situações de exclusão, o valor do IVA suportado deve ser debitado diretamente na conta do próprio gasto (ex: Conta 75 — Outros Custos Operacionais) ou do ativo imobilizado correspondente, nunca transitando pela Conta 34.5.1.',
+        practicalExample: {
+          scenario: 'Receção de fatura de refeição de negócios e representação no valor de 200.000 AOA + IVA (14% = 28.000 AOA).',
+          stepByStep: '1. Análise fiscal: As despesas com refeições e representação enquadram-se na exclusão do direito à dedução.\n2. O IVA de 28.000 AOA não pode ser lançado na Conta 34.5.1.\n3. Valor total do gasto imputado aos resultados: 228.000 AOA.\n4. Lançamento contabilístico:\n   - Débito: Conta 75.2.3 (Despesas de Representação) — 228.000 AOA\n   - Crédito: Conta 32.1 ou 43.1 (Caixa/Bancos) — 228.000 AOA.',
+          conclusion: 'Deduzir indevidamente o IVA de despesas excluídas na Conta 34.5.1 gera contingências fiscais, multas e liquidação oficiosa pela AGT.'
+        }
+      },
+      {
+        id: 'sec-4',
+        title: '4. Retenção na Fonte de Imposto Industrial a 6,5% em Prestações de Serviços',
+        explanation: 'Em Angola, a prestação de serviços civis ou comerciais por entidades residentes ou não residentes está sujeita ao mecanismo de Retenção na Fonte a título de Imposto Industrial (Lei n.º 19/14 e alterações subsequentes). Quando uma empresa sujeita ao Regime Geral adquire serviços a fornecedores locais, a lei impõe-lhe o dever de atuar como substituto tributário.\n\nA taxa legal de retenção na fonte sobre prestações de serviços é de 6,5%. Esta retenção incide estritamente sobre o VALOR BASE do serviço prestado, sem incluir o montante do IVA. Por seu turno, o IVA incide igualmente sobre o valor base do serviço e deve ser liquidado normalmente na fatura pelo prestador.\n\nA retenção efetuada pelo adquirente deve ser cativa no ato do pagamento e entregue à AGT até ao último dia do mês seguinte ao da retenção, mediante Documento de Liquidação de Impostos (DLI). No PGC Angola, o adquirente que retém credita a Conta 34.1.2 (Estado — Imposto Industrial Retido na Fonte), que permanecerá com saldo credor até ao efetivo desembolso bancário em benefício do Fisco.\n\nPara o prestador do serviço, o imposto retido representa um pagamento por conta do seu Imposto Industrial anual, sendo debitado na Conta 34.1.1 (Estado — Imposto Industrial por Conta / Retido a Nosso Favor). No encerramento do exercício fiscal, esse crédito acumulado será deduzido ao montante apurado na Declaração Modelo 1 do Imposto Industrial.',
+        practicalExample: {
+          scenario: 'Contratação de empresa de segurança e vigilância patrimonial por 5.000.000 AOA + IVA (14%). Condição de retenção de 6,5% de Imposto Industrial.',
+          stepByStep: '1. Valor base dos serviços: 5.000.000 AOA.\n2. IVA a 14%: 5.000.000 × 0,14 = 700.000 AOA (dedutível pelo adquirente na Conta 34.5.1).\n3. Retenção de Imposto Industrial (6,5%): 5.000.000 × 0,065 = 325.000 AOA.\n4. Valor líquido a pagar ao prestador: (5.000.000 + 700.000) - 325.000 = 5.375.000 AOA.\n5. Lançamento no adquirente:\n   - Débito: Conta 75.2 (Fornecimentos e Serviços de Terceiros) — 5.000.000 AOA\n   - Débito: Conta 34.5.1 (Estado — IVA Dedutível) — 700.000 AOA\n   - Crédito: Conta 34.1.2 (Estado — Retenção na Fonte Imposto Industrial) — 325.000 AOA\n   - Crédito: Conta 32.1 (Fornecedores c/c) — 5.375.000 AOA.',
+          conclusion: 'A retenção de 325.000 AOA é repassada integralmente à AGT no mês subsequente, sem encargos adicionais para a empresa adquirente.'
+        }
+      },
+      {
+        id: 'sec-5',
+        title: '5. Prazos Legais, Submissão da Declaração Periódica e Apuramento à AGT',
+        explanation: 'O ciclo mensal de cumprimento das obrigações fiscais relativas ao IVA exige rigor temporal estrito. Nos termos da legislação fiscal angolana, os sujeitos passivos do Regime Geral estão obrigados a entregar a Declaração Periódica do IVA (Modelo 7) por via eletrónica no Portal do Contribuinte da AGT até ao último dia do mês seguinte àquele a que respeitam as operações.\n\nNo encerramento de cada mês, a contabilidade deve executar o designado «Lançamento de Apuramento do IVA» no Razão Geral. Este procedimento visa zerar temporariamente as subcontas de IVA do mês e apurar a posição líquida da empresa perante o Fisco:\n1. Se o somatório do IVA Liquidado (34.5.2) for SUPERIOR ao IVA Dedutível (34.5.1):\n   - A diferença é transferida a crédito da Conta 34.5.6 (IVA a Pagar à AGT).\n   - O pagamento deve ser consumado até ao mesmo prazo de submissão da declaração periódica.\n2. Se o IVA Dedutível (34.5.1) for SUPERIOR ao IVA Liquidado (34.5.2):\n   - A diferença gera saldo devedor que é transferido para a Conta 34.5.7 (IVA a Recuperar / Crédito de IVA).\n   - Este crédito fiscal transita para os períodos seguintes e será deduzido em apuramentos futuros ou objeto de pedido de reembolso nos termos do regulamento do reembolso do IVA da AGT.\n\nA movimentação de apuramento envolve debitar a Conta 34.5.2 pelo seu saldo credor total e creditar a Conta 34.5.1 pelo seu saldo devedor total, usando a subconta transitória 34.5.5 (IVA Apuramento) para balancear o registo.',
+        practicalExample: {
+          scenario: 'No final de Novembro de 2025, o Razão da empresa apresenta saldo credor na Conta 34.5.2 de 18.000.000 AOA e saldo devedor na Conta 34.5.1 de 11.500.000 AOA.',
+          stepByStep: '1. Comparação dos saldos: IVA Liquidado (18.000.000) > IVA Dedutível (11.500.000).\n2. Posição líquida a pagar ao Estado: 18.000.000 - 11.500.000 = 6.500.000 AOA.\n3. Lançamento de Apuramento do mês:\n   - Débito: Conta 34.5.2 (IVA Liquidado) — 18.000.000 AOA (zerando a conta)\n   - Crédito: Conta 34.5.1 (IVA Suportado Dedutível) — 11.500.000 AOA (zerando a conta)\n   - Crédito: Conta 34.5.6 (Estado — IVA a Pagar) — 6.500.000 AOA.\n4. No ato da liquidação via DLI bancário:\n   - Débito: Conta 34.5.6 (Estado — IVA a Pagar) — 6.500.000 AOA\n   - Crédito: Conta 43.1 (Depósitos à Ordem) — 6.500.000 AOA.',
+          conclusion: 'Com este ciclo, as subcontas operacionais iniciam o mês de Dezembro zeradas e prontas para novas transações.'
+        }
+      },
+      {
+        id: 'sec-6',
+        title: '6. Erros Frequentes, Infrações Fiscais e Conciliação Balancete vs AGT',
+        explanation: 'A auditoria e fiscalização tributária pela AGT foca com especial rigor as discrepâncias entre os valores declarados no ficheiro SAF-T de faturação, a Declaração Periódica do IVA e o Balancete de Verificação do Razão Geral do PGC Angola. Os erros mais comuns cometidos pelos operadores económicos incluem:\n\n1. Omissão da Reversão de Retenções na Fonte: Deixar de pagar a retenção do Imposto Industrial no prazo legal sujeita o substituto tributário a juros de mora e coimas pesadas, configurando apropriação indevida de fundos públicos.\n2. Dedução Indevida de IVA sobre Faturas Sem NIF Válido ou Fora do Sistema Certificado: A AGT cruzará eletronicamente as faturas de fornecedores com as declarações destes. Faturas não reportadas pelo fornecedor desqualificam a dedução do cliente.\n3. Desalinhamento entre a Conta 34.5 do Balancete e o Modelo 7: O valor constante na linha de IVA liquidado e IVA dedutível do Modelo 7 tem de bater exatamente ao cêntimo com os movimentos a crédito e a débito das subcontas 34.5.2 e 34.5.1 no balancete analítico mensal.\n4. Incorreta Aplicação de Isenções: Faturar sem IVA sem a citação expressa do respetivo artigo do Código do IVA que fundamenta o benefício ou isenção na fatura (ex: «Isento nos termos da alínea a) do n.º 1 do artigo 12.º do CIVA»).\n\nPara prevenir coimas que podem ascender a 25% até 100% do imposto em falta, a boa prática contabilística exige a realização de uma conciliação prévia mensal entre o Balancete de Verificação e o extrato de conta corrente fiscal do Portal do Contribuinte da AGT antes da validação final do ficheiro SAF-T.',
+        practicalExample: {
+          scenario: 'Deteção em conciliação mensal de fatura de compra de 1.140.000 AOA com IVA de 140.000 AOA omitida na declaração do mês anterior.',
+          stepByStep: '1. Verificar se a fatura foi emitida legalmente no sistema certificado e comunicada à AGT pelo fornecedor.\n2. Se o prazo de dedução do período de imposto corrente ainda estiver dentro do exercício fiscal, a dedução pode ser incorporada na declaração do período corrente como regularização a favor do sujeito passivo.\n3. Lançamento contabilístico da regularização:\n   - Débito: Conta 34.5.1 (IVA Dedutível — Regularizações a Favor do Sujeito Passivo) — 140.000 AOA\n   - Crédito: Conta 34.5.5 ou Conta Corrente do Fornecedor — 140.000 AOA.',
+          conclusion: 'A regularização documentada no processo físico e eletrónico evita autos de notícia em inspeções fiscais.'
         }
       }
     ],
@@ -294,30 +348,57 @@ const INITIAL_SAMPLE_LEARNINGS: LearningItem[] = [
         id: 'ex-1',
         question: 'Qual a conta do PGC Angola onde é registado o IVA debitado nas faturas aos clientes?',
         options: [
-          'Conta 34.5.2 — IVA Liquidável',
-          'Conta 34.5.1 — IVA Suportado',
+          'Conta 34.5.2 — IVA Liquidado / Liquidável',
+          'Conta 34.5.1 — IVA Suportado / Dedutível',
           'Conta 61.1 — Vendas de Produtos',
-          'Conta 38.1 — Amortizações'
+          'Conta 38.1 — Provisões'
         ],
         correctOptionIndex: 0,
-        explanation: 'No PGC Angola, o IVA cobrado aos clientes é creditado na Conta 34.5.2 (IVA Liquidável).'
+        explanation: 'No PGC Angola, o IVA cobrado nas faturas aos clientes constitui uma dívida da empresa perante o Estado, sendo creditado na Conta 34.5.2 (IVA Liquidado).'
+      },
+      {
+        id: 'ex-2',
+        question: 'Qual a taxa e a base de incidência da Retenção na Fonte de Imposto Industrial em prestações de serviços em Angola?',
+        options: [
+          'Taxa de 6,5% incidente sobre o valor base do serviço, sem incluir o IVA',
+          'Taxa de 14% incidente sobre o valor total faturado com IVA',
+          'Taxa de 10% incidente apenas sobre a margem de lucro do prestador',
+          'Taxa de 3% incidente sobre o fluxo líquido bancário'
+        ],
+        correctOptionIndex: 0,
+        explanation: 'A retenção na fonte sobre prestações de serviços em Angola é de 6,5% e incide estritamente sobre o valor base do serviço, sem inclusão do IVA.'
+      },
+      {
+        id: 'ex-3',
+        question: 'Qual é o prazo limite para a submissão eletrónica da Declaração Periódica do IVA (Modelo 7) à AGT?',
+        options: [
+          'Até ao último dia do mês seguinte ao do período de imposto a que respeita',
+          'Até ao dia 10 do próprio mês da transação',
+          'Apenas uma vez por ano, aquando da submissão do Modelo 1',
+          'Até 48 horas após a emissão da primeira fatura'
+        ],
+        correctOptionIndex: 0,
+        explanation: 'Nos termos da legislação do IVA em Angola, a Declaração Periódica do IVA (Modelo 7) deve ser submetida eletronicamente até ao último dia do mês subsequente ao mês das operações.'
       }
     ],
     visualDiagram: {
       type: 'flowchart',
-      title: 'Fluxo Didático do IVA e Retenção na Fonte',
+      title: 'Fluxo Didático do IVA e Retenção na Fonte no PGC Angola',
       nodes: [
-        { id: '1', label: 'Emissão da Fatura', sublabel: 'Valor Base + 14% IVA', type: 'start' },
-        { id: '2', label: 'Cálculo da Retenção (6,5%)', sublabel: 'Apuramento do Imposto Industrial', type: 'process' },
-        { id: '3', label: 'Pagamento ao Fornecedor', sublabel: 'Valor Líquido de Caixa', type: 'process' },
-        { id: '4', label: 'Entrega à AGT', sublabel: 'Até ao dia 20 do mês seguinte', type: 'output' }
+        { id: '1', label: 'Emissão da Fatura', sublabel: 'Valor Base + 14% IVA Liquidado (34.5.2)', type: 'start' },
+        { id: '2', label: 'Cálculo da Retenção (6,5%)', sublabel: 'Apuramento do Imposto Industrial (34.1.2)', type: 'process' },
+        { id: '3', label: 'Liquidação ao Prestador', sublabel: 'Pagamento do Valor Líquido (43.1)', type: 'process' },
+        { id: '4', label: 'Apuramento Mensal (34.5.5)', sublabel: 'Confronto IVA Liquidado vs IVA Dedutível', type: 'process' },
+        { id: '5', label: 'Entrega à AGT', sublabel: 'Submissão do Modelo 7 e DLI até ao fim do mês', type: 'output' }
       ],
       tableData: {
-        headers: ['Operação', 'Conta PGC Angola', 'Efeito no Caixa'],
+        headers: ['Operação Contabilística', 'Conta PGC Angola', 'Natureza do Saldo', 'Efeito no Caixa'],
         rows: [
-          ['Prestação de Serviços (Base)', '61.1 — Vendas / Proveitos', 'Entrada de Receita'],
-          ['IVA Cobrado (14%)', '34.5.2 — IVA Liquidável', 'Passivo Corrente Estado'],
-          ['Retenção Imposto Industrial (6,5%)', '34.1 — Estado II', 'Pagamento Direto AGT']
+          ['Prestação de Serviços (Base)', '61.2 — Prestações de Serviços', 'Credor (Proveito)', 'Aumento de Receita'],
+          ['IVA Cobrado ao Cliente (14%)', '34.5.2 — IVA Liquidado', 'Credor (Passivo Estado)', 'Entrada transitória'],
+          ['IVA Pago a Fornecedores (14%)', '34.5.1 — IVA Dedutível', 'Devedor (Direito Fiscal)', 'Crédito tributário'],
+          ['Retenção Imposto Industrial (6,5%)', '34.1.2 — Retenção na Fonte', 'Credor (Passivo Estado)', 'Retenção a repassar à AGT'],
+          ['Apuramento Final a Pagar', '34.5.6 — IVA a Pagar', 'Credor (Passivo Exigível)', 'Saída de Caixa até fim do mês']
         ]
       }
     },
@@ -481,13 +562,18 @@ export const LearningWorkspace: React.FC<{
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [selectedLearning, setSelectedLearning] = useState<LearningItem | null>(null);
 
-  // New features: Date Range Filter, Status Filter, Quick Shortcuts & Offline Mode
+  // New features: Date Range Filter, Status Filter, Difficulty Level Filter, Quick Shortcuts & Offline Mode
   const [isOnline, setIsOnline] = useState<boolean>(typeof navigator !== 'undefined' ? navigator.onLine : true);
   const [dateRangeFilter, setDateRangeFilter] = useState<'all' | '7d' | '30d' | 'year'>('all');
   const [statusFilter, setStatusFilter] = useState<'all' | 'completed' | 'pending'>('all');
+  const [levelFilter, setLevelFilter] = useState<'all' | 'Iniciante' | 'Intermédio' | 'Avançado'>('all');
   const [shortcutFilter, setShortcutFilter] = useState<'all' | 'in_progress' | 'recent_completed' | 'favorites' | 'offline'>('all');
   const [isReadingMode, setIsReadingMode] = useState<boolean>(false);
+  const [readingTheme, setReadingTheme] = useState<'dark' | 'sepia' | 'light'>('dark');
+  const [readingLineSpacing, setReadingLineSpacing] = useState<'normal' | 'relaxed' | 'loose'>('relaxed');
+  const [readingFontSize, setReadingFontSize] = useState<'md' | 'lg' | 'xl'>('lg');
   const [isImmersiveMode, setIsImmersiveMode] = useState<boolean>(false);
+  const [isFocusedStudyOpen, setIsFocusedStudyOpen] = useState<boolean>(false);
   const [immersiveFontSize, setImmersiveFontSize] = useState<'normal' | 'large' | 'xlarge'>('normal');
   const [toastNotice, setToastNotice] = useState<string | null>(null);
 
@@ -501,16 +587,17 @@ export const LearningWorkspace: React.FC<{
     };
   }, []);
 
-  // Atalho de teclado ESC para sair do Modo Imersivo
+  // Atalho de teclado ESC para sair do Modo Imersivo e do Modo de Leitura
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && isImmersiveMode) {
-        setIsImmersiveMode(false);
+      if (e.key === 'Escape') {
+        if (isReadingMode) setIsReadingMode(false);
+        if (isImmersiveMode) setIsImmersiveMode(false);
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isImmersiveMode]);
+  }, [isImmersiveMode, isReadingMode]);
 
   // 3-Dots Menu & Inline Rename / Modal Delete state
   const [activeMenuMaterialId, setActiveMenuMaterialId] = useState<string | null>(null);
@@ -719,7 +806,14 @@ export const LearningWorkspace: React.FC<{
       if (stored) {
         const parsed = JSON.parse(stored);
         if (Array.isArray(parsed) && parsed.length > 0) {
-          lib = parsed;
+          lib = parsed.map(item => {
+            if (item.id === 'sample-tax-1' && (!item.sections || item.sections.length <= 1)) {
+              const fresh = INITIAL_SAMPLE_LEARNINGS.find(s => s.id === 'sample-tax-1');
+              return fresh || item;
+            }
+            return item;
+          });
+          localStorage.setItem(`ga_learnings_lib_${userId}`, JSON.stringify(lib));
         }
       } else {
         localStorage.setItem(`ga_learnings_lib_${userId}`, JSON.stringify(INITIAL_SAMPLE_LEARNINGS));
@@ -1259,7 +1353,15 @@ export const LearningWorkspace: React.FC<{
     if (statusFilter === 'completed' && (item.progress || 0) < 100) matchesStatus = false;
     if (statusFilter === 'pending' && (item.progress || 0) >= 100) matchesStatus = false;
 
-    return matchesShortcut && matchesCategory && matchesSearch && matchesDate && matchesStatus;
+    // Difficulty Level Filtering (Iniciante, Intermédio, Avançado)
+    let matchesLevel = true;
+    if (levelFilter !== 'all') {
+      const itemLvl = (item.userLevel || '').toLowerCase();
+      const filterLvl = levelFilter.toLowerCase();
+      matchesLevel = itemLvl.includes(filterLvl) || itemLvl === 'auto-detetar' || !item.userLevel;
+    }
+
+    return matchesShortcut && matchesCategory && matchesSearch && matchesDate && matchesStatus && matchesLevel;
   });
 
   return (
@@ -1433,17 +1535,26 @@ export const LearningWorkspace: React.FC<{
                   Carregue materiais de estudo (PDF, imagem, texto, Word, Excel) de <strong className="text-blue-300">qualquer área do conhecimento sem restrição</strong>: Matemática, Línguas, História, Direito, Economia, Contabilidade, Fiscalidade e mais. A IA gera resumos e <strong>quizzes automáticos</strong>.
                 </p>
 
-                {onNavigateTab && (
-                  <div className="pt-2">
+                <div className="pt-2 flex flex-wrap items-center gap-2">
+                  <button
+                    onClick={() => setIsFocusedStudyOpen(true)}
+                    id="btn-open-focused-study-mode"
+                    className="bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-slate-950 px-4 py-2 rounded-xl text-xs font-black transition-all inline-flex items-center gap-2 cursor-pointer shadow-lg shadow-amber-500/20 active:scale-95"
+                  >
+                    <Flame className="w-4 h-4 fill-current text-slate-950" />
+                    <span>🍅 Modo Estudo Focado (Pomodoro)</span>
+                  </button>
+
+                  {onNavigateTab && (
                     <button
                       onClick={() => onNavigateTab('quizzes')}
-                      className="bg-amber-500 hover:bg-amber-400 text-slate-950 px-4 py-2 rounded-xl text-xs font-extrabold transition-all inline-flex items-center gap-2 cursor-pointer shadow-md"
+                      className="bg-slate-800/90 hover:bg-slate-700 text-white border border-slate-700 px-4 py-2 rounded-xl text-xs font-extrabold transition-all inline-flex items-center gap-2 cursor-pointer shadow-md"
                     >
-                      <Trophy className="w-4 h-4" />
-                      <span>🎯 Ver Quizzes & Avaliações Automáticas</span>
+                      <Trophy className="w-4 h-4 text-amber-400" />
+                      <span>🎯 Ver Quizzes & Avaliações</span>
                     </button>
-                  </div>
-                )}
+                  )}
+                </div>
               </div>
 
               {/* User Level Adaptability Selector */}
@@ -2007,6 +2118,48 @@ export const LearningWorkspace: React.FC<{
                   </button>
                 </div>
               </div>
+
+              {/* Difficulty Level Filter */}
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-extrabold text-slate-700 flex items-center gap-1">
+                  <GraduationCap className="w-3.5 h-3.5 text-indigo-600" />
+                  <span>Nível:</span>
+                </span>
+                <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl">
+                  <button
+                    onClick={() => setLevelFilter('all')}
+                    className={`px-2.5 py-1 text-[11px] font-bold rounded-lg transition-all cursor-pointer ${
+                      levelFilter === 'all' ? 'bg-white text-indigo-700 shadow-xs' : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    Todos ({library.length})
+                  </button>
+                  <button
+                    onClick={() => setLevelFilter('Iniciante')}
+                    className={`px-2.5 py-1 text-[11px] font-bold rounded-lg transition-all cursor-pointer ${
+                      levelFilter === 'Iniciante' ? 'bg-emerald-600 text-white shadow-xs' : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    🌱 Iniciante
+                  </button>
+                  <button
+                    onClick={() => setLevelFilter('Intermédio')}
+                    className={`px-2.5 py-1 text-[11px] font-bold rounded-lg transition-all cursor-pointer ${
+                      levelFilter === 'Intermédio' ? 'bg-blue-600 text-white shadow-xs' : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    ⚡ Intermédio
+                  </button>
+                  <button
+                    onClick={() => setLevelFilter('Avançado')}
+                    className={`px-2.5 py-1 text-[11px] font-bold rounded-lg transition-all cursor-pointer ${
+                      levelFilter === 'Avançado' ? 'bg-purple-600 text-white shadow-xs' : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    🔥 Avançado
+                  </button>
+                </div>
+              </div>
             </div>
 
             {/* Quick Search */}
@@ -2196,7 +2349,7 @@ export const LearningWorkspace: React.FC<{
                         }`}
                       >
                         <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-2">
+                          <div className="flex items-center gap-2 flex-wrap">
                             <input
                               type="checkbox"
                               checked={isChecked}
@@ -2207,6 +2360,17 @@ export const LearningWorkspace: React.FC<{
                             <span className="bg-blue-50 text-blue-700 text-[10px] font-extrabold px-2.5 py-0.5 rounded-full uppercase tracking-wider">
                               {item.category}
                             </span>
+                            {item.userLevel && item.userLevel !== 'Auto-Detetar' && (
+                              <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full border ${
+                                item.userLevel.toLowerCase().includes('iniciante')
+                                  ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                  : item.userLevel.toLowerCase().includes('avançado')
+                                    ? 'bg-purple-50 text-purple-700 border-purple-200'
+                                    : 'bg-indigo-50 text-indigo-700 border-indigo-200'
+                              }`}>
+                                {item.userLevel}
+                              </span>
+                            )}
                           </div>
                           
                           <div className="flex items-center gap-1.5">
@@ -2958,89 +3122,254 @@ export const LearningWorkspace: React.FC<{
 
       {/* FULLSCREEN READING MODE OVERLAY (MODO DE LEITURA TOTAL) */}
       {isReadingMode && selectedLearning && (
-        <div className="fixed inset-0 z-50 bg-slate-950 text-slate-100 overflow-y-auto p-4 sm:p-8 lg:p-12 animate-fade-in font-sans">
-          
+        <div 
+          className={`fixed inset-0 z-50 overflow-y-auto p-4 sm:p-8 lg:p-12 animate-fade-in transition-colors duration-300 ${
+            readingTheme === 'dark'
+              ? 'bg-slate-950 text-slate-100'
+              : readingTheme === 'sepia'
+              ? 'bg-[#f4ecd8] text-[#3d2e1e]'
+              : 'bg-[#fafafa] text-slate-900'
+          }`}
+          id="lesson-reading-mode-overlay"
+        >
           {/* Reader Sticky Header Bar */}
-          <div className="max-w-4xl mx-auto sticky top-0 z-20 bg-slate-900/90 backdrop-blur-md p-4 rounded-2xl border border-slate-800 shadow-2xl flex items-center justify-between gap-4 mb-8">
-            <div className="flex items-center gap-3 overflow-hidden">
-              <div className="w-10 h-10 rounded-xl bg-amber-500/20 text-amber-400 border border-amber-500/30 flex items-center justify-center shrink-0">
+          <div 
+            className={`max-w-4xl mx-auto sticky top-0 z-20 p-3 sm:p-4 rounded-2xl border shadow-xl flex flex-wrap items-center justify-between gap-3 mb-8 backdrop-blur-md transition-colors ${
+              readingTheme === 'dark'
+                ? 'bg-slate-900/90 border-slate-800 text-white'
+                : readingTheme === 'sepia'
+                ? 'bg-[#ebe0c5]/95 border-[#d6c7a7] text-[#3d2e1e]'
+                : 'bg-white/95 border-slate-200 text-slate-900 shadow-md'
+            }`}
+          >
+            <div className="flex items-center gap-3 overflow-hidden min-w-0">
+              <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${
+                readingTheme === 'dark'
+                  ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
+                  : readingTheme === 'sepia'
+                  ? 'bg-[#7a5833]/15 text-[#634526] border border-[#7a5833]/30'
+                  : 'bg-amber-100 text-amber-800 border border-amber-200'
+              }`}>
                 <Eye className="w-5 h-5" />
               </div>
               <div className="truncate">
-                <div className="flex items-center gap-2 text-[10px] uppercase tracking-wider text-amber-400 font-extrabold">
+                <div className="flex items-center gap-2 text-[10px] uppercase tracking-wider font-extrabold opacity-75">
                   <span>Modo de Leitura Focada</span>
                   <span>•</span>
                   <span>{selectedLearning.category}</span>
                 </div>
-                <h2 className="text-sm sm:text-base font-extrabold text-white truncate">
+                <h2 className="text-sm sm:text-base font-extrabold truncate">
                   {selectedLearning.title}
                 </h2>
               </div>
             </div>
 
-            <div className="flex items-center gap-3 shrink-0">
+            {/* Reading Mode Controls Toolbar */}
+            <div className="flex items-center gap-2 shrink-0 flex-wrap">
+              {/* Theme Toggle Buttons */}
+              <div className="flex items-center gap-1 p-1 rounded-xl bg-black/10 dark:bg-white/10 border border-current/10 text-xs">
+                <button
+                  type="button"
+                  onClick={() => setReadingTheme('dark')}
+                  className={`px-2 py-1 rounded-lg font-bold text-xs transition-all cursor-pointer ${
+                    readingTheme === 'dark' ? 'bg-slate-800 text-white shadow-xs' : 'opacity-60 hover:opacity-100'
+                  }`}
+                  title="Tema Escuro"
+                >
+                  🌙 Escuro
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setReadingTheme('sepia')}
+                  className={`px-2 py-1 rounded-lg font-bold text-xs transition-all cursor-pointer ${
+                    readingTheme === 'sepia' ? 'bg-[#533e29] text-[#fbf7ee] shadow-xs' : 'opacity-60 hover:opacity-100'
+                  }`}
+                  title="Tema Sépia Conforto"
+                >
+                  📜 Sépia
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setReadingTheme('light')}
+                  className={`px-2 py-1 rounded-lg font-bold text-xs transition-all cursor-pointer ${
+                    readingTheme === 'light' ? 'bg-white text-slate-900 shadow-xs' : 'opacity-60 hover:opacity-100'
+                  }`}
+                  title="Tema Claro"
+                >
+                  ☀️ Claro
+                </button>
+              </div>
+
+              {/* Line Spacing Selector */}
+              <div className="flex items-center gap-1 p-1 rounded-xl bg-black/10 dark:bg-white/10 border border-current/10 text-xs">
+                <button
+                  type="button"
+                  onClick={() => setReadingLineSpacing('normal')}
+                  className={`px-2 py-1 rounded-lg font-bold text-xs transition-all cursor-pointer ${
+                    readingLineSpacing === 'normal' ? 'bg-indigo-600 text-white shadow-xs' : 'opacity-60 hover:opacity-100'
+                  }`}
+                  title="Espaçamento Normal (1.6x)"
+                >
+                  1.6x
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setReadingLineSpacing('relaxed')}
+                  className={`px-2 py-1 rounded-lg font-bold text-xs transition-all cursor-pointer ${
+                    readingLineSpacing === 'relaxed' ? 'bg-indigo-600 text-white shadow-xs' : 'opacity-60 hover:opacity-100'
+                  }`}
+                  title="Espaçamento Relaxado (2.0x)"
+                >
+                  2.0x
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setReadingLineSpacing('loose')}
+                  className={`px-2 py-1 rounded-lg font-bold text-xs transition-all cursor-pointer ${
+                    readingLineSpacing === 'loose' ? 'bg-indigo-600 text-white shadow-xs' : 'opacity-60 hover:opacity-100'
+                  }`}
+                  title="Espaçamento Amplo (2.4x)"
+                >
+                  2.4x
+                </button>
+              </div>
+
+              {/* Font Size Selector */}
+              <div className="flex items-center gap-1 p-1 rounded-xl bg-black/10 dark:bg-white/10 border border-current/10 text-xs font-mono font-bold">
+                <button
+                  type="button"
+                  onClick={() => setReadingFontSize('md')}
+                  className={`w-7 h-7 rounded-lg flex items-center justify-center transition-all cursor-pointer ${
+                    readingFontSize === 'md' ? 'bg-indigo-600 text-white shadow-xs' : 'opacity-60 hover:opacity-100'
+                  }`}
+                  title="Tamanho Normal"
+                >
+                  A
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setReadingFontSize('lg')}
+                  className={`w-7 h-7 rounded-lg flex items-center justify-center text-sm transition-all cursor-pointer ${
+                    readingFontSize === 'lg' ? 'bg-indigo-600 text-white shadow-xs' : 'opacity-60 hover:opacity-100'
+                  }`}
+                  title="Tamanho Médio"
+                >
+                  A+
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setReadingFontSize('xl')}
+                  className={`w-7 h-7 rounded-lg flex items-center justify-center text-base transition-all cursor-pointer ${
+                    readingFontSize === 'xl' ? 'bg-indigo-600 text-white shadow-xs' : 'opacity-60 hover:opacity-100'
+                  }`}
+                  title="Tamanho Grande"
+                >
+                  A++
+                </button>
+              </div>
+
+              {/* Close Button */}
               <button
+                type="button"
                 onClick={() => setIsReadingMode(false)}
-                className="px-4 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs rounded-xl transition-all cursor-pointer shadow-lg flex items-center gap-2"
-                title="Sair do Modo de Leitura Focada"
+                className="px-3.5 py-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs rounded-xl transition-all cursor-pointer shadow-md flex items-center gap-1.5 ml-1"
+                title="Sair do Modo de Leitura Focada (ESC)"
               >
-                <Minimize2 className="w-4 h-4" />
-                <span>Sair do Modo de Leitura</span>
+                <Minimize2 className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">Sair (ESC)</span>
               </button>
             </div>
           </div>
 
           {/* Clean Reader Canvas */}
-          <div className="max-w-4xl mx-auto space-y-8 bg-slate-900/60 border border-slate-800 p-6 sm:p-12 rounded-3xl shadow-2xl relative">
-            
-            {/* Material Meta & Title */}
-            <div className="space-y-4 border-b border-slate-800 pb-6">
+          <div 
+            className={`max-w-3xl mx-auto space-y-10 p-6 sm:p-12 rounded-3xl shadow-xl border relative transition-colors ${
+              readingTheme === 'dark'
+                ? 'bg-slate-900/60 border-slate-800/80 text-slate-200'
+                : readingTheme === 'sepia'
+                ? 'bg-[#fbf7ee] border-[#e6dbc0] text-[#3d2e1e]'
+                : 'bg-white border-slate-200 text-slate-800'
+            }`}
+          >
+            {/* Title & Category Bar */}
+            <div className={`space-y-4 border-b pb-6 ${
+              readingTheme === 'dark' ? 'border-slate-800' : readingTheme === 'sepia' ? 'border-[#e6dbc0]' : 'border-slate-200'
+            }`}>
               <div className="flex flex-wrap items-center gap-2 text-xs">
-                <span className="px-3 py-1 bg-blue-500/20 text-blue-300 border border-blue-500/30 rounded-full font-bold">
+                <span className={`px-3 py-1 rounded-full font-bold ${
+                  readingTheme === 'dark' ? 'bg-blue-500/20 text-blue-300' : 'bg-blue-100 text-blue-800'
+                }`}>
                   {selectedLearning.category}
                 </span>
-                <span className="px-3 py-1 bg-amber-500/20 text-amber-300 border border-amber-500/30 rounded-full font-bold">
+                <span className={`px-3 py-1 rounded-full font-bold ${
+                  readingTheme === 'dark' ? 'bg-amber-500/20 text-amber-300' : 'bg-amber-100 text-amber-800'
+                }`}>
                   Nível: {selectedLearning.userLevel}
                 </span>
                 {selectedLearning.language && (
-                  <span className="px-3 py-1 bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 rounded-full font-bold">
+                  <span className={`px-3 py-1 rounded-full font-bold ${
+                    readingTheme === 'dark' ? 'bg-indigo-500/20 text-indigo-300' : 'bg-indigo-100 text-indigo-800'
+                  }`}>
                     Língua: {selectedLearning.language}
                   </span>
                 )}
               </div>
 
-              <h1 className="text-2xl sm:text-4xl font-black text-white leading-tight">
+              <h1 className="text-2xl sm:text-4xl font-black leading-tight tracking-tight">
                 {selectedLearning.title}
               </h1>
             </div>
 
             {/* Executive Summary */}
-            <div className="p-6 bg-slate-800/80 border border-slate-700/80 rounded-2xl space-y-3">
-              <div className="text-xs font-black text-amber-400 uppercase tracking-wider flex items-center justify-between">
+            <div 
+              className={`p-6 rounded-2xl space-y-3 border ${
+                readingTheme === 'dark'
+                  ? 'bg-slate-800/60 border-slate-700/60 text-slate-200'
+                  : readingTheme === 'sepia'
+                  ? 'bg-[#efe6ce] border-[#dfd4b8] text-[#3d2e1e]'
+                  : 'bg-slate-50 border-slate-200 text-slate-800'
+              }`}
+            >
+              <div className="text-xs font-black uppercase tracking-wider flex items-center justify-between opacity-80">
                 <span className="flex items-center gap-2">
-                  <Sparkles className="w-4 h-4" />
-                  Resumo Executivo
+                  <Sparkles className="w-4 h-4 text-amber-500" />
+                  Resumo da Lição
                 </span>
-                <span className="text-[10px] text-slate-400 font-normal">
-                  Passe o rato sobre os termos para definições da PGC Angola
+                <span className="text-[10px] font-normal opacity-70">
+                  Passe o cursor sobre os termos para ver as definições
                 </span>
               </div>
-              <p className="text-sm text-slate-200 leading-relaxed font-serif">
+              <p className={`font-serif ${
+                readingFontSize === 'xl' ? 'text-lg' : readingFontSize === 'lg' ? 'text-base' : 'text-sm'
+              } ${
+                readingLineSpacing === 'loose' ? 'leading-[2.4]' : readingLineSpacing === 'relaxed' ? 'leading-loose' : 'leading-relaxed'
+              }`}>
                 <HighlightAccountingTerms text={selectedLearning.summary} />
               </p>
             </div>
 
             {/* Key Takeaways */}
             {selectedLearning.keyTakeaways && selectedLearning.keyTakeaways.length > 0 && (
-              <div className="space-y-3">
-                <h3 className="text-xs font-black text-slate-400 uppercase tracking-wider">
+              <div className="space-y-4">
+                <h3 className="text-xs font-black uppercase tracking-wider opacity-75">
                   Pontos Chave de Estudo
                 </h3>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   {selectedLearning.keyTakeaways.map((take, idx) => (
-                    <div key={idx} className="p-3.5 bg-slate-800/50 border border-slate-700 rounded-xl text-xs text-slate-200 font-medium flex items-start gap-2.5">
-                      <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
-                      <span><HighlightAccountingTerms text={take} /></span>
+                    <div 
+                      key={idx} 
+                      className={`p-4 rounded-xl border text-xs font-medium flex items-start gap-2.5 ${
+                        readingTheme === 'dark'
+                          ? 'bg-slate-800/40 border-slate-700/60'
+                          : readingTheme === 'sepia'
+                          ? 'bg-[#f4ebd4] border-[#dcd0b2]'
+                          : 'bg-slate-50 border-slate-200'
+                      }`}
+                    >
+                      <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0 mt-0.5" />
+                      <span className={readingLineSpacing === 'loose' ? 'leading-loose' : 'leading-relaxed'}>
+                        <HighlightAccountingTerms text={take} />
+                      </span>
                     </div>
                   ))}
                 </div>
@@ -3048,54 +3377,80 @@ export const LearningWorkspace: React.FC<{
             )}
 
             {/* Main Sections Content */}
-            <div className="space-y-8 pt-4">
-              <h3 className="text-lg font-black text-white border-b border-slate-800 pb-3 flex items-center gap-2">
-                <BookOpen className="w-5 h-5 text-amber-400" />
-                <span>Conteúdo Didático Completo</span>
+            <div className="space-y-10 pt-4">
+              <h3 className="text-lg font-black border-b pb-3 flex items-center gap-2 opacity-90">
+                <BookOpen className="w-5 h-5 text-amber-500" />
+                <span>Conteúdo Didático da Lição</span>
               </h3>
 
               {selectedLearning.sections.map((sec, idx) => (
-                <div key={sec.id || idx} className="space-y-4 p-6 bg-slate-800/40 border border-slate-800 rounded-2xl">
-                  <h4 className="text-base font-extrabold text-amber-300 flex items-center gap-3">
-                    <span className="w-7 h-7 rounded-xl bg-amber-500/20 border border-amber-500/30 text-amber-400 text-xs flex items-center justify-center font-black">
+                <article 
+                  key={sec.id || idx} 
+                  className={`space-y-5 p-6 sm:p-8 rounded-2xl border ${
+                    readingTheme === 'dark'
+                      ? 'bg-slate-800/30 border-slate-800'
+                      : readingTheme === 'sepia'
+                      ? 'bg-[#f4ecd8] border-[#dfd4b8]'
+                      : 'bg-white border-slate-200 shadow-xs'
+                  }`}
+                >
+                  <h4 className="text-lg sm:text-xl font-extrabold flex items-center gap-3">
+                    <span className="w-8 h-8 rounded-xl bg-amber-500/20 border border-amber-500/30 text-amber-600 dark:text-amber-400 text-xs flex items-center justify-center font-black shrink-0">
                       {idx + 1}
                     </span>
-                    {sec.title}
+                    <span>{sec.title}</span>
                   </h4>
 
-                  <div className="text-sm text-slate-300 leading-relaxed whitespace-pre-line pl-2 sm:pl-10 font-serif">
+                  <div className={`font-serif whitespace-pre-line pl-0 sm:pl-11 ${
+                    readingFontSize === 'xl' ? 'text-xl' : readingFontSize === 'lg' ? 'text-lg' : 'text-base'
+                  } ${
+                    readingLineSpacing === 'loose' ? 'leading-[2.4]' : readingLineSpacing === 'relaxed' ? 'leading-loose' : 'leading-relaxed'
+                  }`}>
                     <HighlightAccountingTerms text={sec.explanation} />
                   </div>
 
                   {sec.practicalExample && (
-                    <div className="ml-0 sm:ml-10 p-5 bg-emerald-950/40 border border-emerald-800/60 rounded-2xl space-y-3 text-xs">
-                      <div className="font-extrabold text-emerald-300 flex items-center gap-2">
-                        <Check className="w-4 h-4 text-emerald-400" />
+                    <div className={`ml-0 sm:ml-11 p-5 rounded-2xl space-y-3 text-xs border ${
+                      readingTheme === 'dark'
+                        ? 'bg-emerald-950/30 border-emerald-800/50 text-emerald-200'
+                        : readingTheme === 'sepia'
+                        ? 'bg-[#e2edd8] border-[#c5d8b8] text-[#2d4924]'
+                        : 'bg-emerald-50 border-emerald-200 text-emerald-900'
+                    }`}>
+                      <div className="font-extrabold flex items-center gap-2 text-emerald-600 dark:text-emerald-400 text-sm">
+                        <Check className="w-4 h-4" />
                         <span>Exemplo Prático Aplicado:</span>
                       </div>
-                      <p className="text-emerald-100">
+                      <p className="font-medium">
                         <strong>Cenário:</strong> {sec.practicalExample.scenario}
                       </p>
-                      <div className="bg-slate-950/80 p-4 rounded-xl font-mono text-xs text-emerald-300 border border-emerald-900/50 whitespace-pre-line leading-relaxed">
+                      <div className={`p-4 rounded-xl font-mono text-xs border whitespace-pre-line ${
+                        readingTheme === 'dark'
+                          ? 'bg-slate-950/90 border-emerald-900/40 text-emerald-300'
+                          : 'bg-white/90 border-emerald-200 text-emerald-950 shadow-xs'
+                      } ${readingLineSpacing === 'loose' ? 'leading-loose' : 'leading-relaxed'}`}>
                         {sec.practicalExample.stepByStep}
                       </div>
-                      <p className="text-emerald-300 italic">
+                      <p className="italic font-medium">
                         💡 <strong>Conclusão:</strong> {sec.practicalExample.conclusion}
                       </p>
                     </div>
                   )}
-                </div>
+                </article>
               ))}
             </div>
 
             {/* Reader Footer Exit */}
-            <div className="pt-8 border-t border-slate-800 flex items-center justify-between text-xs text-slate-400">
-              <span>Leitura de Estudo Completa • Modo Foco</span>
+            <div className={`pt-8 border-t flex flex-wrap items-center justify-between gap-4 text-xs opacity-75 ${
+              readingTheme === 'dark' ? 'border-slate-800' : readingTheme === 'sepia' ? 'border-[#e6dbc0]' : 'border-slate-200'
+            }`}>
+              <span>Leitura de Estudo Completa • Modo Focado Sem Distrações</span>
               <button
+                type="button"
                 onClick={() => setIsReadingMode(false)}
-                className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-white font-bold rounded-xl transition-all cursor-pointer flex items-center gap-1.5"
+                className="px-4 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold rounded-xl transition-all cursor-pointer flex items-center gap-1.5 shadow-md"
               >
-                <Minimize2 className="w-4 h-4 text-amber-400" />
+                <Minimize2 className="w-4 h-4" />
                 <span>Concluir Leitura</span>
               </button>
             </div>
@@ -3166,6 +3521,24 @@ export const LearningWorkspace: React.FC<{
           </div>
         </div>
       )}
+
+      {/* FOCUSED STUDY MODE (POMODORO + ZEN READER) */}
+      <AnimatePresence>
+        {isFocusedStudyOpen && (
+          <FocusedStudyMode
+            module={selectedLearning || library[0] || null}
+            allModules={library}
+            onSelectModule={(mod) => setSelectedLearning(mod)}
+            onExit={(stats) => {
+              setIsFocusedStudyOpen(false);
+              showToastNotice(
+                `Sessão de foco concluída! ${stats.focusedMinutes} min focado, ${stats.completedCycles} ciclo(s) Pomodoro.`
+              );
+            }}
+            currentLanguage={currentLanguage}
+          />
+        )}
+      </AnimatePresence>
 
     </div>
   );

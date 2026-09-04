@@ -1,7 +1,8 @@
 import React, { useRef, useEffect, useState } from 'react';
-import { User, Copy, Check, Volume2, VolumeX, ThumbsUp, ThumbsDown, Sparkles, Edit3, Trash2, X, Send } from 'lucide-react';
+import { User, Copy, Check, Volume2, VolumeX, ThumbsUp, ThumbsDown, Sparkles, Edit3, Trash2, X, Send, FileText, FileSpreadsheet, Presentation, Download, Loader2 } from 'lucide-react';
 import { MarkdownRenderer } from './MarkdownRenderer';
 import { YohanLogo } from './YohanLogo';
+import { exportChatMessageToWord, generateExcelDoc, generatePptxDoc, parseDocumentData } from '../services/documentGenerator';
 
 export interface ChatMessage {
   id: string;
@@ -49,6 +50,30 @@ export const VirtualizedChatMessagesList: React.FC<VirtualizedChatMessagesListPr
 
   // Inline delete confirmation state
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+
+  // Document download state
+  const [exportingDocId, setExportingDocId] = useState<string | null>(null);
+
+  const handleDownloadDocument = async (msg: ChatMessage, type: 'word' | 'excel' | 'pptx') => {
+    setExportingDocId(`${msg.id}-${type}`);
+    try {
+      if (type === 'word') {
+        // TAREFA 2 & 3: Usa o conversor de markdown livre preservando 100% dos títulos, listas, negritos e tabelas
+        const firstLineTitle = msg.content.split('\n').find(l => l.trim().startsWith('#'))?.replace(/^[#\s*]+/, '') || 'explicacao_yohan_ai';
+        await exportChatMessageToWord(msg.content, firstLineTitle.slice(0, 40));
+      } else if (type === 'excel') {
+        const parsedData = parseDocumentData(msg.content, type);
+        await generateExcelDoc(parsedData, 'planilha_contabilistica_pgc');
+      } else if (type === 'pptx') {
+        const parsedData = parseDocumentData(msg.content, type);
+        await generatePptxDoc(parsedData, 'apresentacao_pgc_angola');
+      }
+    } catch (e) {
+      console.error('Document generation error:', e);
+    } finally {
+      setExportingDocId(null);
+    }
+  };
 
   useEffect(() => {
     if (bottomRef.current) {
@@ -100,35 +125,38 @@ export const VirtualizedChatMessagesList: React.FC<VirtualizedChatMessagesListPr
     <div 
       ref={containerRef}
       id="yohan-chat-messages-container"
-      className="ai-messages-list flex-1 overflow-y-auto p-4 sm:p-6 space-y-6 scrollbar-thin scrollbar-thumb-slate-700/50 scrollbar-track-transparent"
+      className="ai-messages-list flex-1 min-h-0 overflow-y-auto p-3 sm:p-4 md:p-6 scrollbar-thin scrollbar-thumb-slate-700/50 scrollbar-track-transparent"
+      style={{ minHeight: 0 }}
     >
-      {messages.map((msg) => {
-        const isAssistant = msg.role === 'assistant';
-        const isEditing = editingMessageId === msg.id;
-        const isConfirmingDelete = confirmDeleteId === msg.id;
+      <div className="w-full max-w-[860px] mx-auto space-y-5 sm:space-y-6">
+        {messages.map((msg) => {
+          const isAssistant = msg.role === 'assistant';
+          const isEditing = editingMessageId === msg.id;
+          const isConfirmingDelete = confirmDeleteId === msg.id;
 
-        return (
-          <div
-            key={msg.id}
-            id={`chat-msg-${msg.id}`}
-            className={`flex items-start gap-2.5 sm:gap-3.5 ${
-              isAssistant ? 'justify-start' : 'justify-end'
-            } group transition-all duration-300 relative`}
-          >
-            {/* AVATAR DO YOHAN AI: Símbolo Oficial 'Y' 3D */}
-            {isAssistant && (
-              <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-slate-900/90 border border-indigo-500/40 p-1 flex items-center justify-center shrink-0 shadow-md shadow-indigo-500/10 mt-0.5">
-                <YohanLogo size={22} showGlow={true} />
-              </div>
-            )}
-
+          return (
             <div
-              className={`max-w-[92%] sm:max-w-[82%] rounded-2xl p-4 sm:p-5 shadow-sm text-sm sm:text-base leading-relaxed relative ${
-                isAssistant
-                  ? 'bg-slate-900/95 border border-slate-800 text-slate-200'
-                  : 'bg-indigo-600 text-white rounded-br-none shadow-indigo-500/10'
-              }`}
+              key={msg.id}
+              id={`chat-msg-${msg.id}`}
+              className={`flex items-start gap-2.5 sm:gap-3.5 ${
+                isAssistant ? 'justify-start' : 'justify-end'
+              } group transition-all duration-300 relative`}
             >
+              {/* AVATAR DO YOHAN AI: Símbolo Oficial 'Y' 3D */}
+              {isAssistant && (
+                <div className="w-7 h-7 sm:w-8 sm:h-8 md:w-9 md:h-9 rounded-xl bg-slate-900/90 border border-indigo-500/40 p-1 flex items-center justify-center shrink-0 shadow-md shadow-indigo-500/10 mt-0.5">
+                  <YohanLogo size={20} showGlow={true} />
+                </div>
+              )}
+
+              <div
+                className={`max-w-[88%] sm:max-w-[78%] rounded-2xl p-3 sm:p-4 md:p-5 shadow-sm text-xs sm:text-sm leading-relaxed relative ${
+                  isAssistant
+                    ? 'bg-slate-900/95 border border-slate-800 text-slate-200'
+                    : 'bg-indigo-600 text-white rounded-br-none shadow-indigo-500/10'
+                }`}
+                style={{ wordBreak: 'break-word', overflowWrap: 'anywhere' }}
+              >
               {isAssistant ? (
                 /* ASSISTANT MESSAGE */
                 <div className="space-y-3">
@@ -138,10 +166,65 @@ export const VirtualizedChatMessagesList: React.FC<VirtualizedChatMessagesListPr
 
                   {/* Actions footer on assistant messages */}
                   <div className="flex flex-wrap items-center justify-between gap-2 pt-2.5 border-t border-slate-800/80 text-xs text-slate-400">
-                    <div className="flex items-center gap-1.5">
+                    <div className="flex items-center gap-2 flex-wrap">
                       <span className="text-[11px] text-slate-500 font-mono">
                         {msg.timestamp}
                       </span>
+
+                      {/* SMART DOCUMENT DOWNLOAD BUTTONS */}
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        {/* Word .docx */}
+                        <button
+                          type="button"
+                          onClick={() => handleDownloadDocument(msg, 'word')}
+                          disabled={!!exportingDocId}
+                          className="px-2 py-1 rounded-lg bg-blue-950/60 hover:bg-blue-900/80 text-blue-300 border border-blue-500/30 text-[10px] font-bold flex items-center gap-1 transition-all cursor-pointer shadow-xs active:scale-95"
+                          title="Baixar ficheiro formatado no Microsoft Word (.docx)"
+                        >
+                          {exportingDocId === `${msg.id}-word` ? (
+                            <Loader2 className="w-3 h-3 animate-spin" />
+                          ) : (
+                            <FileText className="w-3 h-3 text-blue-400" />
+                          )}
+                          <span>Word (.docx)</span>
+                        </button>
+
+                        {/* Excel .xlsx */}
+                        {(msg.content.includes('|') || msg.content.toLowerCase().includes('tabela') || msg.content.toLowerCase().includes('balancete') || msg.content.toLowerCase().includes('contas')) && (
+                          <button
+                            type="button"
+                            onClick={() => handleDownloadDocument(msg, 'excel')}
+                            disabled={!!exportingDocId}
+                            className="px-2 py-1 rounded-lg bg-emerald-950/60 hover:bg-emerald-900/80 text-emerald-300 border border-emerald-500/30 text-[10px] font-bold flex items-center gap-1 transition-all cursor-pointer shadow-xs active:scale-95"
+                            title="Baixar planilha no Microsoft Excel (.xlsx)"
+                          >
+                            {exportingDocId === `${msg.id}-excel` ? (
+                              <Loader2 className="w-3 h-3 animate-spin" />
+                            ) : (
+                              <FileSpreadsheet className="w-3 h-3 text-emerald-400" />
+                            )}
+                            <span>Excel (.xlsx)</span>
+                          </button>
+                        )}
+
+                        {/* PowerPoint .pptx */}
+                        {(msg.content.toLowerCase().includes('slide') || msg.content.toLowerCase().includes('apresentação') || msg.content.includes('#')) && (
+                          <button
+                            type="button"
+                            onClick={() => handleDownloadDocument(msg, 'pptx')}
+                            disabled={!!exportingDocId}
+                            className="px-2 py-1 rounded-lg bg-orange-950/60 hover:bg-orange-900/80 text-orange-300 border border-orange-500/30 text-[10px] font-bold flex items-center gap-1 transition-all cursor-pointer shadow-xs active:scale-95"
+                            title="Baixar apresentação no PowerPoint (.pptx)"
+                          >
+                            {exportingDocId === `${msg.id}-pptx` ? (
+                              <Loader2 className="w-3 h-3 animate-spin" />
+                            ) : (
+                              <Presentation className="w-3 h-3 text-orange-400" />
+                            )}
+                            <span>Slides (.pptx)</span>
+                          </button>
+                        )}
+                      </div>
                     </div>
 
                     {/* MENU DE AÇÕES: ÁUDIO, COPIAR, APAGAR, FEEDBACK (18px, rgba(255,255,255,0.4), horizontal) */}
@@ -391,26 +474,27 @@ export const VirtualizedChatMessagesList: React.FC<VirtualizedChatMessagesListPr
         );
       })}
 
-      {/* Generating / Thinking indicator with Official Yohan AI Logo */}
-      {isGenerating && (
-        <div className="flex items-start gap-2.5 sm:gap-3.5 justify-start">
-          <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-slate-900 border border-indigo-500/40 p-1 flex items-center justify-center shrink-0 shadow-lg shadow-indigo-500/10 animate-pulse">
-            <YohanLogo size={22} showGlow={true} />
-          </div>
-          <div className="bg-slate-900/90 border border-indigo-500/30 rounded-2xl p-4 shadow-lg shadow-indigo-500/5 text-slate-300 flex items-center gap-3">
-            <div className="flex space-x-1.5">
-              <div className="w-2 h-2 rounded-full bg-indigo-400 animate-bounce" style={{ animationDelay: '0ms' }} />
-              <div className="w-2 h-2 rounded-full bg-cyan-400 animate-bounce" style={{ animationDelay: '150ms' }} />
-              <div className="w-2 h-2 rounded-full bg-blue-400 animate-bounce" style={{ animationDelay: '300ms' }} />
+        {/* Generating / Thinking indicator with Official Yohan AI Logo */}
+        {isGenerating && (
+          <div className="flex items-start gap-2.5 sm:gap-3.5 justify-start">
+            <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-slate-900 border border-indigo-500/40 p-1 flex items-center justify-center shrink-0 shadow-lg shadow-indigo-500/10 animate-pulse">
+              <YohanLogo size={22} showGlow={true} />
             </div>
-            <span className="text-xs text-indigo-300 font-medium">
-              Yohan AI a analisar o PGC Angola e a redigir a resposta...
-            </span>
+            <div className="bg-slate-900/90 border border-indigo-500/30 rounded-2xl p-4 shadow-lg shadow-indigo-500/5 text-slate-300 flex items-center gap-3">
+              <div className="flex space-x-1.5">
+                <div className="w-2 h-2 rounded-full bg-indigo-400 animate-bounce" style={{ animationDelay: '0ms' }} />
+                <div className="w-2 h-2 rounded-full bg-cyan-400 animate-bounce" style={{ animationDelay: '150ms' }} />
+                <div className="w-2 h-2 rounded-full bg-blue-400 animate-bounce" style={{ animationDelay: '300ms' }} />
+              </div>
+              <span className="text-xs text-indigo-300 font-medium">
+                Yohan AI a analisar o PGC Angola e a redigir a resposta...
+              </span>
+            </div>
           </div>
-        </div>
-      )}
+        )}
 
-      <div ref={bottomRef} />
+        <div ref={bottomRef} />
+      </div>
     </div>
   );
 };

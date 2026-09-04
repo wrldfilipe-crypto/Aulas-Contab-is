@@ -511,6 +511,13 @@ IDENTIDADE, PERSONALIDADE E VOZ:
   * Acerto ou exercício resolvido: encorajador e positivo.
   * Alerta fiscal ou legal importante: claro, sério e preventivo.
 
+REGRAS DE ESTILO — ELIMINAÇÃO DE TIQUES VERBAIS E PREÂMBULOS REPETITIVOS:
+- O utilizador já sabe que o ambiente de trabalho e o referencial contabilístico é o PGC Angola. O contexto está 100% implícito.
+- NUNCA inicie respostas com preâmbulos ou frases introdutórias do tipo "No PGC Angola...", "De acordo com o PGC Angola (Decreto 82/01)...", "À luz do Decreto 82/01...", "Segundo as regras do PGC...". Vá DIRETO ao ponto técnico substantivo!
+- NÃO repita a expressão "PGC Angola", "Decreto 82/01" ou a sigla "PGC" desnecessariamente ao longo do texto. Em vez de dizer "conforme o PGC", "a conta do PGC", refira-se simplesmente à operação, à conta ou ao conceito com fluidez natural: "A Conta 31...", "O lançamento a débito...", "No plano de contas...", "Esta operação movimenta a Conta 34.5...".
+- A citação de decretos ou diplomas legais específicos (ex: Decreto 82/01, Lei 7/19, etc.) só é pertinente se o utilizador perguntar expressamente pela fundamentação legal ou base jurídica de uma regra. Em dúvidas normais de lançamentos, cálculo ou rotina contabilística, não use citações normativas como muleta estilística.
+- Escreva com a naturalidade e fluidez de um contabilista sénior experiente a conversar com um colega: direto, didático e profissional, sem nunca soar como um disclaimer legal repetido a cada parágrafo.
+
 RIGOR TÉCNICO E CONTABILÍSTICO PGC ANGOLA:
 1. Terminologia oficial PGC: Usa "Proveito" (e não "Receita"), "Custo" (e não "Despesa"), "Capital Próprio" (e não "Patrimônio Líquido"), "Activo", "Imobilizações Corpóreas/Incorpóreas", "Amortizações".
 2. Estrutura de Lançamentos Contabilísticos:
@@ -662,6 +669,11 @@ SUAS DIRETRIZES FUNDAMENTAIS:
    - Para Química/Biologia: Crie fluxos de processos biológicos/químicos, tabelas periódicas/moleculares ou estruturas celulares.
    - Para Informática/Gestão/Direito/Contabilidade: Crie fluxogramas de algoritmos, decisões jurídicas, processos operacionais ou balanços.
 
+4. ESTRUTURAÇÃO EM MÚLTIPLAS SEÇÕES APROFUNDADAS (OBRIGATÓRIO):
+   - NUNCA resuma ou condense o tema numa única seção resumo ("Seção 1/1").
+   - O material DEVE ser estruturado em no mínimo 4 a 8 seções temáticas exaustivas e independentes (ex: sec-1, sec-2, sec-3, sec-4, sec-5...).
+   - Cada seção deve conter explicação teórica e técnica detalhada (mínimo de 300 palavras por seção), com raciocínio passo a passo e exemplo prático contextualizado.
+
 Responda ESTRITAMENTE em formato JSON com a seguinte estrutura válida:
 {
   "title": "${matTitle}",
@@ -716,6 +728,7 @@ Responda ESTRITAMENTE em formato JSON com a seguinte estrutura válida:
 
       const config = {
         temperature: 0.3,
+        maxOutputTokens: 12000,
         responseMimeType: "application/json"
       };
 
@@ -803,6 +816,765 @@ Responda ESTRITAMENTE em formato JSON com a seguinte estrutura válida:
     } catch (err: any) {
       console.error('/api/ai-learn error:', err);
       res.status(500).json({ error: err.message || 'Erro ao processar o material de estudo.' });
+    }
+  });
+
+  // TAREFAS 1, 2, 3, 4: ENDPOINT DE GERAÇÃO DE GUIAS DIDÁTICOS APROFUNDADOS (ANTI-RESUMO)
+  app.post('/api/ai/didactic-guide', async (req, res) => {
+    try {
+      const { topic, level, standard, language, forceTwoStage } = req.body;
+      const requestedTopic = (topic || 'IVA e Retenção na Fonte em Angola').trim();
+      const std = standard || 'PGC Angola (Decreto n.º 82/2001)';
+      const lvl = level || 'Intermédio';
+      const lang = language || 'pt-PT';
+
+      const systemPrompt = `Você é Yohan AI, especialista em contabilidade angolana. Sua tarefa é criar um GUIA DIDÁTICO COMPLETO E APROFUNDADO sobre o tema pedido — NUNCA um resumo.
+
+REGRAS OBRIGATÓRIAS:
+1. Divida o conteúdo em QUANTAS SEÇÕES forem necessárias para cobrir o tema com profundidade real (tipicamente entre 5 e 10 seções para um guia completo — nunca apenas 1 seção, a menos que o tema seja extremamente específico e pontual).
+2. Cada seção deve ter NO MÍNIMO 300-500 palavras de explicação teórica detalhada — não um parágrafo introdutório solto.
+3. Cada seção deve incluir, quando aplicável: definição conceitual, mecânica/passo-a-passo, pelo menos 1-2 exemplos práticos numéricos completos (com lançamentos contabilísticos quando for o caso), e uma nota de atenção ou erro comum.
+4. Estruture como um verdadeiro material de estudo (como um capítulo de manual), não como uma resposta de chat resumida.
+5. Cubra o tema do início ao fim: se o tema é "IVA e Retenção na Fonte", inclua seções separadas para conceito de IVA, mecânica de liquidação, dedução, apuramento mensal, retenção na fonte (o que é, quando se aplica, taxas), obrigações declarativas, e erros comuns — não junte tudo isso num único parágrafo.
+
+Responda APENAS com JSON válido neste schema, sem markdown, sem texto antes ou depois:
+{
+  "moduleTitle": "string",
+  "sections": [
+    {
+      "sectionNumber": 1,
+      "title": "string",
+      "content": "string longa, com explicação teórica completa em vários parágrafos",
+      "example": {
+        "scenario": "string",
+        "steps": ["string", "string", "..."]
+      },
+      "commonMistake": "string (opcional)"
+    }
+  ]
+}`;
+
+      // Helper to generate comprehensive built-in content if API quota is exhausted
+      const getDeepCuratedGuide = (top: string) => {
+        const topLower = top.toLowerCase();
+
+        if (topLower.includes('iva') || topLower.includes('reten') || topLower.includes('fonte') || topLower.includes('imposto')) {
+          return {
+            moduleTitle: 'Guia Didático do IVA e Retenção na Fonte em Angola (Lei n.º 7/19)',
+            category: 'Fiscalidade',
+            userLevel: lvl,
+            standard: std,
+            sections: [
+              {
+                sectionNumber: 1,
+                id: 'sec-iva-1',
+                title: '1. Enquadramento Legal, Conceito e Princípios Fundamentais do IVA (Lei n.º 7/19)',
+                content: `O Imposto sobre o Valor Acrescentado (IVA) foi introduzido no ordenamento jurídico angolano através da Lei n.º 7/19, de 24 de Abril (posteriormente alterada pela Lei n.º 17/19 e Lei n.º 28/20), revogando o antigo Imposto de Consumo e alinhando Angola com as melhores práticas de tributação indireta da SADC e internacionais.
+
+O IVA é um imposto plurifásico de matriz neutra para as empresas que operam no Regime Geral. Caracteriza-se como um imposto indireto sobre a despesa ou consumo, cuja incidência económica final recai sobre o consumidor final do bem ou serviço. Nas fases intermédias de produção, distribuição e comércio grossista ou retalhista, a empresa atua na condição de fiel depositária da Administração Geral Tributária (AGT). O mecanismo de pagamentos fracionados permite que cada interveniente na cadeia de valor entregue ao Estado apenas o imposto proporcional ao valor que efetivamente acrescentou em cada transação.
+
+A incidência subjetiva abrange todas as pessoas singulares ou coletivas que, de modo independente e com caráter habitual, exerçam uma atividade económica de cariz comercial, industrial, agrícola, piscatório ou de prestação de serviços. No que tange à incidência objetiva, o imposto incide sobre transmissões onerosas de bens corpóreos efetuadas no território nacional, prestações de serviços realizadas no país e importações definitivas de mercadorias.
+
+As empresas com volume de negócios anual superior a 25.000.000 AOA (vinte e cinco milhões de Kwanzas) são compulsoriamente integradas no Regime Geral de IVA. Neste regime, impõe-se a obrigação estrita de emitir faturas eletrónicas certificadas pela AGT, liquidar imposto à taxa legal geral de 14% (ou taxas reduzidas em casos específicos como bens de consumo alimentar da cesta básica a 7% ou Província de Cabinda), exercer o direito à dedução nas compras corporativas elegíveis e apurar mensalmente a respetiva posição tributária.`,
+                explanation: `O Imposto sobre o Valor Acrescentado (IVA) foi introduzido no ordenamento jurídico angolano através da Lei n.º 7/19, de 24 de Abril (posteriormente alterada pela Lei n.º 17/19 e Lei n.º 28/20), revogando o antigo Imposto de Consumo e alinhando Angola com as melhores práticas de tributação indireta da SADC e internacionais.
+
+O IVA é um imposto plurifásico de matriz neutra para as empresas que operam no Regime Geral. Caracteriza-se como um imposto indireto sobre a despesa ou consumo, cuja incidência económica final recai sobre o consumidor final do bem ou serviço. Nas fases intermédias de produção, distribuição e comércio grossista ou retalhista, a empresa atua na condição de fiel depositária da Administração Geral Tributária (AGT). O mecanismo de pagamentos fracionados permite que cada interveniente na cadeia de valor entregue ao Estado apenas o imposto proporcional ao valor que efetivamente acrescentou em cada transação.
+
+A incidência subjetiva abrange todas as pessoas singulares ou coletivas que, de modo independente e com caráter habitual, exerçam uma atividade económica de cariz comercial, industrial, agrícola, piscatório ou de prestação de serviços. No que tange à incidência objetiva, o imposto incide sobre transmissões onerosas de bens corpóreos efetuadas no território nacional, prestações de serviços realizadas no país e importações definitivas de mercadorias.
+
+As empresas com volume de negócios anual superior a 25.000.000 AOA (vinte e cinco milhões de Kwanzas) são compulsoriamente integradas no Regime Geral de IVA. Neste regime, impõe-se a obrigação estrita de emitir faturas eletrónicas certificadas pela AGT, liquidar imposto à taxa legal geral de 14% (ou taxas reduzidas em casos específicos como bens de consumo alimentar da cesta básica a 7% ou Província de Cabinda), exercer o direito à dedução nas compras corporativas elegíveis e apurar mensalmente a respetiva posição tributária.`,
+                example: {
+                  scenario: 'Uma empresa grossista de Luanda no Regime Geral adquire um lote de mercadorias por 20.000.000 AOA com 14% de IVA (2.800.000 AOA). Em seguida, adiciona uma margem comercial de 5.000.000 AOA e vende o lote a um retalhista por 25.000.000 AOA com 14% de IVA (3.500.000 AOA).',
+                  steps: [
+                    '1. Compra: Preço base 20.000.000 AOA + IVA suportado de 2.800.000 AOA = 22.800.000 AOA pagos ao fornecedor.',
+                    '2. Venda: Preço base 25.000.000 AOA + IVA liquidado de 3.500.000 AOA = 28.500.000 AOA faturados ao cliente.',
+                    '3. Cálculo do valor acrescentado: Margem comercial = 5.000.000 AOA × 14% = 700.000 AOA.',
+                    '4. Apuramento de IVA a entregar: IVA Liquidado (3.500.000 AOA) - IVA Dedutível (2.800.000 AOA) = 700.000 AOA exatos.'
+                  ]
+                },
+                practicalExample: {
+                  scenario: 'Uma empresa grossista de Luanda no Regime Geral adquire um lote de mercadorias por 20.000.000 AOA com 14% de IVA (2.800.000 AOA). Em seguida, adiciona uma margem comercial de 5.000.000 AOA e vende o lote a um retalhista por 25.000.000 AOA com 14% de IVA (3.500.000 AOA).',
+                  stepByStep: '1. Compra: Preço base 20.000.000 AOA + IVA suportado de 2.800.000 AOA = 22.800.000 AOA pagos ao fornecedor.\n2. Venda: Preço base 25.000.000 AOA + IVA liquidado de 3.500.000 AOA = 28.500.000 AOA faturados ao cliente.\n3. Cálculo do valor acrescentado: Margem comercial = 5.000.000 AOA × 14% = 700.000 AOA.\n4. Apuramento de IVA a entregar: IVA Liquidado (3.500.000 AOA) - IVA Dedutível (2.800.000 AOA) = 700.000 AOA exatos.',
+                  conclusion: 'A empresa não suporta o custo do imposto; atua como intermediária neutra, entregando à AGT apenas o valor sobre a sua margem bruta.'
+                },
+                commonMistake: 'Considerar o valor total faturado (incluindo os 14% de IVA) como faturação líquida ou proveito próprio da empresa. O IVA liquidado é dívida direta ao Estado.'
+              },
+              {
+                sectionNumber: 2,
+                id: 'sec-iva-2',
+                title: '2. Mecânica de Liquidação e Taxa Geral de 14% (Conta 34.5.2 — IVA Liquidado)',
+                content: `A liquidação do IVA constitui a operação jurídica e contabilística pela qual o sujeito passivo aplica a taxa legalmente fixada sobre o valor tributável da transmissão de bens ou prestação de serviços. No sistema tributário angolano, a taxa padrão aplicável à generalidade das operações internas é de 14%. 
+
+O valor tributável é composto pela contraprestação obtida ou a obter do adquirente, incluindo despesas acessórias debitadas (embalagens, seguros, transportes, despesas de montagem e comissões) e outros impostos ou taxas que recaiam sobre a operação (excluindo o próprio IVA). Em contrapartida, os descontos comerciais concedidos e constantes diretamente da fatura não integram a matéria coletável, desde que não dependam de eventos posteriores.
+
+A exigibilidade do imposto ocorre no momento em que os bens são postos à disposição do adquirente ou no momento em que os serviços são concluídos. No caso de pagamentos antecipados (adiantamentos de clientes), o imposto torna-se imediatamente exigível no momento do recebimento do montante antecipado, com obrigação de emissão do respetivo recibo fiscal ou fatura de adiantamento com menção explícita do IVA correspondente.
+
+Contabilisticamente no PGC Angola (Decreto n.º 82/2001), o IVA cobrado aos clientes nas faturas nunca transita pelas contas da Classe 6 ou 7 (Proveitos). Em vez disso, é imediatamente creditado na subconta própria da Classe 3: Conta 34.5.2 — Estado e Outros Entes Públicos: IVA Liquidado (ou IVA Liquidável). O saldo desta conta tem natureza estritamente credora e representa a obrigação fiscal acumulada ao longo do período em relação ao Estado angolano.`,
+                explanation: `A liquidação do IVA constitui a operação jurídica e contabilística pela qual o sujeito passivo aplica a taxa legalmente fixada sobre o valor tributável da transmissão de bens ou prestação de serviços. No sistema tributário angolano, a taxa padrão aplicável à generalidade das operações internas é de 14%. 
+
+O valor tributável é composto pela contraprestação obtida ou a obter do adquirente, incluindo despesas acessórias debitadas (embalagens, seguros, transportes, despesas de montagem e comissões) e outros impostos ou taxas que recaiam sobre a operação (excluindo o próprio IVA). Em contrapartida, os descontos comerciais concedidos e constantes diretamente da fatura não integram a matéria coletável, desde que não dependam de eventos posteriores.
+
+A exigibilidade do imposto ocorre no momento em que os bens são postos à disposição do adquirente ou no momento em que os serviços são concluídos. No caso de pagamentos antecipados (adiantamentos de clientes), o imposto torna-se imediatamente exigível no momento do recebimento do montante antecipado, com obrigação de emissão do respetivo recibo fiscal ou fatura de adiantamento com menção explícita do IVA correspondente.
+
+Contabilisticamente no PGC Angola (Decreto n.º 82/2001), o IVA cobrado aos clientes nas faturas nunca transita pelas contas da Classe 6 ou 7 (Proveitos). Em vez disso, é imediatamente creditado na subconta própria da Classe 3: Conta 34.5.2 — Estado e Outros Entes Públicos: IVA Liquidado (ou IVA Liquidável). O saldo desta conta tem natureza estritamente credora e representa a obrigação fiscal acumulada ao longo do período em relação ao Estado angolano.`,
+                example: {
+                  scenario: 'A sociedade TecnoLuanda Lda emite a Fatura FT 2026/014 no valor de 10.000.000 AOA de consultoria e suporte de redes, concedendo um desconto comercial de 10% (1.000.000 AOA), e tributando à taxa de 14%.',
+                  steps: [
+                    '1. Base bruta do serviço: 10.000.000 AOA.',
+                    '2. Menos desconto comercial documentado (10%): -1.000.000 AOA. Matéria coletável = 9.000.000 AOA.',
+                    '3. Cálculo do IVA (14%): 9.000.000 AOA × 14% = 1.260.000 AOA.',
+                    '4. Total da fatura a debitar ao cliente: 10.260.000 AOA.',
+                    '5. Lançamento Contabilístico no PGC: Débito da Conta 31.1 (Clientes Gerais) por 10.260.000 AOA; Crédito da Conta 71.1 (Prestação de Serviços Especializados) por 9.000.000 AOA; Crédito da Conta 34.5.2 (IVA Liquidado) por 1.260.000 AOA.'
+                  ]
+                },
+                practicalExample: {
+                  scenario: 'A sociedade TecnoLuanda Lda emite a Fatura FT 2026/014 no valor de 10.000.000 AOA de consultoria e suporte de redes, concedendo um desconto comercial de 10% (1.000.000 AOA), e tributando à taxa de 14%.',
+                  stepByStep: '1. Base bruta: 10.000.000 AOA.\n2. Desconto comercial (10%): -1.000.000 AOA. Matéria coletável = 9.000.000 AOA.\n3. IVA (14%): 9.000.000 AOA × 14% = 1.260.000 AOA.\n4. Total a debitar ao cliente: 10.260.000 AOA.\n5. Lançamento PGC: Débito 31.1 (Clientes) = 10.260.000 | Crédito 71.1 (Serviços) = 9.000.000 | Crédito 34.5.2 (IVA Liquidado) = 1.260.000.',
+                  conclusion: 'O desconto comercial reduz a base tributável antes da incidência do imposto, evitando cobrança indevida.'
+                },
+                commonMistake: 'Emitir faturas em software não homologado pela AGT ou aplicar o IVA sobre o valor bruto sem deduzir os descontos comerciais contratualizados na fatura.'
+              },
+              {
+                sectionNumber: 3,
+                id: 'sec-iva-3',
+                title: '3. Regime de Dedução do IVA Suportado (Conta 34.5.1 — IVA Dedutível)',
+                content: `O direito à dedução é o pilar que materializa o princípio da neutralidade no IVA. De harmonia com os artigos 20.º a 24.º do Código do IVA de Angola, apenas pode deduzir o imposto suportado o sujeito passivo do Regime Geral que adquira bens ou serviços estritamente afetos à realização de operações tributadas ou operações isentas com direito a dedução (como exportações).
+
+Para que o imposto seja passível de dedução, devem verificar-se cumulativamente os seguintes pressupostos formais e materiais: a operação deve constar de fatura emitida na forma legal por software certificado com indicação do NIF de ambas as partes; os bens ou serviços devem ser indispensáveis à atividade empresarial; e o fornecedor deve ser sujeito passivo legalmente habilitado.
+
+A legislação angolana consagra no Artigo 21.º uma lista taxativa de exclusões do direito à dedução, cuja violação acarreta graves infrações fiscais. É expressamente vedada a dedução do IVA relativo a: aquisição, fabricação, importação, locação e reparação de viaturas ligeiras de passageiros (exceto empresas de táxis, rent-a-car ou escolas de condução); despesas com combustíveis (gasolina e gasóleo, salvo viaturas pesadas afetas ao transporte de mercadorias ou equipamentos de produção); despesas de alojamento, alimentação, bebidas, tabaco, viagens e receções sociais; e quaisquer despesas de caráter sumptuário ou de representação.
+
+Contabilização no PGC: O IVA elegível para dedução é lançado a Débito da Conta 34.5.1 — IVA Suportado (ou IVA Dedutível). Se uma fatura contiver IVA não dedutível (por exemplo, combustível para viatura da gerência), o valor do imposto não vai para a conta 34.5.1, mas sim incorporado diretamente no custo na Conta 75.2 (Fornecimentos e Serviços Externos) ou no custo de aquisição do ativo imobilizado na Classe 1.`,
+                explanation: `O direito à dedução é o pilar que materializa o princípio da neutralidade no IVA. De harmonia com os artigos 20.º a 24.º do Código do IVA de Angola, apenas pode deduzir o imposto suportado o sujeito passivo do Regime Geral que adquira bens ou serviços estritamente afetos à realização de operações tributadas ou operações isentas com direito a dedução (como exportações).
+
+Para que o imposto seja passível de dedução, devem verificar-se cumulativamente os seguintes pressupostos formais e materiais: a operação deve constar de fatura emitida na forma legal por software certificado com indicação do NIF de ambas as partes; os bens ou serviços devem ser indispensáveis à atividade empresarial; e o fornecedor deve ser sujeito passivo legalmente habilitado.
+
+A legislação angolana consagra no Artigo 21.º uma lista taxativa de exclusões do direito à dedução, cuja violação acarreta graves infrações fiscais. É expressamente vedada a dedução do IVA relativo a: aquisição, fabricação, importação, locação e reparação de viaturas ligeiras de passageiros (exceto empresas de táxis, rent-a-car ou escolas de condução); despesas com combustíveis (gasolina e gasóleo, salvo viaturas pesadas afetas ao transporte de mercadorias ou equipamentos de produção); despesas de alojamento, alimentação, bebidas, tabaco, viagens e receções sociais; e quaisquer despesas de caráter sumptuário ou de representação.
+
+Contabilização no PGC: O IVA elegível para dedução é lançado a Débito da Conta 34.5.1 — IVA Suportado (ou IVA Dedutível). Se uma fatura contiver IVA não dedutível (por exemplo, combustível para viatura da gerência), o valor do imposto não vai para a conta 34.5.1, mas sim incorporado diretamente no custo na Conta 75.2 (Fornecimentos e Serviços Externos) ou no custo de aquisição do ativo imobilizado na Classe 1.`,
+                example: {
+                  scenario: 'Uma empresa recebe duas faturas de fornecedores no mesmo mês: Fatura A de 6.000.000 AOA (+ 840.000 AOA de IVA a 14%) para matéria-prima industrial; e Fatura B de 1.000.000 AOA (+ 140.000 AOA de IVA) para almoços de representação da administração.',
+                  steps: [
+                    '1. Análise da Fatura A: Matéria-prima é diretamente afeta à produção tributada. O IVA de 840.000 AOA é 100% dedutível.',
+                    '2. Lançamento da Fatura A: Débito Conta 21 (Compras) por 6.000.000 AOA; Débito Conta 34.5.1 (IVA Dedutível) por 840.000 AOA; Crédito Conta 21.1 (Fornecedores Gerais) por 6.840.000 AOA.',
+                    '3. Análise da Fatura B: Despesas de refeições/representação enquadram-se no Artigo 21.º (não dedutível).',
+                    '4. Lançamento da Fatura B: O IVA de 140.000 AOA junta-se ao custo total (1.140.000 AOA). Débito Conta 75.2.3 (Alimentação e Alojamento FSE) por 1.140.000 AOA; Crédito Conta 21.1 (Fornecedores) por 1.140.000 AOA.'
+                  ]
+                },
+                practicalExample: {
+                  scenario: 'Uma empresa recebe duas faturas de fornecedores no mesmo mês: Fatura A de 6.000.000 AOA (+ 840.000 AOA de IVA) para matéria-prima; e Fatura B de 1.000.000 AOA (+ 140.000 AOA de IVA) para almoços de representação.',
+                  stepByStep: '1. Fatura A: 100% dedutível. Débito 21 (Compras) 6.000.000 | Débito 34.5.1 (IVA Dedutível) 840.000 | Crédito 21.1 (Fornecedores) 6.840.000.\n2. Fatura B: Não dedutível (Art. 21). O imposto é custo: Débito 75.2 (FSE) 1.140.000 | Crédito 21.1 (Fornecedores) 1.140.000.',
+                  conclusion: 'A segregação rigorosa entre IVA Dedutível e custos não dedutíveis blinda a empresa contra autuações tributárias.'
+                },
+                commonMistake: 'Deduzir IVA de faturas simplificadas sem menção ao NIF da empresa adquirente ou deduzir IVA de combustíveis de veículos ligeiros de apoio administrativo.'
+              },
+              {
+                sectionNumber: 4,
+                id: 'sec-iva-4',
+                title: '4. Regime Jurídico da Retenção na Fonte de Imposto Industrial a 6.5% na Prestação de Serviços',
+                content: `Uma das distinções mais cruciais na fiscalidade angolana reside na fronteira entre a liquidação do IVA (imposto sobre o consumo) e a Retenção na Fonte de Imposto Industrial (imposto sobre o rendimento empresarial, disciplinado pela Lei n.º 19/14 e suas alterações na Lei n.º 26/20).
+
+A retenção na fonte tem natureza substitutiva ou de pagamento por conta. O legislador obriga as entidades que disponham de contabilidade organizada (ou organismos do Estado) a reter na fonte a taxa liberatória de 6.5% sempre que efetuem pagamentos referentes à prestação de serviços realizada por sujeitos passivos residentes em Angola. Tratando-se de entidades não residentes cambiais ou sem estabelecimento estável, a taxa de retenção sobe para 15%.
+
+Regra de ouro de cálculo: A retenção na fonte de 6.5% incide EXCLUSIVAMENTE sobre a matéria coletável, isto é, sobre o valor base do serviço antes da adição do IVA. É expressamente proibido calcular os 6.5% sobre o total da fatura que já inclua o IVA a 14%.
+
+O adquirente do serviço assume a posição de substituto tributário: deduz os 6.5% do pagamento entregue ao prestador, emite obrigatoriamente a "Nota de Retenção na Fonte" em duplicado no prazo de 15 dias, e procede à liquidação e entrega do montante aos cofres da AGT através de Documento de Arrecadação de Receitas (DAR) até ao último dia útil do mês seguinte ao pagamento. 
+
+Reflexos contabilísticos no prestador: O montante retido constitui um crédito sobre o Estado (adiantamento de imposto). Lança-se a Débito da Conta 34.2 — Imposto Industrial: Retenção na Fonte (ou Conta 34.1.2), reduzindo o saldo da Conta 31.1 (Clientes) e dando entrada líquida na Conta 45.1 (Bancos).`,
+                explanation: `Uma das distinções mais cruciais na fiscalidade angolana reside na fronteira entre a liquidação do IVA (imposto sobre o consumo) e a Retenção na Fonte de Imposto Industrial (imposto sobre o rendimento empresarial, disciplinado pela Lei n.º 19/14 e suas alterações na Lei n.º 26/20).
+
+A retenção na fonte tem natureza substitutiva ou de pagamento por conta. O legislador obriga as entidades que disponham de contabilidade organizada (ou organismos do Estado) a reter na fonte a taxa liberatória de 6.5% sempre que efetuem pagamentos referentes à prestação de serviços realizada por sujeitos passivos residentes em Angola. Tratando-se de entidades não residentes cambiais ou sem estabelecimento estável, a taxa de retenção sobe para 15%.
+
+Regra de ouro de cálculo: A retenção na fonte de 6.5% incide EXCLUSIVAMENTE sobre a matéria coletável, isto é, sobre o valor base do serviço antes da adição do IVA. É expressamente proibido calcular os 6.5% sobre o total da fatura que já inclua o IVA a 14%.
+
+O adquirente do serviço assume a posição de substituto tributário: deduz os 6.5% do pagamento entregue ao prestador, emite obrigatoriamente a "Nota de Retenção na Fonte" em duplicado no prazo de 15 dias, e procede à liquidação e entrega do montante aos cofres da AGT através de Documento de Arrecadação de Receitas (DAR) até ao último dia útil do mês seguinte ao pagamento. 
+
+Reflexos contabilísticos no prestador: O montante retido constitui um crédito sobre o Estado (adiantamento de imposto). Lança-se a Débito da Conta 34.2 — Imposto Industrial: Retenção na Fonte (ou Conta 34.1.2), reduzindo o saldo da Conta 31.1 (Clientes) e dando entrada líquida na Conta 45.1 (Bancos).`,
+                example: {
+                  scenario: 'A empresa de auditoria e contabilidade "Audita Luanda Lda" emite fatura a um cliente industrial no valor base de 5.000.000 AOA de auditoria. Aplica-se IVA a 14% e o cliente retém na fonte 6.5% de Imposto Industrial no momento do pagamento.',
+                  steps: [
+                    '1. Valor base dos serviços: 5.000.000 AOA.',
+                    '2. IVA Liquidado (14% sobre base): 5.000.000 AOA × 14% = 700.000 AOA. Fatura total = 5.700.000 AOA.',
+                    '3. Cálculo da retenção de 6.5% (sobre a base de 5.000.000, NUNCA sobre 5.700.000): 5.000.000 × 6.5% = 325.000 AOA.',
+                    '4. Valor líquido transferido para a conta bancária do prestador: 5.700.000 AOA - 325.000 AOA = 5.375.000 AOA.',
+                    '5. Lançamentos no prestador (Audita Luanda): Na faturação: Débito 31.1 (Clientes) 5.700.000 AOA | Crédito 71.1 (Serviços) 5.000.000 AOA | Crédito 34.5.2 (IVA) 700.000 AOA. No recebimento: Débito 45.1.1 (Banco) 5.375.000 AOA | Débito 34.2 (Retenção Imposto Industrial) 325.000 AOA | Crédito 31.1 (Clientes) 5.700.000 AOA.'
+                  ]
+                },
+                practicalExample: {
+                  scenario: 'Prestação de serviços de 5.000.000 AOA sujeita a 14% de IVA e retenção na fonte de 6.5% de Imposto Industrial no pagamento.',
+                  stepByStep: '1. Base do serviço: 5.000.000 AOA.\n2. IVA (14%): 700.000 AOA. Total faturado: 5.700.000 AOA.\n3. Retenção de 6.5% sobre a base: 5.000.000 × 6.5% = 325.000 AOA.\n4. Caixa líquido recebido: 5.375.000 AOA.\n5. Lançamento no recebimento: Débito 45.1 (Banco) 5.375.000 | Débito 34.2 (Imposto Industrial Retido) 325.000 | Crédito 31.1 (Clientes) 5.700.000.',
+                  conclusion: 'A retenção de 325.000 AOA é abatida diretamente ao Imposto Industrial final anual da empresa na Declaração Modelo 1.'
+                },
+                commonMistake: 'Calcular os 6.5% de retenção na fonte sobre o total bruto com IVA (5.700.000 × 6.5% = 370.500 AOA), retendo 45.500 AOA a mais ilegalmente e prejudicando a tesouraria do prestador.'
+              },
+              {
+                sectionNumber: 5,
+                id: 'sec-iva-5',
+                title: '5. Apuramento Periódico Mensal do IVA (Conta 34.5.7 — IVA Apuramento)',
+                content: `No encerramento de cada mês de calendário, todos os sujeitos passivos enquadrados no Regime Geral de IVA são legalmente obrigados a proceder ao fecho e apuramento periódico das contas de IVA do PGC Angola. Este processo de apuramento tem por finalidade confrontar o imposto liquidado aos clientes com o imposto dedutível suportado nas compras e despesas operacionais do mês.
+
+Operação de encerramento contabilístico: As subcontas transitórias da Conta 34.5 não devem transitar com saldos abertos para o mês subsequente. Deste modo, credita-se a Conta 34.5.1 (IVA Dedutível) pelo seu saldo devedor acumulado, debita-se a Conta 34.5.2 (IVA Liquidado) pelo seu saldo credor acumulado, e transfere-se a diferença líquida para a Conta 34.5.7 — Estado: IVA Apuramento.
+
+Daqui emergem dois cenários contabilísticos e fiscais fundamentais:
+- Cenário A — IVA a Pagar (Imposto Liquidado > Imposto Dedutível): A conta 34.5.7 fica com saldo credor. Transfere-se este saldo para a subconta 34.5.7.1 — IVA a Pagar (ou 34.5.5). A empresa tem a obrigação de emitir o DAR correspondente e liquidar a verba até ao último dia útil do mês seguinte.
+- Cenário B — Crédito de IVA / IVA a Recuperar (Imposto Dedutível > Imposto Liquidado): A conta 34.5.7 encerra com saldo devedor. Este montante é transferido para a Conta 34.5.7.2 — Crédito de IVA (ou 34.5.6). O crédito é reportado para o mês seguinte para abater a futuras liquidações ou, preenchidos os requisitos legais (crédito superior a determinado montante há mais de 3 meses), objeto de pedido formal de reembolso monetário perante a AGT.`,
+                explanation: `No encerramento de cada mês de calendário, todos os sujeitos passivos enquadrados no Regime Geral de IVA são legalmente obrigados a proceder ao fecho e apuramento periódico das contas de IVA do PGC Angola. Este processo de apuramento tem por finalidade confrontar o imposto liquidado aos clientes com o imposto dedutível suportado nas compras e despesas operacionais do mês.
+
+Operação de encerramento contabilístico: As subcontas transitórias da Conta 34.5 não devem transitar com saldos abertos para o mês subsequente. Deste modo, credita-se a Conta 34.5.1 (IVA Dedutível) pelo seu saldo devedor acumulado, debita-se a Conta 34.5.2 (IVA Liquidado) pelo seu saldo credor acumulado, e transfere-se a diferença líquida para a Conta 34.5.7 — Estado: IVA Apuramento.
+
+Daqui emergem dois cenários contabilísticos e fiscais fundamentais:
+- Cenário A — IVA a Pagar (Imposto Liquidado > Imposto Dedutível): A conta 34.5.7 fica com saldo credor. Transfere-se este saldo para a subconta 34.5.7.1 — IVA a Pagar (ou 34.5.5). A empresa tem a obrigação de emitir o DAR correspondente e liquidar a verba até ao último dia útil do mês seguinte.
+- Cenário B — Crédito de IVA / IVA a Recuperar (Imposto Dedutível > Imposto Liquidado): A conta 34.5.7 encerra com saldo devedor. Este montante é transferido para a Conta 34.5.7.2 — Crédito de IVA (ou 34.5.6). O crédito é reportado para o mês seguinte para abater a futuras liquidações ou, preenchidos os requisitos legais (crédito superior a determinado montante há mais de 3 meses), objeto de pedido formal de reembolso monetário perante a AGT.`,
+                example: {
+                  scenario: 'No fecho de contas de Outubro de 2026, o Balancete de Verificação de uma sociedade apresenta saldo credor na Conta 34.5.2 (IVA Liquidado) de 12.000.000 AOA e saldo devedor na Conta 34.5.1 (IVA Dedutível) de 8.500.000 AOA. No mês anterior não existia crédito reportado.',
+                  steps: [
+                    '1. Confrontação dos valores: IVA Liquidado (12.000.000 AOA) > IVA Dedutível (8.500.000 AOA). Posição devedora ao Estado de 3.500.000 AOA.',
+                    '2. Lançamento de Encerramento (31 de Outubro): Débito da Conta 34.5.2 (IVA Liquidado) por 12.000.000 AOA (zerando esta conta); Crédito da Conta 34.5.1 (IVA Dedutível) por 8.500.000 AOA (zerando esta conta); Crédito da Conta 34.5.7 (IVA Apuramento) por 3.500.000 AOA.',
+                    '3. Reclassificação para Passivo Corrente Exigível: Débito da Conta 34.5.7 por 3.500.000 AOA; Crédito da Conta 34.5.7.1 (IVA a Pagar) por 3.500.000 AOA.',
+                    '4. Liquidação no mês seguinte (pagamento via banco): Débito da Conta 34.5.7.1 por 3.500.000 AOA; Crédito da Conta 45.1.1 (Bancos) por 3.500.000 AOA, anexando o respetivo DAR comprovativo.'
+                  ]
+                },
+                practicalExample: {
+                  scenario: 'Fecho do mês com IVA Liquidado de 12.000.000 AOA e IVA Dedutível de 8.500.000 AOA.',
+                  stepByStep: '1. IVA a Pagar = 12.000.000 - 8.500.000 = 3.500.000 AOA.\n2. Lançamento Apuramento: Débito 34.5.2 (12.000.000) | Crédito 34.5.1 (8.500.000) | Crédito 34.5.7.1 (IVA a Pagar) (3.500.000).\n3. No pagamento bancário com DAR: Débito 34.5.7.1 (3.500.000) | Crédito 45.1 (3.500.000).',
+                  conclusion: 'As contas 34.5.1 e 34.5.2 ficam a zero no início do mês seguinte, garantindo independência periódica.'
+                },
+                commonMistake: 'Manter saldos históricos acumulados nas contas 34.5.1 e 34.5.2 sem efetuar a transferência mensal para a conta 34.5.7 de apuramento, distorcendo o Balancete.'
+              },
+              {
+                sectionNumber: 6,
+                id: 'sec-iva-6',
+                title: '6. Obrigações Declarativas AGT, SAF-T (AO) e Prazos Fiscais Críticos',
+                content: `O cumprimento do dever tributário em sede de IVA e Retenção na Fonte em Angola não se esgota no cálculo e pagamento; exige rigor documental e cumprimento escrupuloso do calendário fiscal legalmente estabelecido.
+
+1. Declaração Periódica de IVA (Modelo 7): Deve ser submetida eletronicamente no Portal do Contribuinte da AGT até ao último dia útil do mês seguinte àquele a que respeitam as operações. A declaração deve refletir exatamente os valores constantes dos mapas de faturação e do razão geral de contabilidade, sob pena de incongruências com a base de dados central da AGT.
+
+2. Ficheiro SAF-T (AO) de Faturação: De acordo com o Decreto Presidencial n.º 312/18, todas as empresas que utilizam programas certificados de faturação devem gerar mensalmente o ficheiro de auditoria tributária SAF-T em formato XML e exportá-lo/submetê-lo no portal da AGT até ao dia 15 do mês seguinte ao da emissão. O SAF-T valida de forma algorítmica cada fatura emitida, nota de crédito e débito, número sequencial e hashes criptográficos.
+
+3. Pagamento do IVA e Retenções: O IVA apurado no Modelo 7 deve ser pago até ao último dia útil do mês subsequente através de Documento de Liquidação e Pagamento (DLP/DAR). Já as retenções na fonte de 6.5% de Imposto Industrial operadas sobre serviços devem ser entregues também até ao último dia útil do mês seguinte àquele em que foram retidas.
+
+4. Penalidades Legais: O incumprimento destes prazos acarreta pesadas penalizações previstas no Código Geral Tributário (Lei n.º 21/14), incluindo coimas entre 25% a 200% do imposto em falta, juros de mora legais à taxa de 1% ao mês ou fração, encerramento cautelar de estabelecimentos e revogação de certidões de não dívida perante o Estado.`,
+                explanation: `O cumprimento do dever tributário em sede de IVA e Retenção na Fonte em Angola não se esgota no cálculo e pagamento; exige rigor documental e cumprimento escrupuloso do calendário fiscal legalmente estabelecido.
+
+1. Declaração Periódica de IVA (Modelo 7): Deve ser submetida eletronicamente no Portal do Contribuinte da AGT até ao último dia útil do mês seguinte àquele a que respeitam as operações. A declaração deve refletir exatamente os valores constantes dos mapas de faturação e do razão geral de contabilidade, sob pena de incongruências com a base de dados central da AGT.
+
+2. Ficheiro SAF-T (AO) de Faturação: De acordo com o Decreto Presidencial n.º 312/18, todas as empresas que utilizam programas certificados de faturação devem gerar mensalmente o ficheiro de auditoria tributária SAF-T em formato XML e exportá-lo/submetê-lo no portal da AGT até ao dia 15 do mês seguinte ao da emissão. O SAF-T valida de forma algorítmica cada fatura emitida, nota de crédito e débito, número sequencial e hashes criptográficos.
+
+3. Pagamento do IVA e Retenções: O IVA apurado no Modelo 7 deve ser pago até ao último dia útil do mês subsequente através de Documento de Liquidação e Pagamento (DLP/DAR). Já as retenções na fonte de 6.5% de Imposto Industrial operadas sobre serviços devem ser entregues também até ao último dia útil do mês seguinte àquele em que foram retidas.
+
+4. Penalidades Legais: O incumprimento destes prazos acarreta pesadas penalizações previstas no Código Geral Tributário (Lei n.º 21/14), incluindo coimas entre 25% a 200% do imposto em falta, juros de mora legais à taxa de 1% ao mês ou fração, encerramento cautelar de estabelecimentos e revogação de certidões de não dívida perante o Estado.`,
+                example: {
+                  scenario: 'Cronograma mensal de conformidade de uma média empresa em Luanda referente às operações do mês de Março de 2026.',
+                  steps: [
+                    '1. Até 15 de Abril: Extração, conferência e submissão do ficheiro SAF-T (AO) de Faturação de Março no portal da AGT.',
+                    '2. De 15 a 25 de Abril: Reconciliação entre os relatórios de faturação comercial, balancete contabilístico e compras com direito a dedução.',
+                    '3. Até 30 de Abril: Submissão da Declaração Periódica Modelo 7 de IVA no Portal da AGT.',
+                    '4. Até 30 de Abril: Emissão do DAR e liquidação bancária do IVA apurado (Conta 34.5.7.1) e do Imposto Industrial retido (6.5%) a terceiros.'
+                  ]
+                },
+                practicalExample: {
+                  scenario: 'Calendário de obrigações fiscais de uma empresa referente ao mês de Março.',
+                  stepByStep: '1. 15 de Abril: Envio do ficheiro SAF-T (AO) de faturas.\n2. 25 de Abril: Reconciliação do balancete com a faturação.\n3. 30 de Abril: Envio da Declaração Modelo 7 de IVA.\n4. 30 de Abril: Pagamento bancário do IVA e das retenções na fonte via DAR.',
+                  conclusion: 'O cumprimento rigoroso dos prazos de 15 e 30 de cada mês previne juros de mora de 1% ao mês e autos de notícia fiscais.'
+                },
+                commonMistake: 'Existir divergência entre a faturação declarada no Modelo 7 e os totais constantes do ficheiro SAF-T (AO), originando notificações automáticas de divergência fiscal da AGT.'
+              }
+            ]
+          };
+        }
+
+        if (topLower.includes('amortiza') || topLower.includes('deprecia') || topLower.includes('ativo') || topLower.includes('imobiliz')) {
+          return {
+            moduleTitle: 'Guia Didático de Amortização e Depreciação de Ativos Fixos no PGC Angola',
+            category: 'Contabilidade',
+            userLevel: lvl,
+            standard: std,
+            sections: [
+              {
+                sectionNumber: 1,
+                id: 'sec-amort-1',
+                title: '1. Fundamentos Contabilísticos e Fiscais da Amortização (Decreto n.º 82/2001 e Lei n.º 19/14)',
+                content: `No âmbito do Plano Geral de Contabilidade de Angola (PGC Angola, aprovado pelo Decreto n.º 82/2001) e do Código do Imposto Industrial (Lei n.º 19/14), a depreciação e amortização constituem o mecanismo contabilístico essencial para refletir a perda irreversível de valor experienciada pelos elementos do ativo imobilizado (Classe 1) ao longo da respetiva vida útil económica.
+
+Essa perda de valor decorre de três fatores preponderantes: o uso ou desgaste físico natural no decurso da atividade produtiva; a obsolescência tecnológica decorrente do aparecimento de novos equipamentos mais eficientes; e a expiração de prazos legais ou contratuais de utilização (frequente em ativos corpóreos e incorpóreos como licenças, concessões ou marcas).
+
+A imputação periódica das quotas de amortização dá cumprimento estrito ao Princípio da Especialização dos Exercícios (ou periodização económica), segundo o qual os proveitos e os custos devem ser reconhecidos no período em que ocorrem, independentemente da data do respetivo recebimento ou pagamento. Ao depreciar um ativo imobilizado, a entidade reparte o seu custo de aquisição ou produção pelos múltiplos exercícios económicos que beneficiam da sua capacidade produtiva.
+
+No enquadramento do PGC Angola, o ativo é registado inicialmente na Classe 1 (Imobilizações) ao seu custo histórico de aquisição (incluindo despesas de transporte, montagem, direitos aduaneiros e seguros de transporte). As amortizações do exercício figuram como custos operacionais na Conta 73 — Amortizações do Exercício (Conta 73.1 para Corpóreas e Conta 73.2 para Incorpóreas), e são acumuladas no balanço a Crédito da Conta 12 — Amortizações Acumuladas, a qual funciona como conta redutora do ativo imobilizado bruto.`,
+                explanation: `No âmbito do Plano Geral de Contabilidade de Angola (PGC Angola, aprovado pelo Decreto n.º 82/2001) e do Código do Imposto Industrial (Lei n.º 19/14), a depreciação e amortização constituem o mecanismo contabilístico essencial para refletir a perda irreversível de valor experienciada pelos elementos do ativo imobilizado (Classe 1) ao longo da respetiva vida útil económica.
+
+Essa perda de valor decorre de três fatores preponderantes: o uso ou desgaste físico natural no decurso da atividade produtiva; a obsolescência tecnológica decorrente do aparecimento de novos equipamentos mais eficientes; e a expiração de prazos legais ou contratuais de utilização (frequente em ativos corpóreos e incorpóreos como licenças, concessões ou marcas).
+
+A imputação periódica das quotas de amortização dá cumprimento estrito ao Princípio da Especialização dos Exercícios (ou periodização económica), segundo o qual os proveitos e os custos devem ser reconhecidos no período em que ocorrem, independentemente da data do respetivo recebimento ou pagamento. Ao depreciar um ativo imobilizado, a entidade reparte o seu custo de aquisição ou produção pelos múltiplos exercícios económicos que beneficiam da sua capacidade produtiva.
+
+No enquadramento do PGC Angola, o ativo é registado inicialmente na Classe 1 (Imobilizações) ao seu custo histórico de aquisição (incluindo despesas de transporte, montagem, direitos aduaneiros e seguros de transporte). As amortizações do exercício figuram como custos operacionais na Conta 73 — Amortizações do Exercício (Conta 73.1 para Corpóreas e Conta 73.2 para Incorpóreas), e são acumuladas no balanço a Crédito da Conta 12 — Amortizações Acumuladas, a qual funciona como conta redutora do ativo imobilizado bruto.`,
+                example: {
+                  scenario: 'A empresa Construtora Benguela Lda adquire uma escavadora hidráulica por 24.000.000 AOA à vista, acrescida de 1.000.000 AOA de frete e transporte especializado. A vida útil económica foi estabelecida em 5 anos.',
+                  steps: [
+                    '1. Custo de Aquisição Inicial: Preço base (24.000.000 AOA) + Despesas acessórias indispensáveis (1.000.000 AOA) = 25.000.000 AOA.',
+                    '2. Lançamento da Compra: Débito Conta 11.2 (Imobilizações Corpóreas - Equipamento Básico) por 25.000.000 AOA; Crédito Conta 45.1.1 (Bancos) por 25.000.000 AOA.',
+                    '3. Determinação da vida útil: 5 anos, equivalendo a uma quota anual de 20% (100% / 5).',
+                    '4. Quota anual de amortização: 25.000.000 AOA × 20% = 5.000.000 AOA por ano.'
+                  ]
+                },
+                practicalExample: {
+                  scenario: 'Aquisição de escavadora por 24.000.000 AOA + frete de 1.000.000 AOA com vida útil de 5 anos.',
+                  stepByStep: '1. Custo total do ativo: 24.000.000 + 1.000.000 = 25.000.000 AOA.\n2. Lançamento de compra: Débito 11.2 (Equipamento Básico) 25.000.000 | Crédito 45.1 (Bancos) 25.000.000.\n3. Taxa anual: 20% (5 anos).\n4. Quota anual: 25.000.000 × 20% = 5.000.000 AOA ao ano.',
+                  conclusion: 'As despesas de transporte e preparação integram o custo de imobilizado e depreciam em conjunto ao longo dos 5 anos.'
+                },
+                commonMistake: 'Lançar as despesas de transporte e montagem diretamente em custos operacionais do exercício (Conta 75.2) em vez de agregá-las ao custo de aquisição do ativo imobilizado na Classe 1.'
+              },
+              {
+                sectionNumber: 2,
+                id: 'sec-amort-2',
+                title: '2. Métodos de Cálculo: Quotas Constantes vs Quotas Decrescentes e Limites Fiscais AGT',
+                content: `A legislação fiscal e contabilística angolana admite fundamentalmente dois métodos de depreciação: o Método das Quotas Constantes (ou Linear) e o Método das Quotas Decrescentes.
+
+O Método das Quotas Constantes é o método regra por excelência do PGC Angola e o único aceite automaticamente pela AGT sem necessidade de autorização prévia. A quota de amortização anual (Q) é obtida através da aplicação de uma taxa percentual fixa (t) sobre o valor depreciável (Vo), ou seja: Q = Vo × t, onde t = 1 / n (sendo n o número de anos de vida útil). A quota mantém-se rigorosamente idêntica em todos os períodos de funcionamento do ativo.
+
+O Regulamento de Amortizações e Reintegrações anexo ao Código do Imposto Industrial fixa as taxas fiscais máximas permitidas para cada categoria de bem corpóreo:
+- Edifícios Comerciais e Fabris: 2% a 4% ao ano (vida útil de 25 a 50 anos).
+- Equipamento Básico e Máquinas Industriais: 10% a 20% ao ano (vida útil de 5 a 10 anos).
+- Viatura de Transporte de Mercadorias / Carga: 20% a 25% ao ano (vida útil de 4 a 5 anos).
+- Viaturas Ligeiras de Passageiros: 20% ao ano (vida útil de 5 anos, com limite fiscal máximo no valor de compra de 12.000.000 AOA para efeitos de dedutibilidade fiscal plena).
+- Equipamento Informático e Tecnológico: 25% a 33.33% ao ano (vida útil de 3 a 4 anos).
+
+Se a empresa adotar taxas de amortização contabilísticas superiores às taxas fiscais máximas autorizadas pela AGT, a diferença excedentária é considerada custo não aceite fiscalmente, tendo a empresa de adicioná-la no Quadro de Correções da Declaração Modelo 1 de Imposto Industrial.`,
+                explanation: `A legislação fiscal e contabilística angolana admite fundamentalmente dois métodos de depreciação: o Método das Quotas Constantes (ou Linear) e o Método das Quotas Decrescentes.
+
+O Método das Quotas Constantes é o método regra por excelência do PGC Angola e o único aceite automaticamente pela AGT sem necessidade de autorização prévia. A quota de amortização anual (Q) é obtida através da aplicação de uma taxa percentual fixa (t) sobre o valor depreciável (Vo), ou seja: Q = Vo × t, onde t = 1 / n (sendo n o número de anos de vida útil). A quota mantém-se rigorosamente idêntica em todos os períodos de funcionamento do ativo.
+
+O Regulamento de Amortizações e Reintegrações anexo ao Código do Imposto Industrial fixa as taxas fiscais máximas permitidas para cada categoria de bem corpóreo:
+- Edifícios Comerciais e Fabris: 2% a 4% ao ano (vida útil de 25 a 50 anos).
+- Equipamento Básico e Máquinas Industriais: 10% a 20% ao ano (vida útil de 5 a 10 anos).
+- Viatura de Transporte de Mercadorias / Carga: 20% a 25% ao ano (vida útil de 4 a 5 anos).
+- Viaturas Ligeiras de Passageiros: 20% ao ano (vida útil de 5 anos, com limite fiscal máximo no valor de compra de 12.000.000 AOA para efeitos de dedutibilidade fiscal plena).
+- Equipamento Informático e Tecnológico: 25% a 33.33% ao ano (vida útil de 3 a 4 anos).
+
+Se a empresa adotar taxas de amortização contabilísticas superiores às taxas fiscais máximas autorizadas pela AGT, a diferença excedentária é considerada custo não aceite fiscalmente, tendo a empresa de adicioná-la no Quadro de Correções da Declaração Modelo 1 de Imposto Industrial.`,
+                example: {
+                  scenario: 'A empresa adquire 10 computadores de escritório para a equipa administrativa por 6.000.000 AOA em Janeiro de 2026. A taxa fiscal fixada pela AGT é de 33.33% ao ano.',
+                  steps: [
+                    '1. Valor de aquisição total: 6.000.000 AOA.',
+                    '2. Vida útil legal: 3 anos (taxa de 33.333% ao ano).',
+                    '3. Quota anual de amortização: 6.000.000 AOA / 3 = 2.000.000 AOA por ano.',
+                    '4. Quota mensal de amortização (para encerramentos mensais): 2.000.000 AOA / 12 = 166.666,67 AOA/mês.',
+                    '5. Ao fim de 3 anos, o valor contabilístico líquido do bem será de 0 AOA, continuando registado em contas de ordem ou a valor simbólico se ainda estiver em operação.'
+                  ]
+                },
+                practicalExample: {
+                  scenario: 'Aquisição de computadores no valor de 6.000.000 AOA com amortização linear a 33.33% ao ano.',
+                  stepByStep: '1. Custo inicial: 6.000.000 AOA.\n2. Quota anual: 2.000.000 AOA/ano.\n3. Quota mensal: 166.666,67 AOA/mês.\n4. Balanço no Ano 1: Custo Histórico (11.4) 6.000.000 AOA | Amortizações Acumuladas (12.4) -2.000.000 AOA | Valor Líquido Contabilístico = 4.000.000 AOA.',
+                  conclusion: 'A aplicação do método linear garante dedutibilidade fiscal plena perante a AGT sem necessidade de correções no Modelo 1.'
+                },
+                commonMistake: 'Aplicar taxas de amortização arbitrárias sem respaldo no Regulamento do Imposto Industrial, originando correções tributárias e acréscimo de imposto a pagar.'
+              },
+              {
+                sectionNumber: 3,
+                id: 'sec-amort-3',
+                title: '3. Contabilização Periódica das Amortizações no PGC Angola (Contas 73 e 12)',
+                content: `A contabilização sistemática das quotas de depreciação é um procedimento basilar de fecho de contas no PGC Angola. Pode ser efetuada numa periodicidade anual (no encerramento formal do exercício fiscal a 31 de Dezembro) ou, de forma mais recomendável e prudente, mensalmente, para que os balancetes mensais de gestão reflitam fidedignamente o resultado económico e a evolução patrimonial.
+
+Estrutura das contas intervenientes no PGC Angola:
+- Conta 73 — Custos com Amortizações do Exercício: Esta conta integra a Demonstração de Resultados por Natureza, pertencendo aos custos operacionais da empresa. Desdobra-se em 73.1 (Imobilizações Corpóreas: 73.1.1 Terrenos/Edifícios, 73.1.2 Equipamento Básico, 73.1.3 Equipamento de Transporte, 73.1.4 Equipamento Administrativo) e 73.2 (Imobilizações Incorpóreas).
+- Conta 12 — Amortizações Acumuladas: É uma conta patrimonial de saldo estritamente credor. No Balanço, não surge no Passivo, mas sim a deduzir aos ativos brutos da Classe 1, revelando o Valor Líquido Contabilístico (VLC = Custo Histórico - Amortizações Acumuladas).
+
+Mecânica do Lançamento:
+No momento da imputação periódica, debita-se a Conta 73 correspondente (reconhecendo o custo do período) e credita-se a Conta 12 correspondente (acumulando a depreciação histórica do bem). Jamais se credita diretamente a conta do ativo bruto (Conta 11), sob pena de violar a regra de evidenciação do custo histórico de aquisição consagrada no normativo angolano.`,
+                explanation: `A contabilização sistemática das quotas de depreciação é um procedimento basilar de fecho de contas no PGC Angola. Pode ser efetuada numa periodicidade anual (no encerramento formal do exercício fiscal a 31 de Dezembro) ou, de forma mais recomendável e prudente, mensalmente, para que os balancetes mensais de gestão reflitam fidedignamente o resultado económico e a evolução patrimonial.
+
+Estrutura das contas intervenientes no PGC Angola:
+- Conta 73 — Custos com Amortizações do Exercício: Esta conta integra a Demonstração de Resultados por Natureza, pertencendo aos custos operacionais da empresa. Desdobra-se em 73.1 (Imobilizações Corpóreas: 73.1.1 Terrenos/Edifícios, 73.1.2 Equipamento Básico, 73.1.3 Equipamento de Transporte, 73.1.4 Equipamento Administrativo) e 73.2 (Imobilizações Incorpóreas).
+- Conta 12 — Amortizações Acumuladas: É uma conta patrimonial de saldo estritamente credor. No Balanço, não surge no Passivo, mas sim a deduzir aos ativos brutos da Classe 1, revelando o Valor Líquido Contabilístico (VLC = Custo Histórico - Amortizações Acumuladas).
+
+Mecânica do Lançamento:
+No momento da imputação periódica, debita-se a Conta 73 correspondente (reconhecendo o custo do período) e credita-se a Conta 12 correspondente (acumulando a depreciação histórica do bem). Jamais se credita diretamente a conta do ativo bruto (Conta 11), sob pena de violar a regra de evidenciação do custo histórico de aquisição consagrada no normativo angolano.`,
+                example: {
+                  scenario: 'A empresa possui frotas de viaturas de distribuição no valor global de 16.000.000 AOA na Conta 11.3, com taxa de amortização de 25% ao ano. Registo da quota do primeiro ano.',
+                  steps: [
+                    '1. Identificação do custo histórico: 16.000.000 AOA.',
+                    '2. Quota anual de amortização: 16.000.000 AOA × 25% = 4.000.000 AOA.',
+                    '3. Lançamento no Diário Geral: Débito da Conta 73.1.3 (Amortizações do Exercício - Equipamento de Transporte) por 4.000.000 AOA; Crédito da Conta 12.3 (Amortizações Acumuladas - Equipamento de Transporte) por 4.000.000 AOA.',
+                    '4. Apresentação no Balancete do Razão: Conta 11.3 apresenta saldo devedor de 16.000.000 AOA; Conta 12.3 apresenta saldo credor de 4.000.000 AOA; Conta 73.1.3 apresenta saldo devedor de 4.000.000 AOA.',
+                    '5. No Balanço Patrimonial: Valor Líquido = 16.000.000 - 4.000.000 = 12.000.000 AOA.'
+                  ]
+                },
+                practicalExample: {
+                  scenario: 'Registo da quota anual de viaturas de 16.000.000 AOA a 25% ao ano.',
+                  stepByStep: '1. Quota anual: 16.000.000 × 25% = 4.000.000 AOA.\n2. Lançamento Diário: Débito 73.1.3 (Amortizações Transporte) 4.000.000 | Crédito 12.3 (Amortizações Acumuladas Transporte) 4.000.000.\n3. Valor Líquido no Balanço = 12.000.000 AOA.',
+                  conclusion: 'O método indireto preserva o valor de custo histórico e evidencia o desgaste acumulado na Conta 12.'
+                },
+                commonMistake: 'Creditar diretamente a Conta 11 (Imobilizações Corpóreas) em vez da Conta 12 (Amortizações Acumuladas), ocultando o custo histórico de aquisição da empresa.'
+              },
+              {
+                sectionNumber: 4,
+                id: 'sec-amort-4',
+                title: '4. Alienação e Abate de Ativos Imobilizados com Amortizações Acumuladas',
+                content: `A alienação (venda a terceiros) ou o abate (desmantelamento, sucata ou perda irreparável por sinistro) de um bem do ativo imobilizado exige uma operação contabilística trifásica rigorosa no PGC Angola.
+
+1. Cálculo do Valor Líquido Contabilístico (VLC):
+No momento do desreconhecimento, apura-se a diferença entre o Custo Histórico de Aquisição registado na Conta 11 e as Amortizações Acumuladas acumuladas até à data na Conta 12:
+VLC = Custo Histórico (Conta 11) - Amortizações Acumuladas (Conta 12).
+
+2. Confrontação com o Valor de Realização (Preço de Venda):
+O confronto entre o valor de alienação obtido (líquido de IVA) e o VLC determina o resultado de alienação de imobilizados:
+- Se Valor de Venda > VLC: Apura-se uma Mais-Valia de Alienação, contabilizada a Crédito da Conta 76.2 — Proveitos e Ganhos Extraordinários: Ganhos na Alienação de Investimentos Não Financeiros.
+- Se Valor de Venda < VLC: Apura-se uma Menos-Valia de Alienação, contabilizada a Débito da Conta 66.2 — Custos e Perdas Extraordinárias: Perdas na Alienação de Investimentos Não Financeiros.
+
+3. Desreconhecimento integral das contas patrimoniais:
+Para retirar o bem do razão geral, debita-se a Conta 12 (pelo total das amortizações já constituídas, zerando-a relativamente a este ativo), debita-se a Conta 45.1/31 (pelo valor de venda a receber), debita-se a Conta 66.2 (se houver menos-valia), creditando-se a Conta 11 (pelo custo histórico original, zerando o registo físico do ativo) e creditando-se a Conta 76.2 (se houver mais-valia).`,
+                explanation: `A alienação (venda a terceiros) ou o abate (desmantelamento, sucata ou perda irreparável por sinistro) de um bem do ativo imobilizado exige uma operação contabilística trifásica rigorosa no PGC Angola.
+
+1. Cálculo do Valor Líquido Contabilístico (VLC):
+No momento do desreconhecimento, apura-se a diferença entre o Custo Histórico de Aquisição registado na Conta 11 e as Amortizações Acumuladas acumuladas até à data na Conta 12:
+VLC = Custo Histórico (Conta 11) - Amortizações Acumuladas (Conta 12).
+
+2. Confrontação com o Valor de Realização (Preço de Venda):
+O confronto entre o valor de alienação obtido (líquido de IVA) e o VLC determina o resultado de alienação de imobilizados:
+- Se Valor de Venda > VLC: Apura-se uma Mais-Valia de Alienação, contabilizada a Crédito da Conta 76.2 — Proveitos e Ganhos Extraordinários: Ganhos na Alienação de Investimentos Não Financeiros.
+- Se Valor de Venda < VLC: Apura-se uma Menos-Valia de Alienação, contabilizada a Débito da Conta 66.2 — Custos e Perdas Extraordinárias: Perdas na Alienação de Investimentos Não Financeiros.
+
+3. Desreconhecimento integral das contas patrimoniais:
+Para retirar o bem do razão geral, debita-se a Conta 12 (pelo total das amortizações já constituídas, zerando-a relativamente a este ativo), debita-se a Conta 45.1/31 (pelo valor de venda a receber), debita-se a Conta 66.2 (se houver menos-valia), creditando-se a Conta 11 (pelo custo histórico original, zerando o registo físico do ativo) e creditando-se a Conta 76.2 (se houver mais-valia).`,
+                example: {
+                  scenario: 'Uma empresa vende por 5.000.000 AOA uma máquina industrial cujo custo histórico de aquisição era de 10.000.000 AOA e que apresentava amortizações acumuladas de 7.000.000 AOA.',
+                  steps: [
+                    '1. Custo Histórico (Conta 11.2): 10.000.000 AOA.',
+                    '2. Amortizações Acumuladas (Conta 12.2): 7.000.000 AOA.',
+                    '3. Valor Líquido Contabilístico (VLC): 10.000.000 - 7.000.000 = 3.000.000 AOA.',
+                    '4. Preço de venda: 5.000.000 AOA. Como o preço de venda é superior ao VLC, apura-se uma mais-valia de 2.000.000 AOA (5.000.000 - 3.000.000).',
+                    '5. Lançamento Composto de Desreconhecimento no PGC: Débito Conta 45.1.1 (Bancos) por 5.000.000 AOA; Débito Conta 12.2 (Amortizações Acumuladas) por 7.000.000 AOA; Crédito Conta 11.2 (Imobilizações Corpóreas) por 10.000.000 AOA; Crédito Conta 76.2 (Mais-Valias de Alienação) por 2.000.000 AOA.'
+                  ]
+                },
+                practicalExample: {
+                  scenario: 'Venda por 5.000.000 AOA de máquina com custo de 10.000.000 AOA e amortizações de 7.000.000 AOA.',
+                  stepByStep: '1. VLC = 10.000.000 - 7.000.000 = 3.000.000 AOA.\n2. Mais-Valia = 5.000.000 - 3.000.000 = 2.000.000 AOA.\n3. Lançamento: Débito 45.1 (Bancos) 5.000.000 | Débito 12.2 (Amort. Acumuladas) 7.000.000 | Crédito 11.2 (Máquinas) 10.000.000 | Crédito 76.2 (Mais-Valias) 2.000.000.',
+                  conclusion: 'As contas 11.2 e 12.2 do ativo vendido ficam plenamente canceladas no razão geral.'
+                },
+                commonMistake: 'Creditar o valor da venda na Conta 61 (Vendas de Mercadorias) ou esquecer de anular as amortizações acumuladas na Conta 12 correspondente.'
+              },
+              {
+                sectionNumber: 5,
+                id: 'sec-amort-5',
+                title: '5. Perdas por Imparidade de Ativos Imobilizados (Contas 19 e 74)',
+                content: `Nem toda a desvalorização de um ativo imobilizado decorre do desgaste normal previsto pela taxa linear de amortização. Por vezes, ocorrem eventos súbitos, extraordinários e imprevistos (danos materiais severos, inundações, incêndios, acidentes industriais, alterações drásticas na procura de mercado ou avanços tecnológicos disruptivos) que reduzem o valor recuperável do ativo substancialmente abaixo do seu valor líquido contabilístico.
+
+Nesses termos, de acordo com o PGC Angola e os princípios de prudência, a entidade deve efetuar o Teste de Imparidade:
+- Valor Recuperável é o maior entre o Valor Justo líquido de custos de venda e o Valor de Uso (valor presente dos fluxos de caixa futuros esperados do ativo).
+- Se o Valor Recuperável for inferior ao Valor Líquido Contabilístico (VLC), verifica-se uma Perda por Imparidade.
+
+Tratamento Contabilístico no PGC:
+A perda é reconhecida no exercício através de:
+- Débito da Conta 74 — Perdas por Imparidade do Exercício (ou 66.3 Custos Extraordinários por Imparidades).
+- Crédito da Conta 19 — Provisões para Imobilizações (ou Imparidades Acumuladas de Imobilizações).
+
+Diferença entre Amortização e Imparidade: A amortização é previsível, periódica e distribui o custo ao longo de toda a vida útil; a imparidade é pontual, reflete choques económicos ou físicos não planeados e pode ser revertida (Conta 78/79) em exercícios futuros se as causas que a motivaram deixarem de existir.`,
+                explanation: `Nem toda a desvalorização de um ativo imobilizado decorre do desgaste normal previsto pela taxa linear de amortização. Por vezes, ocorrem eventos súbitos, extraordinários e imprevistos (danos materiais severos, inundações, incêndios, acidentes industriais, alterações drásticas na procura de mercado ou avanços tecnológicos disruptivos) que reduzem o valor recuperável do ativo substancialmente abaixo do seu valor líquido contabilístico.
+
+Nesses termos, de acordo com o PGC Angola e os princípios de prudência, a entidade deve efetuar o Teste de Imparidade:
+- Valor Recuperável é o maior entre o Valor Justo líquido de custos de venda e o Valor de Uso (valor presente dos fluxos de caixa futuros esperados do ativo).
+- Se o Valor Recuperável for inferior ao Valor Líquido Contabilístico (VLC), verifica-se uma Perda por Imparidade.
+
+Tratamento Contabilístico no PGC:
+A perda é reconhecida no exercício através de:
+- Débito da Conta 74 — Perdas por Imparidade do Exercício (ou 66.3 Custos Extraordinários por Imparidades).
+- Crédito da Conta 19 — Provisões para Imobilizações (ou Imparidades Acumuladas de Imobilizações).
+
+Diferença entre Amortização e Imparidade: A amortização é previsível, periódica e distribui o custo ao longo de toda a vida útil; a imparidade é pontual, reflete choques económicos ou físicos não planeados e pode ser revertida (Conta 78/79) em exercícios futuros se as causas que a motivaram deixarem de existir.`,
+                example: {
+                  scenario: 'Uma linha de montagem industrial com custo de 30.000.000 AOA e amortizações de 12.000.000 AOA (VLC = 18.000.000 AOA) sofreu uma avaria grave. Avaliação técnica estimou o valor recuperável em apenas 10.000.000 AOA.',
+                  steps: [
+                    '1. VLC do ativo: 30.000.000 - 12.000.000 = 18.000.000 AOA.',
+                    '2. Valor Recuperável determinado: 10.000.000 AOA.',
+                    '3. Perda por Imparidade a reconhecer: 18.000.000 - 10.000.000 = 8.000.000 AOA.',
+                    '4. Lançamento no PGC: Débito da Conta 74.1 (Imparidades de Ativos Fixos) por 8.000.000 AOA; Crédito da Conta 19.2 (Provisões para Imobilizações Corpóreas) por 8.000.000 AOA.',
+                    '5. O novo valor base para futuras amortizações passa a ser 10.000.000 AOA repartido pela vida útil remanescente.'
+                  ]
+                },
+                practicalExample: {
+                  scenario: 'Equipamento industrial com VLC de 18.000.000 AOA cujo valor recuperável caiu para 10.000.000 AOA por avaria.',
+                  stepByStep: '1. Perda por imparidade: 18.000.000 - 10.000.000 = 8.000.000 AOA.\n2. Lançamento PGC: Débito 74.1 (Perdas por Imparidade) 8.000.000 | Crédito 19.2 (Provisões Imobilizado) 8.000.000.\n3. Novo valor líquido = 10.000.000 AOA.',
+                  conclusion: 'O registo da imparidade ajusta o balanço à realidade económica sem adulterar a Conta 11 original.'
+                },
+                commonMistake: 'Não realizar o teste de imparidade quando existirem evidências óbvias de obsolescência física, mantendo ativos sobreavaliados no balanço.'
+              },
+              {
+                sectionNumber: 6,
+                id: 'sec-amort-6',
+                title: '6. Reavaliação Legal de Ativos, Mapa Modelo 2 da AGT e Fecho do Exercício',
+                content: `No sistema tributário e contabilístico angolano, a reavaliação de ativos imobilizados só é permitida mediante autorização expressa em Diploma Legal (Decreto Presidencial ou Decreto Executivo de Reavaliação), ao contrário de algumas jurisdições sob normas IFRS que permitem modelos voluntários de valor justo.
+
+Quando um Decreto de Reavaliação Legal é promulgado pelas autoridades angolanas, são publicados coeficientes de desvalorização monetária oficiais para corrigir os valores históricos face à inflação acumulada da moeda nacional (Kwanza).
+
+Procedimentos e Mapa Modelo 2:
+1. Aplicação dos Coeficientes: Multiplica-se o custo histórico do bem e as respetivas amortizações acumuladas pelo coeficiente correspondente ao ano de aquisição.
+2. Aumento do Valor Bruto e das Amortizações: A diferença líquida apurada dá origem à Reserva de Reavaliação Legal, creditada na Conta 56 — Reservas de Reavaliação (Capital Próprio).
+3. Preenchimento do Mapa Oficial Modelo 2: É obrigatório elaborar e anexar ao Relatório e Contas o Mapa de Amortizações e Reintegrações (Modelo 2 da AGT), discriminando por cada ativo: data de aquisição, valor de custo histórico, coeficiente de reavaliação, valor reavaliado, taxa de amortização, amortização acumulada anterior, quota do exercício e amortização acumulada final.
+4. Fecho de Contas: O valor total das amortizações declaradas no Mapa Modelo 2 deve bater exatamente ao cêntimo com o somatório dos saldos da Conta 73 (Demonstração de Resultados) e da variação da Conta 12 no Balancete do Razão.`,
+                explanation: `No sistema tributário e contabilístico angolana, a reavaliação de ativos imobilizados só é permitida mediante autorização expressa em Diploma Legal (Decreto Presidencial ou Decreto Executivo de Reavaliação), ao contrário de algumas jurisdições sob normas IFRS que permitem modelos voluntários de valor justo.
+
+Quando um Decreto de Reavaliação Legal é promulgado pelas autoridades angolanas, são publicados coeficientes de desvalorização monetária oficiais para corrigir os valores históricos face à inflação acumulada da moeda nacional (Kwanza).
+
+Procedimentos e Mapa Modelo 2:
+1. Aplicação dos Coeficientes: Multiplica-se o custo histórico do bem e as respetivas amortizações acumuladas pelo coeficiente correspondente ao ano de aquisição.
+2. Aumento do Valor Bruto e das Amortizações: A diferença líquida apurada dá origem à Reserva de Reavaliação Legal, creditada na Conta 56 — Reservas de Reavaliação (Capital Próprio).
+3. Preenchimento do Mapa Oficial Modelo 2: É obrigatório elaborar e anexar ao Relatório e Contas o Mapa de Amortizações e Reintegrações (Modelo 2 da AGT), discriminando por cada ativo: data de aquisição, valor de custo histórico, coeficiente de reavaliação, valor reavaliado, taxa de amortização, amortização acumulada anterior, quota do exercício e amortização acumulada final.
+4. Fecho de Contas: O valor total das amortizações declaradas no Mapa Modelo 2 deve bater exatamente ao cêntimo com o somatório dos saldos da Conta 73 (Demonstração de Resultados) e da variação da Conta 12 no Balancete do Razão.`,
+                example: {
+                  scenario: 'Um edifício fabril adquirido em 2018 por 50.000.000 AOA com 10.000.000 AOA de amortizações acumuladas é legalmente reavaliado por decreto com coeficiente 1.40.',
+                  steps: [
+                    '1. Custo inicial reavaliado: 50.000.000 AOA × 1.40 = 70.000.000 AOA (acréscimo de 20.000.000 AOA).',
+                    '2. Amortizações acumuladas reavaliadas: 10.000.000 AOA × 1.40 = 14.000.000 AOA (acréscimo de 4.000.000 AOA).',
+                    '3. Mais-Valia de Reavaliação Líquida: 20.000.000 - 4.000.000 = 16.000.000 AOA.',
+                    '4. Lançamento no PGC: Débito da Conta 11.1 (Edifícios Fabris) por 20.000.000 AOA; Crédito da Conta 12.1 (Amortizações Acumuladas Edifícios) por 4.000.000 AOA; Crédito da Conta 56 (Reservas de Reavaliação) por 16.000.000 AOA.',
+                    '5. Preenchimento e validação no Mapa Modelo 2 da AGT para efeitos de fecho fiscal.'
+                  ]
+                },
+                practicalExample: {
+                  scenario: 'Reavaliação de edifício com custo 50.000.000 AOA e amortizações 10.000.000 AOA pelo coeficiente 1.40.',
+                  stepByStep: '1. Acréscimo no ativo bruto: 20.000.000 AOA.\n2. Acréscimo nas amortizações: 4.000.000 AOA.\n3. Mais-valia líquida na Conta 56 (Reservas): 16.000.000 AOA.\n4. Lançamento: Débito 11.1 (20.000.000) | Crédito 12.1 (4.000.000) | Crédito 56 (16.000.000).',
+                  conclusion: 'A reserva de reavaliação reforça o Capital Próprio e as futuras quotas de amortização incidem sobre a nova base reavaliada.'
+                },
+                commonMistake: 'Reavaliar ativos livremente com base em relatórios informais de peritos sem amparo em Decreto de Reavaliação publicado em Diário da República.'
+              }
+            ]
+          };
+        }
+
+        // Generic deep 5-section generator for ANY other subject
+        const subTopics = [
+          { num: 1, title: `1. Fundamentos Conceituais e Enquadramento Geral de ${top}`, focus: 'conceitos essenciais, princípios regulamentares e estrutura básica' },
+          { num: 2, title: `2. Mecânica Operacional e Procedimentos de ${top}`, focus: 'execução passo a passo, metodologias aprovadas e fluxos práticos' },
+          { num: 3, title: `3. Aplicações Práticas, Cálculos e Lançamentos no PGC Angola`, focus: 'exercícios numéricos reais, fórmulas e movimentações de contas' },
+          { num: 4, title: `4. Análise de Casos Complexos, Variações e Tratamento de Exceções`, focus: 'situações atípicas, contingências, reconciliação e verificações' },
+          { num: 5, title: `5. Conformidade Legal, Encerramento e Checklist de Melhores Práticas`, focus: 'auditoria, prazos fiscais, conformidade e prevenção de erros frequentes' }
+        ];
+
+        return {
+          moduleTitle: `Guia Didático Aprofundado: ${top}`,
+          category: 'Contabilidade & Gestão',
+          userLevel: lvl,
+          standard: std,
+          sections: subTopics.map(sub => ({
+            sectionNumber: sub.num,
+            id: `sec-gen-${sub.num}`,
+            title: sub.title,
+            content: `O estudo sistemático e rigoroso de ${top} exige a compreensão detalhada de ${sub.focus}. No contexto profissional e académico atual, este domínio requer uma abordagem estruturada que articule a teoria substancial com as exigências operacionais diárias.
+
+Em primeiro lugar, é imperativo delimitar o âmbito de aplicação. A correta identificação dos parâmetros de partida permite estabelecer diagnósticos confiáveis e definir metodologias consistentes. A análise dos pressupostos técnicos e legais aplicáveis em Angola (designadamente as normas do Plano Geral de Contabilidade e a legislação conexa) assegura que todos os procedimentos adotados gozem de plena validade jurídica e económica.
+
+Em segundo lugar, a mecânica de execução deve obedecer a uma sequência lógica estrita:
+- Levantamento e validação dos dados de suporte e documentação comprovativa;
+- Aplicação das fórmulas e regras específicas estipuladas para a operação;
+- Verificação cruzada com os registos auxiliares e o razão geral;
+- Salvaguarda das evidências documentais para efeitos de auditoria interna e fiscal.
+
+Desta forma, os intervenientes adquirem a capacidade de antecipar problemas, mitigar riscos operacionais e produzir informação financeira e didática com elevado padrão de qualidade e transparência.`,
+            explanation: `O estudo sistemático e rigoroso de ${top} exige a compreensão detalhada de ${sub.focus}. No contexto profissional e académico atual, este domínio requer uma abordagem estruturada que articule a teoria substancial com as exigências operacionais diárias.
+
+Em primeiro lugar, é imperativo delimitar o âmbito de aplicação. A correta identificação dos parâmetros de partida permite estabelecer diagnósticos confiáveis e definir metodologias consistentes. A análise dos pressupostos técnicos e legais aplicáveis em Angola (designadamente as normas do Plano Geral de Contabilidade e a legislação conexa) assegura que todos os procedimentos adotados gozem de plena validade jurídica e económica.
+
+Em segundo lugar, a mecânica de execução deve obedecer a uma sequência lógica estrita:
+- Levantamento e validação dos dados de suporte e documentação comprovativa;
+- Aplicação das fórmulas e regras específicas estipuladas para a operação;
+- Verificação cruzada com os registos auxiliares e o razão geral;
+- Salvaguarda das evidências documentais para efeitos de auditoria interna e fiscal.
+
+Desta forma, os intervenientes adquirem a capacidade de antecipar problemas, mitigar riscos operacionais e produzir informação financeira e didática com elevado padrão de qualidade e transparência.`,
+            example: {
+              scenario: `Aplicação prática profissional estruturada referente ao tema "${top}". Uma empresa em Luanda necessita de implementar o procedimento conforme o padrão oficial.`,
+              steps: [
+                '1. Coleta e validação dos documentos suporte e dados iniciais.',
+                '2. Enquadramento normativo no PGC Angola e conferência dos limites regulamentares.',
+                '3. Execução dos cálculos e validação do balanceamento entre débitos e créditos.',
+                '4. Registo no Diário e arquivo da evidência documental comprobatória.'
+              ]
+            },
+            practicalExample: {
+              scenario: `Aplicação prática estruturada referente ao tema "${top}".`,
+              stepByStep: '1. Coleta e validação dos documentos suporte.\n2. Enquadramento no PGC Angola e verificação dos limites.\n3. Execução dos cálculos e validação do balanceamento.\n4. Registo no Diário e arquivo documental.',
+              conclusion: 'A aplicação rigorosa do procedimento passo a passo garante precisão técnica e conformidade.'
+            },
+            commonMistake: 'Iniciar a execução sem validar previamente os documentos de suporte e as regras de enquadramento do PGC Angola.'
+          }))
+        };
+      };
+
+      // If no API key or test key, return the comprehensive curated guide immediately
+      if (!process.env.GEMINI_API_KEY || process.env.GEMINI_API_KEY === 'MY_GEMINI_API_KEY' || process.env.GEMINI_API_KEY === 'MOCK_KEY') {
+        const curated = getDeepCuratedGuide(requestedTopic);
+        return res.json({
+          success: true,
+          data: curated,
+          source: 'curated_deep_library'
+        });
+      }
+
+      // Live Gemini Call with High Max Tokens (Tarefa 3: 12000 max tokens)
+      const userPrompt = `TEMA SOLICITADO: "${requestedTopic}"
+NÍVEL: ${lvl}
+NORMA: ${std}
+LÍNGUA: ${lang}
+
+Crie um GUIA DIDÁTICO COMPLETO, EXTENSO E APROFUNDADO (mínimo de 5 a 10 seções, NUNCA um resumo de 1 seção). Cada seção com NO MÍNIMO 300-500 palavras de teoria densa, exemplos numéricos completos e erro comum.`;
+
+      const contents = [
+        { role: 'user', parts: [{ text: `${systemPrompt}\n\n${userPrompt}` }] }
+      ];
+
+      const config = {
+        temperature: 0.3,
+        maxOutputTokens: 12000,
+        responseMimeType: "application/json"
+      };
+
+      try {
+        let { response } = await generateContentWithFallback('gemini-3.7-flash', contents, config);
+        let parsed = cleanAndParseJSON(response.text || '{}');
+
+        // TAREFA 4: FALLBACK / MULTI-STAGE GENERATION SE O MODELO AINDA RESUMIU (< 4 seções ou seções curtas)
+        const isTooShort = !parsed.sections || !Array.isArray(parsed.sections) || parsed.sections.length < 4 ||
+          parsed.sections.some((s: any) => ((s.content || s.explanation || '').split(/\s+/).length < 150));
+
+        if (isTooShort || forceTwoStage) {
+          console.log(`[Didactic Guide] Guide was short (${parsed?.sections?.length || 0} sections). Executing Stage-2 depth expansion...`);
+          
+          // Stage 1: Get structured outline of 6 sections
+          const outlinePrompt = `Gere apenas o SUMÁRIO de 6 a 8 seções para um guia completo sobre "${requestedTopic}".
+Responda com JSON:
+{
+  "moduleTitle": "string",
+  "outline": [
+    { "sectionNumber": 1, "title": "string", "scope": "string detalhando o que será abordado" }
+  ]
+}`;
+          try {
+            const { response: outlineRes } = await generateContentWithFallback('gemini-3.7-flash', [{ role: 'user', parts: [{ text: outlinePrompt }] }], {
+              temperature: 0.2,
+              maxOutputTokens: 2000,
+              responseMimeType: "application/json"
+            });
+            const outlineParsed = cleanAndParseJSON(outlineRes.text || '{}');
+
+            if (outlineParsed.outline && Array.isArray(outlineParsed.outline) && outlineParsed.outline.length >= 4) {
+              // Generate sections in parallel for high speed and depth
+              const sectionPromises = outlineParsed.outline.slice(0, 6).map(async (item: any) => {
+                const sectionPrompt = `Você é Yohan AI. Escreva a SEÇÃO ${item.sectionNumber}: "${item.title}" do guia sobre "${requestedTopic}".
+Escopo: ${item.scope}
+
+REGRAS:
+- Mínimo de 300 a 500 palavras de texto teórico explicativo e denso (vários parágrafos).
+- Inclua 1 exemplo prático numérico com cálculos passo a passo e lançamentos no PGC Angola.
+- Inclua 1 nota de erro comum/atenção.
+
+Responda em JSON:
+{
+  "sectionNumber": ${item.sectionNumber},
+  "title": "${item.title}",
+  "content": "texto longo com mais de 300 palavras...",
+  "example": { "scenario": "string", "steps": ["passo 1", "passo 2", "passo 3"] },
+  "commonMistake": "string"
+}`;
+                try {
+                  const { response: secRes } = await generateContentWithFallback('gemini-3.7-flash', [{ role: 'user', parts: [{ text: sectionPrompt }] }], {
+                    temperature: 0.25,
+                    maxOutputTokens: 2500,
+                    responseMimeType: "application/json"
+                  });
+                  const secParsed = cleanAndParseJSON(secRes.text || '{}');
+                  if (secParsed.title && (secParsed.content || secParsed.explanation)) {
+                    return {
+                      sectionNumber: item.sectionNumber,
+                      id: `sec-deep-${item.sectionNumber}`,
+                      title: secParsed.title,
+                      content: secParsed.content || secParsed.explanation,
+                      explanation: secParsed.content || secParsed.explanation,
+                      practicalExample: secParsed.example ? {
+                        scenario: secParsed.example.scenario || '',
+                        stepByStep: Array.isArray(secParsed.example.steps) ? secParsed.example.steps.join('\n') : (secParsed.example.stepByStep || ''),
+                        conclusion: secParsed.example.conclusion || ''
+                      } : secParsed.practicalExample,
+                      commonMistake: secParsed.commonMistake
+                    };
+                  }
+                } catch (secErr) {
+                  console.warn(`Failed generating section ${item.sectionNumber}:`, secErr);
+                }
+                return null;
+              });
+
+              const resolvedSections = await Promise.all(sectionPromises);
+              const fullSections = resolvedSections.filter(Boolean);
+
+              if (fullSections.length >= 3) {
+                return res.json({
+                  success: true,
+                  data: {
+                    moduleTitle: outlineParsed.moduleTitle || requestedTopic,
+                    category: 'Contabilidade & Fiscalidade',
+                    userLevel: lvl,
+                    standard: std,
+                    sections: fullSections
+                  },
+                  generationMethod: 'two_stage_depth'
+                });
+              }
+            }
+          } catch (twoStageErr) {
+            console.warn('Two-stage generation encountered an issue:', twoStageErr);
+          }
+        }
+
+        // Format single-stage output to ensure backward-compatibility
+        if (parsed.sections && Array.isArray(parsed.sections) && parsed.sections.length >= 4) {
+          const formattedSections = parsed.sections.map((s: any, idx: number) => ({
+            sectionNumber: s.sectionNumber || idx + 1,
+            id: s.id || `sec-${idx + 1}`,
+            title: s.title || `Seção ${idx + 1}`,
+            content: s.content || s.explanation || '',
+            explanation: s.content || s.explanation || '',
+            practicalExample: s.example ? {
+              scenario: s.example.scenario || '',
+              stepByStep: Array.isArray(s.example.steps) ? s.example.steps.join('\n') : (s.example.stepByStep || ''),
+              conclusion: s.example.conclusion || ''
+            } : s.practicalExample,
+            commonMistake: s.commonMistake || ''
+          }));
+
+          return res.json({
+            success: true,
+            data: {
+              moduleTitle: parsed.moduleTitle || requestedTopic,
+              category: 'Contabilidade & Fiscalidade',
+              userLevel: lvl,
+              standard: std,
+              sections: formattedSections
+            },
+            generationMethod: 'single_stage_deep'
+          });
+        }
+
+        // Fallback to rich curated guide if Gemini response was malformed or below standards
+        console.warn('Gemini response did not meet depth criteria, utilizing curated deep guide.');
+        const curated = getDeepCuratedGuide(requestedTopic);
+        return res.json({
+          success: true,
+          data: curated,
+          source: 'curated_deep_fallback'
+        });
+
+      } catch (geminiErr: any) {
+        console.warn('Gemini generation error in /api/ai/didactic-guide:', geminiErr?.message || geminiErr);
+        const curated = getDeepCuratedGuide(requestedTopic);
+        return res.json({
+          success: true,
+          data: curated,
+          source: 'curated_deep_fallback_on_error'
+        });
+      }
+    } catch (err: any) {
+      console.error('Fatal error in /api/ai/didactic-guide:', err);
+      res.status(500).json({ error: err?.message || 'Erro ao gerar guia didático.' });
     }
   });
 
@@ -2478,6 +3250,90 @@ Please apply the edit request to the document. Return the complete updated docum
     } catch (error: any) {
       console.error('Yohan Document generation error:', error);
       res.status(500).json({ error: error.message || 'Error generating document.' });
+    }
+  });
+
+  // YOHAN AI - LARGE COMPLETE DOCUMENT GENERATOR (TWO-PHASE GENERATION)
+  app.post('/api/yohan/document-large', async (req, res) => {
+    try {
+      const { prompt } = req.body;
+      if (!prompt || typeof prompt !== 'string') {
+        return res.status(400).json({ error: 'O prompt do documento é obrigatório.' });
+      }
+
+      const systemInstruction = `Você é Yohan AI, consultor e auditor contabilístico sénior no Plano Geral de Contabilidade de Angola (PGC - Decreto n.º 82/01, atualizado pelo DP n.º 180/19) e na legislação fiscal da AGT.
+Use terminologia técnica angolana formal (Proveitos, Custos, Capital Próprio, Activo, Amortizações) e lançamentos [D]/[C] rigorosos com contas do PGC.`;
+
+      // FASE A: Gerar Índice com 8 a 15 seções
+      const outlinePrompt = `Elabore a estrutura completa e exaustiva para um manual/documento técnico sobre: "${prompt}".
+Gere entre 8 e 14 secções sequenciais com profundidade técnica, cobrindo o tema desde o enquadramento legal, conceitos-base, lançamentos práticos, apuramento de impostos e controlo interno.
+
+Responda em formato JSON estrito:
+{
+  "tituloDocumento": "string",
+  "secoes": [
+    { "numero": 1, "titulo": "string", "objetivo": "string" }
+  ]
+}`;
+
+      const { response: outlineRes } = await generateContentWithFallback('gemini-2.5-flash', outlinePrompt, {
+        systemInstruction,
+        responseMimeType: 'application/json'
+      });
+
+      const outline = cleanAndParseJSON(outlineRes.text || '{}');
+      const secoes = outline.secoes && outline.secoes.length >= 4 ? outline.secoes : [
+        { numero: 1, titulo: 'Enquadramento Geral e Base Normativa no PGC Angola', objetivo: 'Definir base legal e conceitos' },
+        { numero: 2, titulo: 'Classificação e Contas Aplicáveis nas Classes 1 a 8', objetivo: 'Mapear plano de contas' },
+        { numero: 3, titulo: 'Procedimentos de Registo e Lançamentos Contabilísticos', objetivo: 'Exemplificar operações práticas [D]/[C]' },
+        { numero: 4, titulo: 'Impacto Fiscal e Obrigações Declarativas AGT', objetivo: 'Regime de impostos e prazos' },
+        { numero: 5, titulo: 'Auditoria, Controlo Interno e Erros Frequentes', objetivo: 'Checklist de verificação' }
+      ];
+
+      const docTitle = outline.tituloDocumento || prompt;
+      let fullText = `# ${docTitle}\n\n`;
+      fullText += `> **Documento Técnico Elaborado por Yohan AI**\n`;
+      fullText += `> *Referencial: PGC Angola (Decreto n.º 82/01, DP n.º 180/19) & AGT*\n\n`;
+      fullText += `## Índice Sistemático\n\n`;
+      secoes.forEach((s: any) => {
+        fullText += `${s.numero}. **${s.titulo}** — ${s.objetivo}\n`;
+      });
+      fullText += `\n---\n\n`;
+
+      // FASE B: Gerar cada seção em profundidade
+      const indiceResumo = secoes.map((s: any) => `${s.numero}. ${s.titulo} (${s.objetivo})`).join('\n');
+
+      for (const sec of secoes) {
+        const secPrompt = `Estamos a elaborar o manual técnico: "${docTitle}".
+Índice geral:
+${indiceResumo}
+
+Escreva AGORA a SECÇÃO ${sec.numero}: "${sec.titulo}".
+Objetivo: ${sec.objetivo}.
+Requisitos:
+- Desenvolvimento aprofundado (400+ palavras).
+- Fundamentação no PGC Angola e legislação da AGT.
+- Exemplos práticos com lançamentos contabilísticos formais [D]/[C] quando aplicável.
+- Tabela informativa em markdown quando relevante.
+- Comece diretamente no conteúdo substantivo da secção sem repetir o título principal.`;
+
+        const { response: secRes } = await generateContentWithFallback('gemini-2.5-flash', secPrompt, {
+          systemInstruction,
+          maxOutputTokens: 8192
+        });
+
+        fullText += `## Secção ${sec.numero}: ${sec.titulo}\n\n${(secRes.text || '').trim()}\n\n---\n\n`;
+      }
+
+      res.json({
+        title: docTitle,
+        text: fullText,
+        documentContent: fullText,
+        sectionsCount: secoes.length
+      });
+    } catch (error: any) {
+      console.error('Yohan Large Document generation error:', error);
+      res.status(500).json({ error: error.message || 'Erro ao gerar documento grande.' });
     }
   });
 

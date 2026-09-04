@@ -34,7 +34,10 @@ import {
   ArrowRight,
   Eye,
   Undo2,
-  BookOpen
+  BookOpen,
+  GitCommit,
+  Calendar,
+  Sparkle
 } from 'lucide-react';
 import { marked } from 'marked';
 import DOMPurify from 'dompurify';
@@ -81,11 +84,25 @@ export const NOTE_CATEGORIES: NoteCategory[] = [
   'Ideia'
 ];
 
+export type NoteDifficulty = 'Iniciante' | 'Intermédio' | 'Avançado';
+
+export const NOTE_DISCIPLINES: string[] = [
+  'Todas',
+  'Contabilidade',
+  'Fiscalidade',
+  'Auditoria',
+  'Direito Comercial',
+  'Finanças',
+  'Estudo Geral'
+];
+
 export interface NoteItem {
   id: string;
   title: string;
   content: string;
   category: NoteCategory;
+  discipline?: string;
+  difficulty?: NoteDifficulty;
   tags: string[];
   pinned: boolean;
   color?: string;
@@ -108,12 +125,20 @@ const CATEGORY_COLORS: Record<NoteCategory, { bg: string; text: string; border: 
   Ideia: { bg: 'bg-amber-500/10', text: 'text-amber-700 dark:text-amber-400', border: 'border-amber-500/20', badge: 'bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300' },
 };
 
+export const DIFFICULTY_COLORS: Record<NoteDifficulty, { bg: string; text: string; border: string }> = {
+  Iniciante: { bg: 'bg-emerald-500/15', text: 'text-emerald-700 dark:text-emerald-300', border: 'border-emerald-500/30' },
+  Intermédio: { bg: 'bg-blue-500/15', text: 'text-blue-700 dark:text-blue-300', border: 'border-blue-500/30' },
+  Avançado: { bg: 'bg-purple-500/15', text: 'text-purple-700 dark:text-purple-300', border: 'border-purple-500/30' },
+};
+
 const DEFAULT_SAMPLE_NOTES: NoteItem[] = [
   {
     id: 'note_demo_1',
     title: 'Regras de Ouro do PGC Angola (Decreto 82/01)',
     content: '1. As contas da Classe 1 a 3 são contas de Balanço patrimonial.\n2. Classe 6 (Proveitos) e Classe 7 (Custos) integram a Demonstração de Resultados.\n3. Lançamentos devem respeitar sempre o equilíbrio estrito entre Débito e Crédito.',
     category: 'Contabilidade',
+    discipline: 'Contabilidade',
+    difficulty: 'Iniciante',
     tags: ['pgc', 'angola', 'partidas-dobradas', 'decreto-82-01'],
     pinned: true,
     createdAt: Date.now() - 3600000 * 24,
@@ -124,6 +149,8 @@ const DEFAULT_SAMPLE_NOTES: NoteItem[] = [
     title: 'Roteiro de Revisão para Exame de Auditoria',
     content: 'Rever apuramento do IVA (Lei 7/19), retenção na fonte de Imposto Industrial (6.5%) e conciliações bancárias mensais com extratos do BNA.',
     category: 'Estudo',
+    discipline: 'Auditoria',
+    difficulty: 'Intermédio',
     tags: ['auditoria', 'iva', 'imposto-industrial', 'exame'],
     pinned: true,
     createdAt: Date.now() - 3600000 * 48,
@@ -134,6 +161,8 @@ const DEFAULT_SAMPLE_NOTES: NoteItem[] = [
     title: 'Especificações Técnicas do Módulo de Exportação SAF-T AO',
     content: 'O ficheiro XML SAF-T AO deve cumprir o esquema da AGT, contendo as tabelas Header, MasterFiles (GeneralLedgerAccounts, Customers, Suppliers) e GeneralLedgerEntries.',
     category: 'Especificação',
+    discipline: 'Fiscalidade',
+    difficulty: 'Avançado',
     tags: ['saft', 'agt', 'xml', 'compliance'],
     pinned: false,
     createdAt: Date.now() - 3600000 * 72,
@@ -306,7 +335,9 @@ export default function NotasPage({ currentUserId, onNavigateTab }: NotasPagePro
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('Todas');
   const [selectedTag, setSelectedTag] = useState<string | null>(null);
-  const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
+  const [selectedDifficulty, setSelectedDifficulty] = useState<string>('Todos');
+  const [selectedDiscipline, setSelectedDiscipline] = useState<string>('Todas');
+  const [viewMode, setViewMode] = useState<'grid' | 'list' | 'timeline'>('grid');
   const [sortBy, setSortBy] = useState<'updated' | 'created' | 'title'>('updated');
   const [sortOrder, setSortOrder] = useState<'desc' | 'asc'>('desc');
 
@@ -322,6 +353,8 @@ export default function NotasPage({ currentUserId, onNavigateTab }: NotasPagePro
   const [formTitle, setFormTitle] = useState('');
   const [formContent, setFormContent] = useState('');
   const [formCategory, setFormCategory] = useState<NoteCategory>('Geral');
+  const [formDiscipline, setFormDiscipline] = useState<string>('Contabilidade');
+  const [formDifficulty, setFormDifficulty] = useState<NoteDifficulty>('Iniciante');
   const [formTagInput, setFormTagInput] = useState('');
   const [formTags, setFormTags] = useState<string[]>([]);
   const [formPinned, setFormPinned] = useState(false);
@@ -384,6 +417,8 @@ export default function NotasPage({ currentUserId, onNavigateTab }: NotasPagePro
     setFormTitle('');
     setFormContent('');
     setFormCategory('Geral');
+    setFormDiscipline(selectedDiscipline !== 'Todas' ? selectedDiscipline : 'Contabilidade');
+    setFormDifficulty(selectedDifficulty !== 'Todos' ? (selectedDifficulty as NoteDifficulty) : 'Iniciante');
     setFormTags([]);
     setFormTagInput('');
     setFormPinned(false);
@@ -408,6 +443,8 @@ export default function NotasPage({ currentUserId, onNavigateTab }: NotasPagePro
     setFormTitle(note.title);
     setFormContent(note.content);
     setFormCategory(note.category);
+    setFormDiscipline(note.discipline || 'Contabilidade');
+    setFormDifficulty(note.difficulty || 'Iniciante');
     setFormTags([...note.tags]);
     setFormTagInput('');
     setFormPinned(note.pinned);
@@ -459,6 +496,8 @@ export default function NotasPage({ currentUserId, onNavigateTab }: NotasPagePro
             title: formTitle.trim() || 'Sem título',
             content: formContent,
             category: formCategory,
+            discipline: formDiscipline,
+            difficulty: formDifficulty,
             tags: formTags,
             pinned: formPinned,
             updatedAt: now
@@ -472,6 +511,8 @@ export default function NotasPage({ currentUserId, onNavigateTab }: NotasPagePro
             title: formTitle.trim() || 'Nova Nota',
             content: formContent,
             category: formCategory,
+            discipline: formDiscipline,
+            difficulty: formDifficulty,
             tags: formTags,
             pinned: formPinned,
             createdAt: now,
@@ -504,7 +545,7 @@ export default function NotasPage({ currentUserId, onNavigateTab }: NotasPagePro
         clearTimeout(autoSaveTimerRef.current);
       }
     };
-  }, [formTitle, formContent, formCategory, formTags, formPinned, isEditorOpen, effectiveUid]);
+  }, [formTitle, formContent, formCategory, formDiscipline, formDifficulty, formTags, formPinned, isEditorOpen, effectiveUid]);
 
   // Add tag to form
   const handleAddTag = () => {
@@ -536,6 +577,8 @@ export default function NotasPage({ currentUserId, onNavigateTab }: NotasPagePro
         title: formTitle.trim() || 'Sem título',
         content: formContent,
         category: formCategory,
+        discipline: formDiscipline,
+        difficulty: formDifficulty,
         tags: formTags,
         pinned: formPinned,
         updatedAt: now
@@ -549,6 +592,8 @@ export default function NotasPage({ currentUserId, onNavigateTab }: NotasPagePro
         title: formTitle.trim() || 'Nova Nota',
         content: formContent,
         category: formCategory,
+        discipline: formDiscipline,
+        difficulty: formDifficulty,
         tags: formTags,
         pinned: formPinned,
         createdAt: now,
@@ -905,6 +950,16 @@ export default function NotasPage({ currentUserId, onNavigateTab }: NotasPagePro
       if (selectedCategory !== 'Todas' && note.category !== selectedCategory) {
         return false;
       }
+      // Discipline filter
+      if (selectedDiscipline !== 'Todas') {
+        const discMatch = note.discipline === selectedDiscipline || note.category === selectedDiscipline || note.tags.some(t => t.toLowerCase() === selectedDiscipline.toLowerCase());
+        if (!discMatch) return false;
+      }
+      // Difficulty filter
+      if (selectedDifficulty !== 'Todos') {
+        const diff = note.difficulty || 'Iniciante';
+        if (diff !== selectedDifficulty) return false;
+      }
       // Tag filter
       if (selectedTag && !note.tags.includes(selectedTag)) {
         return false;
@@ -936,7 +991,7 @@ export default function NotasPage({ currentUserId, onNavigateTab }: NotasPagePro
       }
       return sortOrder === 'asc' ? -comp : comp;
     });
-  }, [notes, selectedCategory, selectedTag, searchQuery, sortBy, sortOrder]);
+  }, [notes, selectedCategory, selectedDiscipline, selectedDifficulty, selectedTag, searchQuery, sortBy, sortOrder]);
 
   const pinnedCount = notes.filter(n => n.pinned).length;
 
@@ -1215,6 +1270,7 @@ export default function NotasPage({ currentUserId, onNavigateTab }: NotasPagePro
           <div className="flex items-center gap-2 shrink-0">
             <div className="flex items-center bg-slate-100 dark:bg-slate-800 p-1 rounded-xl border border-slate-200 dark:border-slate-700">
               <button
+                type="button"
                 onClick={() => setViewMode('grid')}
                 className={`p-1.5 rounded-lg transition-colors cursor-pointer ${
                   viewMode === 'grid' 
@@ -1227,6 +1283,7 @@ export default function NotasPage({ currentUserId, onNavigateTab }: NotasPagePro
                 <Grid className="w-4 h-4" />
               </button>
               <button
+                type="button"
                 onClick={() => setViewMode('list')}
                 className={`p-1.5 rounded-lg transition-colors cursor-pointer ${
                   viewMode === 'list' 
@@ -1237,6 +1294,19 @@ export default function NotasPage({ currentUserId, onNavigateTab }: NotasPagePro
                 aria-label="Visualização em lista"
               >
                 <List className="w-4 h-4" />
+              </button>
+              <button
+                type="button"
+                onClick={() => setViewMode('timeline')}
+                className={`p-1.5 rounded-lg transition-colors cursor-pointer flex items-center gap-1 ${
+                  viewMode === 'timeline' 
+                    ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-400 shadow-2xs font-bold' 
+                    : 'text-slate-500 hover:text-slate-800 dark:text-slate-400'
+                }`}
+                title="Linha Cronológica de Estudos"
+                aria-label="Visualização em cronologia"
+              >
+                <GitCommit className="w-4 h-4" />
               </button>
             </div>
 
@@ -1251,6 +1321,7 @@ export default function NotasPage({ currentUserId, onNavigateTab }: NotasPagePro
             </select>
 
             <button
+              type="button"
               onClick={() => setSortOrder(prev => prev === 'desc' ? 'asc' : 'desc')}
               className="p-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-600 dark:text-slate-300 transition-colors cursor-pointer"
               title={sortOrder === 'desc' ? "Ordem Descendente" : "Ordem Ascendente"}
@@ -1258,6 +1329,55 @@ export default function NotasPage({ currentUserId, onNavigateTab }: NotasPagePro
             >
               {sortOrder === 'desc' ? <SortDesc className="w-4 h-4" /> : <SortAsc className="w-4 h-4" />}
             </button>
+          </div>
+        </div>
+
+        {/* Secondary Filter Bar: Disciplines & Difficulty Level */}
+        <div className="flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-slate-100 dark:border-slate-800/80">
+          {/* Difficulty Chips */}
+          <div className="flex items-center gap-1.5 text-xs">
+            <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mr-1">Dificuldade:</span>
+            {(['Todos', 'Iniciante', 'Intermédio', 'Avançado'] as const).map(diff => {
+              const isSelected = selectedDifficulty === diff;
+              return (
+                <button
+                  key={diff}
+                  type="button"
+                  onClick={() => setSelectedDifficulty(diff)}
+                  className={`px-2.5 py-1 rounded-xl font-bold transition-all text-xs cursor-pointer ${
+                    isSelected
+                      ? diff === 'Iniciante'
+                        ? 'bg-emerald-600 text-white shadow-sm'
+                        : diff === 'Intermédio'
+                        ? 'bg-blue-600 text-white shadow-sm'
+                        : diff === 'Avançado'
+                        ? 'bg-purple-600 text-white shadow-sm'
+                        : 'bg-slate-900 dark:bg-slate-700 text-white shadow-sm'
+                      : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700'
+                  }`}
+                >
+                  {diff}
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Discipline Selector */}
+          <div className="flex items-center gap-2 text-xs">
+            <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Disciplina:</span>
+            <select
+              value={selectedDiscipline}
+              onChange={(e) => setSelectedDiscipline(e.target.value)}
+              className="bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-2.5 py-1 text-xs font-semibold text-slate-700 dark:text-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer"
+            >
+              <option value="Todas">Todas as Disciplinas</option>
+              <option value="Contabilidade">Contabilidade PGC</option>
+              <option value="Fiscalidade">Fiscalidade & IVA</option>
+              <option value="Auditoria">Auditoria & Controlo</option>
+              <option value="Estudo">Estudo & Exames</option>
+              <option value="Especificação">Especificação Técnica</option>
+              <option value="Geral">Geral</option>
+            </select>
           </div>
         </div>
 
@@ -1340,198 +1460,384 @@ export default function NotasPage({ currentUserId, onNavigateTab }: NotasPagePro
         </div>
       ) : (
         <LayoutGroup id="notas-workspace-fluid-layout">
-          <motion.div 
-            layout
-            className={
-              viewMode === 'grid'
-                ? 'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-5'
-                : 'space-y-3'
-            }
-            id="notes-items-container"
-          >
-            <AnimatePresence mode="popLayout">
-              {filteredNotes.map((note) => {
-                const catStyle = CATEGORY_COLORS[note.category] || CATEGORY_COLORS.Geral;
-                const isMenuOpen = activeCardMenuId === note.id;
+          {viewMode === 'timeline' ? (
+            /* TIMELINE VIEW */
+            <div className="relative pl-6 sm:pl-8 border-l-2 border-indigo-200 dark:border-indigo-800/60 ml-3 sm:ml-6 space-y-6 sm:space-y-8 my-4" id="notes-timeline-container">
+              <AnimatePresence mode="popLayout">
+                {filteredNotes.map((note, idx) => {
+                  const catStyle = CATEGORY_COLORS[note.category] || CATEGORY_COLORS.Geral;
+                  const isMenuOpen = activeCardMenuId === note.id;
+                  const diffColor = 
+                    note.difficulty === 'Avançado' 
+                      ? 'bg-purple-50 dark:bg-purple-950/40 text-purple-700 dark:text-purple-300 border-purple-200 dark:border-purple-800/60'
+                      : note.difficulty === 'Intermédio'
+                      ? 'bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300 border-blue-200 dark:border-blue-800/60'
+                      : 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800/60';
 
-                return (
-                  <motion.div
-                    key={note.id}
-                    layout
-                    layoutId={note.id}
-                    initial={{ opacity: 0, scale: 0.92, y: 16 }}
-                    animate={{ opacity: 1, scale: 1, y: 0 }}
-                    exit={{ opacity: 0, scale: 0.88, y: -14 }}
-                    transition={{ 
-                      type: 'spring', 
-                      damping: 24, 
-                      stiffness: 320, 
-                      mass: 0.55 
-                    }}
-                    onClick={() => handleOpenEditModal(note)}
-                    id={`note-card-${note.id}`}
-                    className={`group relative bg-white dark:bg-slate-900 rounded-3xl border ${
-                      note.pinned 
-                        ? 'border-amber-400/80 dark:border-amber-500/70 shadow-md shadow-amber-500/5 ring-1 ring-amber-400/30' 
-                        : 'border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700'
-                    } p-5 transition-all duration-200 hover:shadow-xl hover:-translate-y-0.5 cursor-pointer flex flex-col justify-between`}
-                  >
-                    {/* Top Header inside Card */}
-                    <div>
-                      <div className="flex items-start justify-between gap-2 mb-3">
-                        <span className={`text-[10px] font-extrabold px-2.5 py-1 rounded-xl border ${catStyle.badge} ${catStyle.border}`}>
-                          {note.category}
-                        </span>
+                  return (
+                    <motion.div
+                      key={note.id}
+                      layout
+                      layoutId={note.id}
+                      initial={{ opacity: 0, x: -16, y: 8 }}
+                      animate={{ opacity: 1, x: 0, y: 0 }}
+                      exit={{ opacity: 0, scale: 0.9 }}
+                      transition={{ 
+                        type: 'spring', 
+                        damping: 24, 
+                        stiffness: 300, 
+                        mass: 0.5,
+                        delay: Math.min(idx * 0.04, 0.3)
+                      }}
+                      className="relative group"
+                    >
+                      {/* Timeline Node Marker */}
+                      <div className="absolute -left-[31px] sm:-left-[39px] top-4 w-5 h-5 sm:w-6 sm:h-6 rounded-full bg-white dark:bg-slate-900 border-2 border-indigo-500 flex items-center justify-center shadow-md group-hover:scale-110 transition-transform">
+                        <div className="w-2 h-2 sm:w-2.5 sm:h-2.5 rounded-full bg-indigo-600 dark:bg-indigo-400" />
+                      </div>
 
-                        <div className="flex items-center gap-1 shrink-0 relative" onClick={(e) => e.stopPropagation()}>
-                          {/* Pin Toggle */}
-                          <button
-                            type="button"
-                            onClick={(e) => handleTogglePin(note.id, e)}
-                            title={note.pinned ? "Desafixar nota" : "Fixar nota no topo"}
-                            aria-label={note.pinned ? "Desafixar nota" : "Fixar nota"}
-                            className={`p-1.5 rounded-lg transition-colors cursor-pointer ${
-                              note.pinned 
-                                ? 'text-amber-500 bg-amber-50 dark:bg-amber-950/40 hover:bg-amber-100' 
-                                : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800'
-                            }`}
-                          >
-                            <Pin className={`w-3.5 h-3.5 ${note.pinned ? 'fill-amber-500' : ''}`} />
-                          </button>
+                      {/* Note Card inside Timeline */}
+                      <div 
+                        onClick={() => handleOpenEditModal(note)}
+                        className={`bg-white dark:bg-slate-900 rounded-2xl sm:rounded-3xl border ${
+                          note.pinned 
+                            ? 'border-amber-400/80 dark:border-amber-500/70 shadow-md shadow-amber-500/5 ring-1 ring-amber-400/30' 
+                            : 'border-slate-200 dark:border-slate-800 hover:border-indigo-300 dark:hover:border-indigo-700'
+                        } p-5 transition-all duration-200 hover:shadow-xl hover:-translate-y-0.5 cursor-pointer`}
+                      >
+                        {/* Header: Date + Badges + Actions */}
+                        <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+                          <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
+                            {/* Timestamp badge */}
+                            <span className="inline-flex items-center gap-1 text-[10px] sm:text-xs font-bold px-2.5 py-1 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300">
+                              <Calendar className="w-3 h-3 text-indigo-500" />
+                              {new Date(note.updatedAt || note.createdAt).toLocaleDateString('pt-PT', {
+                                day: '2-digit',
+                                month: 'short',
+                                year: 'numeric',
+                                hour: '2-digit',
+                                minute: '2-digit'
+                              })}
+                            </span>
 
-                          {/* Quick Export Single Note Dropdown */}
-                          <div className="relative">
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setActiveCardMenuId(isMenuOpen ? null : note.id);
-                              }}
-                              title="Exportar esta nota"
-                              aria-label="Exportar nota"
-                              className="p-1.5 text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-950/40 rounded-lg transition-colors cursor-pointer"
-                            >
-                              <FileDown className="w-3.5 h-3.5" />
-                            </button>
+                            {/* Category Badge */}
+                            <span className={`text-[10px] font-extrabold px-2.5 py-0.5 rounded-xl border ${catStyle.badge} ${catStyle.border}`}>
+                              {note.category}
+                            </span>
 
-                            <AnimatePresence>
-                              {isMenuOpen && (
-                                <motion.div
-                                  initial={{ opacity: 0, scale: 0.9, y: 6 }}
-                                  animate={{ opacity: 1, scale: 1, y: 0 }}
-                                  exit={{ opacity: 0, scale: 0.9, y: 6 }}
-                                  transition={{ duration: 0.12 }}
-                                  className="absolute right-0 mt-1 w-44 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl shadow-xl p-1.5 z-40 text-slate-800 dark:text-slate-100 space-y-0.5 text-xs font-semibold"
-                                >
-                                  <button
-                                    type="button"
-                                    onClick={(e) => handleExportSinglePDF(note, e)}
-                                    className="w-full text-left px-2.5 py-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 flex items-center gap-2 text-slate-700 dark:text-slate-200 transition-colors"
-                                  >
-                                    <FileText className="w-3.5 h-3.5 text-red-500" />
-                                    <span>Exportar PDF</span>
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={(e) => handleExportSingleMarkdown(note, e)}
-                                    className="w-full text-left px-2.5 py-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 flex items-center gap-2 text-slate-700 dark:text-slate-200 transition-colors"
-                                  >
-                                    <FileCode className="w-3.5 h-3.5 text-blue-500" />
-                                    <span>Exportar .MD</span>
-                                  </button>
-                                </motion.div>
-                              )}
-                            </AnimatePresence>
+                            {/* Discipline Badge */}
+                            {note.discipline && (
+                              <span className="text-[10px] font-bold px-2 py-0.5 rounded-xl bg-indigo-50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800/60">
+                                {note.discipline}
+                              </span>
+                            )}
+
+                            {/* Difficulty Badge */}
+                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-xl border ${diffColor}`}>
+                              {note.difficulty || 'Iniciante'}
+                            </span>
                           </div>
 
-                          {/* Copy Content */}
-                          <button
-                            type="button"
-                            onClick={(e) => handleCopyNote(note, e)}
-                            title="Copiar texto da nota"
-                            aria-label="Copiar nota"
-                            className="p-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors cursor-pointer"
-                          >
-                            {copiedNoteId === note.id ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
-                          </button>
-
-                          {/* Delete Note */}
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setDeletingNoteId(note.id);
-                            }}
-                            title="Eliminar nota"
-                            aria-label="Eliminar nota"
-                            className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30 rounded-lg transition-colors cursor-pointer"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
-                      </div>
-
-                      {/* Title */}
-                      <h3 className="font-extrabold text-sm sm:text-base text-slate-900 dark:text-slate-100 mb-2 line-clamp-2 leading-snug group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
-                        {note.title}
-                      </h3>
-
-                      {/* Content Preview */}
-                      <p className="text-xs text-slate-600 dark:text-slate-300 font-normal whitespace-pre-line line-clamp-4 leading-relaxed mb-4">
-                        {note.content || <span className="italic text-slate-400">Sem conteúdo de texto...</span>}
-                      </p>
-                    </div>
-
-                    {/* Card Footer: Tags & Timestamp */}
-                    <div className="pt-3 border-t border-slate-100 dark:border-slate-800/80 space-y-2.5">
-                      {/* Tags */}
-                      {note.tags && note.tags.length > 0 && (
-                        <div className="flex flex-wrap gap-1.5">
-                          {note.tags.map((t, idx) => (
+                          {/* Quick Action Buttons */}
+                          <div className="flex items-center gap-1 shrink-0 relative" onClick={(e) => e.stopPropagation()}>
                             <button
-                              key={idx}
+                              type="button"
+                              onClick={(e) => handleTogglePin(note.id, e)}
+                              title={note.pinned ? "Desafixar nota" : "Fixar nota no topo"}
+                              aria-label={note.pinned ? "Desafixar nota" : "Fixar nota"}
+                              className={`p-1.5 rounded-lg transition-colors cursor-pointer ${
+                                note.pinned 
+                                  ? 'text-amber-500 bg-amber-50 dark:bg-amber-950/40 hover:bg-amber-100' 
+                                  : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800'
+                              }`}
+                            >
+                              <Pin className={`w-3.5 h-3.5 ${note.pinned ? 'fill-amber-500' : ''}`} />
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={(e) => handleExportSinglePDF(note, e)}
+                              title="Exportar esta nota para PDF"
+                              aria-label="Exportar PDF"
+                              className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30 rounded-lg transition-colors cursor-pointer"
+                            >
+                              <FileText className="w-3.5 h-3.5" />
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={(e) => handleCopyNote(note, e)}
+                              title="Copiar texto da nota"
+                              aria-label="Copiar nota"
+                              className="p-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors cursor-pointer"
+                            >
+                              {copiedNoteId === note.id ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
+                            </button>
+
+                            <button
                               type="button"
                               onClick={(e) => {
                                 e.stopPropagation();
-                                setSelectedTag(t === selectedTag ? null : t);
+                                setDeletingNoteId(note.id);
                               }}
-                              className={`text-[10px] font-semibold px-2 py-0.5 rounded-md transition-colors ${
-                                selectedTag === t
-                                  ? 'bg-indigo-600 text-white'
-                                  : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-indigo-50 dark:hover:bg-indigo-950/40 hover:text-indigo-600 dark:hover:text-indigo-300'
-                              }`}
+                              title="Eliminar nota"
+                              aria-label="Eliminar nota"
+                              className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30 rounded-lg transition-colors cursor-pointer"
                             >
-                              #{t}
+                              <Trash2 className="w-3.5 h-3.5" />
                             </button>
-                          ))}
+                          </div>
                         </div>
-                      )}
 
-                      {/* Date format */}
-                      <div className="flex items-center justify-between text-[10px] text-slate-400 dark:text-slate-500 font-medium">
-                        <span className="flex items-center gap-1">
-                          <Clock className="w-3 h-3" />
-                          {new Date(note.updatedAt || note.createdAt).toLocaleDateString('pt-PT', {
-                            day: '2-digit',
-                            month: 'short',
-                            year: 'numeric',
-                            hour: '2-digit',
-                            minute: '2-digit'
-                          })}
-                        </span>
+                        {/* Title */}
+                        <h3 className="font-black text-base text-slate-900 dark:text-slate-100 mb-2 leading-snug group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors">
+                          {note.title}
+                        </h3>
 
-                        {note.pinned && (
-                          <span className="text-amber-500 font-bold flex items-center gap-0.5">
-                            <Pin className="w-2.5 h-2.5 fill-amber-500" /> Fixada
-                          </span>
+                        {/* Content */}
+                        <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-300 font-normal whitespace-pre-line line-clamp-3 leading-relaxed mb-3">
+                          {note.content || <span className="italic text-slate-400">Sem conteúdo de texto...</span>}
+                        </p>
+
+                        {/* Tags */}
+                        {note.tags && note.tags.length > 0 && (
+                          <div className="flex flex-wrap gap-1.5 pt-2 border-t border-slate-100 dark:border-slate-800/80">
+                            {note.tags.map((t, tIdx) => (
+                              <button
+                                key={tIdx}
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setSelectedTag(t === selectedTag ? null : t);
+                                }}
+                                className={`text-[10px] font-semibold px-2 py-0.5 rounded-md transition-colors ${
+                                  selectedTag === t
+                                    ? 'bg-indigo-600 text-white'
+                                    : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-indigo-50 dark:hover:bg-indigo-950/40 hover:text-indigo-600 dark:hover:text-indigo-300'
+                                }`}
+                              >
+                                #{t}
+                              </button>
+                            ))}
+                          </div>
                         )}
                       </div>
-                    </div>
-                  </motion.div>
-                );
-              })}
-            </AnimatePresence>
-          </motion.div>
+                    </motion.div>
+                  );
+                })}
+              </AnimatePresence>
+            </div>
+          ) : (
+            /* GRID / LIST VIEW */
+            <motion.div 
+              layout
+              className={
+                viewMode === 'grid'
+                  ? 'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-5'
+                  : 'space-y-3'
+              }
+              id="notes-items-container"
+            >
+              <AnimatePresence mode="popLayout">
+                {filteredNotes.map((note) => {
+                  const catStyle = CATEGORY_COLORS[note.category] || CATEGORY_COLORS.Geral;
+                  const isMenuOpen = activeCardMenuId === note.id;
+                  const diffColor = 
+                    note.difficulty === 'Avançado' 
+                      ? 'bg-purple-50 dark:bg-purple-950/40 text-purple-700 dark:text-purple-300 border-purple-200 dark:border-purple-800/60'
+                      : note.difficulty === 'Intermédio'
+                      ? 'bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300 border-blue-200 dark:border-blue-800/60'
+                      : 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800/60';
+
+                  return (
+                    <motion.div
+                      key={note.id}
+                      layout
+                      layoutId={note.id}
+                      initial={{ opacity: 0, scale: 0.92, y: 16 }}
+                      animate={{ opacity: 1, scale: 1, y: 0 }}
+                      exit={{ opacity: 0, scale: 0.88, y: -14 }}
+                      transition={{ 
+                        type: 'spring', 
+                        damping: 24, 
+                        stiffness: 320, 
+                        mass: 0.55 
+                      }}
+                      onClick={() => handleOpenEditModal(note)}
+                      id={`note-card-${note.id}`}
+                      className={`group relative bg-white dark:bg-slate-900 rounded-3xl border ${
+                        note.pinned 
+                          ? 'border-amber-400/80 dark:border-amber-500/70 shadow-md shadow-amber-500/5 ring-1 ring-amber-400/30' 
+                          : 'border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700'
+                      } p-5 transition-all duration-200 hover:shadow-xl hover:-translate-y-0.5 cursor-pointer flex flex-col justify-between`}
+                    >
+                      {/* Top Header inside Card */}
+                      <div>
+                        <div className="flex items-start justify-between gap-2 mb-3">
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            <span className={`text-[10px] font-extrabold px-2.5 py-1 rounded-xl border ${catStyle.badge} ${catStyle.border}`}>
+                              {note.category}
+                            </span>
+                            {note.discipline && (
+                              <span className="text-[10px] font-bold px-2 py-0.5 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400">
+                                {note.discipline}
+                              </span>
+                            )}
+                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-xl border ${diffColor}`}>
+                              {note.difficulty || 'Iniciante'}
+                            </span>
+                          </div>
+
+                          <div className="flex items-center gap-1 shrink-0 relative" onClick={(e) => e.stopPropagation()}>
+                            {/* Pin Toggle */}
+                            <button
+                              type="button"
+                              onClick={(e) => handleTogglePin(note.id, e)}
+                              title={note.pinned ? "Desafixar nota" : "Fixar nota no topo"}
+                              aria-label={note.pinned ? "Desafixar nota" : "Fixar nota"}
+                              className={`p-1.5 rounded-lg transition-colors cursor-pointer ${
+                                note.pinned 
+                                  ? 'text-amber-500 bg-amber-50 dark:bg-amber-950/40 hover:bg-amber-100' 
+                                  : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800'
+                              }`}
+                            >
+                              <Pin className={`w-3.5 h-3.5 ${note.pinned ? 'fill-amber-500' : ''}`} />
+                            </button>
+
+                            {/* Quick Export Single Note Dropdown */}
+                            <div className="relative">
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setActiveCardMenuId(isMenuOpen ? null : note.id);
+                                }}
+                                title="Exportar esta nota"
+                                aria-label="Exportar nota"
+                                className="p-1.5 text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-950/40 rounded-lg transition-colors cursor-pointer"
+                              >
+                                <FileDown className="w-3.5 h-3.5" />
+                              </button>
+
+                              <AnimatePresence>
+                                {isMenuOpen && (
+                                  <motion.div
+                                    initial={{ opacity: 0, scale: 0.9, y: 6 }}
+                                    animate={{ opacity: 1, scale: 1, y: 0 }}
+                                    exit={{ opacity: 0, scale: 0.9, y: 6 }}
+                                    transition={{ duration: 0.12 }}
+                                    className="absolute right-0 mt-1 w-44 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl shadow-xl p-1.5 z-40 text-slate-800 dark:text-slate-100 space-y-0.5 text-xs font-semibold"
+                                  >
+                                    <button
+                                      type="button"
+                                      onClick={(e) => handleExportSinglePDF(note, e)}
+                                      className="w-full text-left px-2.5 py-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 flex items-center gap-2 text-slate-700 dark:text-slate-200 transition-colors"
+                                    >
+                                      <FileText className="w-3.5 h-3.5 text-red-500" />
+                                      <span>Exportar PDF</span>
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={(e) => handleExportSingleMarkdown(note, e)}
+                                      className="w-full text-left px-2.5 py-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 flex items-center gap-2 text-slate-700 dark:text-slate-200 transition-colors"
+                                    >
+                                      <FileCode className="w-3.5 h-3.5 text-blue-500" />
+                                      <span>Exportar .MD</span>
+                                    </button>
+                                  </motion.div>
+                                )}
+                              </AnimatePresence>
+                            </div>
+
+                            {/* Copy Content */}
+                            <button
+                              type="button"
+                              onClick={(e) => handleCopyNote(note, e)}
+                              title="Copiar texto da nota"
+                              aria-label="Copiar nota"
+                              className="p-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors cursor-pointer"
+                            >
+                              {copiedNoteId === note.id ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
+                            </button>
+
+                            {/* Delete Note */}
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setDeletingNoteId(note.id);
+                              }}
+                              title="Eliminar nota"
+                              aria-label="Eliminar nota"
+                              className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30 rounded-lg transition-colors cursor-pointer"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Title */}
+                        <h3 className="font-extrabold text-sm sm:text-base text-slate-900 dark:text-slate-100 mb-2 line-clamp-2 leading-snug group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
+                          {note.title}
+                        </h3>
+
+                        {/* Content Preview */}
+                        <p className="text-xs text-slate-600 dark:text-slate-300 font-normal whitespace-pre-line line-clamp-4 leading-relaxed mb-4">
+                          {note.content || <span className="italic text-slate-400">Sem conteúdo de texto...</span>}
+                        </p>
+                      </div>
+
+                      {/* Card Footer: Tags & Timestamp */}
+                      <div className="pt-3 border-t border-slate-100 dark:border-slate-800/80 space-y-2.5">
+                        {/* Tags */}
+                        {note.tags && note.tags.length > 0 && (
+                          <div className="flex flex-wrap gap-1.5">
+                            {note.tags.map((t, idx) => (
+                              <button
+                                key={idx}
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setSelectedTag(t === selectedTag ? null : t);
+                                }}
+                                className={`text-[10px] font-semibold px-2 py-0.5 rounded-md transition-colors ${
+                                  selectedTag === t
+                                    ? 'bg-indigo-600 text-white'
+                                    : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-indigo-50 dark:hover:bg-indigo-950/40 hover:text-indigo-600 dark:hover:text-indigo-300'
+                                }`}
+                              >
+                                #{t}
+                              </button>
+                            ))}
+                          </div>
+                        )}
+
+                        {/* Date format */}
+                        <div className="flex items-center justify-between text-[10px] text-slate-400 dark:text-slate-500 font-medium">
+                          <span className="flex items-center gap-1">
+                            <Clock className="w-3 h-3" />
+                            {new Date(note.updatedAt || note.createdAt).toLocaleDateString('pt-PT', {
+                              day: '2-digit',
+                              month: 'short',
+                              year: 'numeric',
+                              hour: '2-digit',
+                              minute: '2-digit'
+                            })}
+                          </span>
+
+                          {note.pinned && (
+                            <span className="text-amber-500 font-bold flex items-center gap-0.5">
+                              <Pin className="w-2.5 h-2.5 fill-amber-500" /> Fixada
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    </motion.div>
+                  );
+                })}
+              </AnimatePresence>
+            </motion.div>
+          )}
         </LayoutGroup>
       )}
 
@@ -1672,8 +1978,8 @@ export default function NotasPage({ currentUserId, onNavigateTab }: NotasPagePro
                   />
                 </div>
 
-                {/* Category & Pin Option */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {/* Category, Discipline, Difficulty & Pin Option */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
                   <div>
                     <label htmlFor="note-category-select" className="block text-[10px] font-black uppercase tracking-wider text-slate-500 mb-1">
                       Categoria
@@ -1682,7 +1988,7 @@ export default function NotasPage({ currentUserId, onNavigateTab }: NotasPagePro
                       id="note-category-select"
                       value={formCategory}
                       onChange={(e) => setFormCategory(e.target.value as NoteCategory)}
-                      className="w-full px-3 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl text-xs font-semibold text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer"
+                      className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl text-xs font-semibold text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer"
                     >
                       {NOTE_CATEGORIES.map(cat => (
                         <option key={cat} value={cat}>{cat}</option>
@@ -1690,7 +1996,39 @@ export default function NotasPage({ currentUserId, onNavigateTab }: NotasPagePro
                     </select>
                   </div>
 
-                  <div className="flex items-center pt-5 sm:pt-6">
+                  <div>
+                    <label htmlFor="note-discipline-select" className="block text-[10px] font-black uppercase tracking-wider text-slate-500 mb-1">
+                      Disciplina
+                    </label>
+                    <select
+                      id="note-discipline-select"
+                      value={formDiscipline}
+                      onChange={(e) => setFormDiscipline(e.target.value)}
+                      className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl text-xs font-semibold text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer"
+                    >
+                      {NOTE_DISCIPLINES.filter(d => d !== 'Todas').map(d => (
+                        <option key={d} value={d}>{d}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label htmlFor="note-difficulty-select" className="block text-[10px] font-black uppercase tracking-wider text-slate-500 mb-1">
+                      Dificuldade
+                    </label>
+                    <select
+                      id="note-difficulty-select"
+                      value={formDifficulty}
+                      onChange={(e) => setFormDifficulty(e.target.value as NoteDifficulty)}
+                      className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl text-xs font-semibold text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer"
+                    >
+                      <option value="Iniciante">Iniciante</option>
+                      <option value="Intermédio">Intermédio</option>
+                      <option value="Avançado">Avançado</option>
+                    </select>
+                  </div>
+
+                  <div className="flex items-center pt-2 sm:pt-5">
                     <label className="flex items-center gap-2 cursor-pointer select-none">
                       <input
                         type="checkbox"
@@ -1700,7 +2038,7 @@ export default function NotasPage({ currentUserId, onNavigateTab }: NotasPagePro
                       />
                       <span className="text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1">
                         <Pin className="w-3.5 h-3.5 text-amber-500" />
-                        Fixar esta nota no topo
+                        Fixar no topo
                       </span>
                     </label>
                   </div>

@@ -93,13 +93,13 @@ export const MobileBottomNavigation: React.FC<MobileBottomNavigationProps> = ({
 
   return (
     <>
-      {/* 1. FIXED BOTTOM TAB BAR (MOBILE & TABLET: <1024px) */}
+      {/* 1. FIXED BOTTOM TAB BAR (UNIVERSAL: DESKTOP, TABLET & MOBILE) */}
       <nav
-        className="fixed bottom-0 left-0 right-0 w-full h-16 z-[500] lg:hidden bg-white/95 dark:bg-slate-950/95 backdrop-blur-md border-t border-slate-200 dark:border-slate-800/90 shadow-[0_-4px_20px_rgba(0,0,0,0.08)] dark:shadow-[0_-4px_20px_rgba(0,0,0,0.3)] pb-[env(safe-area-inset-bottom)] px-1 flex items-center justify-around"
-        aria-label="Navegação Principal Mobile e Tablet"
+        className="fixed bottom-0 left-0 right-0 w-full h-16 z-[500] bg-white/95 dark:bg-slate-950/95 backdrop-blur-md border-t border-slate-200 dark:border-slate-800/90 shadow-[0_-4px_20px_rgba(0,0,0,0.08)] dark:shadow-[0_-4px_20px_rgba(0,0,0,0.3)] pb-[env(safe-area-inset-bottom)] px-2 sm:px-4 flex items-center justify-around"
+        aria-label="Navegação Principal"
         id="mobile-bottom-tab-bar"
       >
-        <div className="flex items-center justify-around w-full max-w-xl mx-auto h-full">
+        <div className="flex items-center justify-around w-full max-w-2xl mx-auto h-full">
           {navItems.map((item) => {
             const isActive = activeTab === item.id;
             const Icon = item.icon;
@@ -200,7 +200,7 @@ export const MobileBottomNavigation: React.FC<MobileBottomNavigationProps> = ({
       {/* 2. 'MAIS' BOTTOM SHEET MODAL */}
       <AnimatePresence>
         {isMoreSheetOpen && (
-          <div className="fixed inset-0 z-[600] lg:hidden flex flex-col justify-end" id="more-bottom-sheet-root">
+          <div className="fixed inset-0 z-[600] flex flex-col justify-end" id="more-bottom-sheet-root">
             {/* Dark Backdrop */}
             <motion.div
               initial={{ opacity: 0 }}
@@ -218,7 +218,7 @@ export const MobileBottomNavigation: React.FC<MobileBottomNavigationProps> = ({
               animate={{ y: 0 }}
               exit={{ y: '100%' }}
               transition={{ type: 'spring', damping: 28, stiffness: 300 }}
-              className="relative z-10 w-full bg-white dark:bg-slate-900 rounded-t-3xl border-t border-slate-200 dark:border-slate-800 shadow-2xl max-h-[85vh] flex flex-col overflow-hidden pb-[calc(1.5rem+env(safe-area-inset-bottom))]"
+              className="relative z-10 w-full sm:max-w-lg sm:mx-auto bg-white dark:bg-slate-900 rounded-t-3xl border-t sm:border-x border-slate-200 dark:border-slate-800 shadow-2xl max-h-[85vh] flex flex-col overflow-hidden pb-[calc(1.5rem+env(safe-area-inset-bottom))]"
               id="more-bottom-sheet-panel"
             >
               {/* Sheet Drag Indicator */}

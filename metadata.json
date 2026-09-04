@@ -1,5 +1,5 @@
 {
-  "name": "Remix Contabilidade Unificada",
+  "name": "Contabilidade Unificada",
   "description": "App de estudos de contabilidade com IA especializada. Tire dúvidas, envie documentos e receba explicações detalhadas na hora.",
   "requestFramePermissions": [
     "camera",

@@ -1037,12 +1037,11 @@ export function ensureDemoUsers() {
   if (typeof localStorage !== 'undefined') {
     try {
       const p1 = localStorage.getItem('ga:standard-user-id-0002:profile');
-      const p2 = localStorage.getItem('ga:wrldfilipe@gmail.com:profile');
       const p3 = localStorage.getItem('ga_session');
-      const item = p1 || p2 || p3;
+      const item = p1 || p3;
       if (item) {
         const parsed = JSON.parse(item);
-        if (parsed?.name && parsed.name !== 'Filipe Carvalho' && parsed.name !== 'Filipe wrld') {
+        if (parsed?.name) {
           initialStandardName = parsed.name;
         }
       }

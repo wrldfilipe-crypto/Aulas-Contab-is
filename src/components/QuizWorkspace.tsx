@@ -279,7 +279,18 @@ export function QuizWorkspace({ onNavigateToLearning }: QuizWorkspaceProps) {
     if (selectedStatus === 'new' && (quiz.completed || quiz.attempts > 0)) return false;
     if (selectedStatus === 'completed' && !quiz.completed) return false;
     if (selectedStatus === 'in_progress' && (quiz.completed || quiz.attempts === 0)) return false;
-    if (selectedDifficulty !== 'all' && quiz.difficulty !== selectedDifficulty) return false;
+    if (selectedDifficulty !== 'all') {
+      const qDiff = (quiz.difficulty || '').toLowerCase();
+      const sDiff = selectedDifficulty.toLowerCase();
+      const isMatch = qDiff === sDiff || 
+        (sDiff === 'iniciante' && (qDiff === 'easy' || qDiff === 'iniciante' || qDiff === 'fácil')) ||
+        (sDiff === 'intermédio' && (qDiff === 'medium' || qDiff === 'intermédio' || qDiff === 'médio')) ||
+        (sDiff === 'avançado' && (qDiff === 'hard' || qDiff === 'avançado' || qDiff === 'difícil')) ||
+        (sDiff === 'easy' && (qDiff === 'easy' || qDiff === 'iniciante' || qDiff === 'fácil')) ||
+        (sDiff === 'medium' && (qDiff === 'medium' || qDiff === 'intermédio' || qDiff === 'médio')) ||
+        (sDiff === 'hard' && (qDiff === 'hard' || qDiff === 'avançado' || qDiff === 'difícil'));
+      if (!isMatch) return false;
+    }
     if (selectedSource !== 'all' && quiz.source !== selectedSource) return false;
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
@@ -693,17 +704,17 @@ export function QuizWorkspace({ onNavigateToLearning }: QuizWorkspaceProps) {
               <div className="flex items-center gap-1 overflow-x-auto no-scrollbar py-1 border-l border-gray-200 pl-2">
                 <span className="text-[10px] font-extrabold text-gray-400 uppercase tracking-wider mr-1">Dificuldade:</span>
                 {[
-                  { key: 'all', label: 'Todas' },
-                  { key: 'easy', label: 'Fácil 🟢' },
-                  { key: 'medium', label: 'Médio 🟡' },
-                  { key: 'hard', label: 'Difícil 🔴' }
+                  { key: 'all', label: 'Todas', color: 'bg-slate-800' },
+                  { key: 'easy', label: 'Iniciante 🌱', color: 'bg-emerald-600' },
+                  { key: 'medium', label: 'Intermédio ⚡', color: 'bg-blue-600' },
+                  { key: 'hard', label: 'Avançado 🔥', color: 'bg-purple-600' }
                 ].map(df => (
                   <button
                     key={df.key}
                     onClick={() => setSelectedDifficulty(df.key)}
                     className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold transition-all cursor-pointer ${
                       selectedDifficulty === df.key 
-                        ? 'bg-slate-800 text-white shadow-2xs' 
+                        ? `${df.color} text-white shadow-2xs` 
                         : 'bg-gray-100 hover:bg-gray-200 text-gray-600'
                     }`}
                   >

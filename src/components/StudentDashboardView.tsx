@@ -365,15 +365,15 @@ export const StudentDashboardView: React.FC<StudentDashboardViewProps> = ({
                   <Calculator className="w-5 h-5 card-icon" />
                 </div>
                 <span className="text-[10px] font-extrabold uppercase tracking-wider bg-indigo-50 text-indigo-600 px-2 py-0.5 rounded-full border border-indigo-100 card-badge">
-                  ERP PGC
+                  ERP
                 </span>
               </div>
 
               <h3 className="text-sm font-black text-slate-900 group-hover:text-indigo-600 transition-colors">
-                Contabilidade (PGC) — Lançamentos & Balancete
+                Contabilidade — Lançamentos & Balancete
               </h3>
               <p className="text-xs text-slate-500 font-medium mt-1.5 leading-relaxed">
-                Lançamentos contábeis, diário geral, razão, balancete de verificação e demonstrações financeiras PGC.
+                Lançamentos contábeis, diário geral, razão, balancete de verificação e demonstrações financeiras.
               </p>
             </div>
 
@@ -403,7 +403,7 @@ export const StudentDashboardView: React.FC<StudentDashboardViewProps> = ({
               </div>
 
               <h3 className="text-sm font-black text-slate-900 group-hover:text-blue-600 transition-colors">
-                Yohan AI — Consultoria & Auditoria PGC
+                Yohan AI — Consultoria & Auditoria
               </h3>
               <p className="text-xs text-slate-500 font-medium mt-1.5 leading-relaxed">
                 Assistente inteligente para resolução de dúvidas contabilísticas, fiscais, auditoria e geração de relatórios.
@@ -439,7 +439,7 @@ export const StudentDashboardView: React.FC<StudentDashboardViewProps> = ({
                 Aprendizados — Biblioteca de Estudos
               </h3>
               <p className="text-xs text-slate-500 font-medium mt-1.5 leading-relaxed">
-                Aceda aos materiais, resumos gerados por IA e manuais interativos para o PGC.
+                Aceda aos materiais, resumos gerados por IA e manuais interativos de estudo.
               </p>
             </div>
 
@@ -472,7 +472,7 @@ export const StudentDashboardView: React.FC<StudentDashboardViewProps> = ({
                 Notas — Bloco de Anotações
               </h3>
               <p className="text-xs text-slate-500 font-medium mt-1.5 leading-relaxed">
-                Cria e gere as tuas anotações pessoais de estudo e contabilidade PGC.
+                Cria e gere as tuas anotações pessoais de estudo e contabilidade.
               </p>
             </div>
 

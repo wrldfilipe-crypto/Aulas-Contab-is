@@ -1,4 +1,5 @@
 import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
 
 export interface PDFTransactionItem {
   id: string;
@@ -793,11 +794,12 @@ export interface PDFBalanceteOptions {
 
 /**
  * Export official Balancete de Verificação (Trial Balance) adhering strictly to PGC Angola (Dec. 82/01)
+ * Uses jsPDF and jspdf-autotable for professional tabular layout, multi-page flow, headers and totals.
  */
-export function exportBalancetePDF(
+export function generatePdfBalancete(
   options: PDFBalanceteOptions,
   accounts: PDFBalanceteAccountItem[]
-): void {
+): jsPDF {
   try {
     const doc = new jsPDF({
       orientation: 'landscape',
@@ -812,197 +814,184 @@ export function exportBalancetePDF(
     const contentWidth = pageWidth - leftMargin - rightMargin;
     const currency = options.currency || 'AOA';
     const today = new Date().toLocaleDateString('pt-AO', { day: '2-digit', month: '2-digit', year: 'numeric' });
-
-    let currentY = 12;
+    const companyName = options.companyName || 'Sociedade Comercial Angolana, Lda';
 
     // Header Background
     doc.setFillColor(15, 23, 42); // slate-900
-    doc.rect(0, 0, pageWidth, 28, 'F');
+    doc.rect(0, 0, pageWidth, 26, 'F');
 
-    // Title
+    // Accent line
+    doc.setFillColor(245, 158, 11); // amber-500
+    doc.rect(0, 26, pageWidth, 1.5, 'F');
+
+    // Title & Standard
     doc.setTextColor(255, 255, 255);
     doc.setFont('helvetica', 'bold');
-    doc.setFontSize(14);
-    doc.text('BALANCETE DE VERIFICAÇÃO DO RAZÃO GERAL (PGC ANGOLA)', leftMargin, 13);
+    doc.setFontSize(13);
+    doc.text('BALANCETE DE VERIFICAÇÃO DO RAZÃO GERAL (PGC ANGOLA)', leftMargin, 12);
 
     doc.setFont('helvetica', 'normal');
-    doc.setFontSize(8.5);
+    doc.setFontSize(8);
     doc.setTextColor(203, 213, 225);
-    doc.text(`Norma Legal: Plano Geral de Contabilidade de Angola (Decreto n.º 82/2001)`, leftMargin, 20);
-    doc.text(`Emissão: ${today}`, pageWidth - rightMargin, 20, { align: 'right' });
+    doc.text(`Norma Legal: Plano Geral de Contabilidade de Angola (Decreto n.º 82/2001)`, leftMargin, 19);
+    doc.text(`Data de Emissão: ${today}`, pageWidth - rightMargin, 19, { align: 'right' });
 
-    currentY = 34;
+    const currentY = 32;
 
     // Company & Period Summary Box
     doc.setFillColor(248, 250, 252);
     doc.setDrawColor(226, 232, 240);
-    doc.roundedRect(leftMargin, currentY, contentWidth, 18, 2, 2, 'FD');
+    doc.roundedRect(leftMargin, currentY, contentWidth, 16, 2, 2, 'FD');
 
     doc.setTextColor(15, 23, 42);
     doc.setFont('helvetica', 'bold');
-    doc.setFontSize(10);
-    doc.text(`Empresa: ${options.companyName || 'Empresa Geral Lda'}`, leftMargin + 4, currentY + 6.5);
+    doc.setFontSize(9.5);
+    doc.text(`Empresa: ${companyName}`, leftMargin + 4, currentY + 6);
 
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(8);
     doc.setTextColor(71, 85, 105);
-    doc.text(`NIF: ${options.taxId || 'AO-500000000'}  •  Moeda: ${currency}`, leftMargin + 4, currentY + 12.5);
+    doc.text(`NIF: ${options.taxId || 'AO-541289001'}  •  Moeda: ${currency}`, leftMargin + 4, currentY + 11.5);
 
-    doc.text(`Período de Referência: ${options.periodDescription || 'Exercício Corrente'}`, pageWidth - rightMargin - 4, currentY + 6.5, { align: 'right' });
-    const balanceStatus = options.isTrialBalanced !== false ? 'EQUILIBRADO (Débito = Crédito)' : 'DESEQUILIBRADO';
-    doc.text(`Estado do Balancete: ${balanceStatus}`, pageWidth - rightMargin - 4, currentY + 12.5, { align: 'right' });
+    doc.text(`Período de Referência: ${options.periodDescription || 'Exercício Fiscal'}`, pageWidth - rightMargin - 4, currentY + 6, { align: 'right' });
+    const isBalanced = options.isTrialBalanced !== false;
+    doc.setFont('helvetica', 'bold');
+    if (isBalanced) {
+      doc.setTextColor(5, 150, 105);
+      doc.text('Estado: EQUILIBRADO (Total Débito = Total Crédito)', pageWidth - rightMargin - 4, currentY + 11.5, { align: 'right' });
+    } else {
+      doc.setTextColor(220, 38, 38);
+      doc.text('Estado: DESEQUILIBRADO', pageWidth - rightMargin - 4, currentY + 11.5, { align: 'right' });
+    }
 
-    currentY += 22;
-
-    // Table Header (Landscape 6 Columns)
-    const colCodeW = 24;
-    const colNameW = 95;
-    const colDebW = 38;
-    const colCredW = 38;
-    const colSalDebW = 38;
-    const colSalCredW = 38;
-
-    const renderTableHeader = (y: number) => {
-      doc.setFillColor(30, 41, 59); // slate-800
-      doc.rect(leftMargin, y, contentWidth, 8, 'F');
-
-      doc.setTextColor(255, 255, 255);
-      doc.setFont('helvetica', 'bold');
-      doc.setFontSize(7.5);
-
-      doc.text('CONTA PGC', leftMargin + 3, y + 5.5);
-      doc.text('DESIGNAÇÃO DA CONTA', leftMargin + colCodeW + 3, y + 5.5);
-      doc.text(`MOV. DÉBITO (${currency})`, leftMargin + colCodeW + colNameW + colDebW - 3, y + 5.5, { align: 'right' });
-      doc.text(`MOV. CRÉDITO (${currency})`, leftMargin + colCodeW + colNameW + colDebW + colCredW - 3, y + 5.5, { align: 'right' });
-      doc.text(`SALDO DEVEDOR (${currency})`, leftMargin + colCodeW + colNameW + colDebW + colCredW + colSalDebW - 3, y + 5.5, { align: 'right' });
-      doc.text(`SALDO CREDOR (${currency})`, leftMargin + contentWidth - 3, y + 5.5, { align: 'right' });
+    // Format numbers
+    const formatNumber = (val: number) => {
+      if (!val || val === 0) return '-';
+      return val.toLocaleString('pt-PT', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     };
 
-    renderTableHeader(currentY);
-    currentY += 8;
-
-    // Table Rows
     let totalDebit = 0;
     let totalCredit = 0;
     let totalDebtorBalance = 0;
     let totalCreditorBalance = 0;
 
-    doc.setFontSize(7.5);
+    const bodyRows = accounts.map(acc => {
+      totalDebit += acc.periodDebit || 0;
+      totalCredit += acc.periodCredit || 0;
+      totalDebtorBalance += acc.debtorBalance || 0;
+      totalCreditorBalance += acc.creditorBalance || 0;
 
-    accounts.forEach((acc, idx) => {
-      totalDebit += acc.periodDebit;
-      totalCredit += acc.periodCredit;
-      totalDebtorBalance += acc.debtorBalance;
-      totalCreditorBalance += acc.creditorBalance;
-
-      if (currentY > pageHeight - 25) {
-        doc.addPage();
-        currentY = 14;
-        renderTableHeader(currentY);
-        currentY += 8;
-      }
-
-      const isEven = idx % 2 === 0;
-      doc.setFillColor(isEven ? 255 : 248, isEven ? 255 : 250, isEven ? 255 : 252);
-      doc.rect(leftMargin, currentY, contentWidth, 6.5, 'F');
-
-      // Grid border
-      doc.setDrawColor(226, 232, 240);
-      doc.line(leftMargin, currentY + 6.5, leftMargin + contentWidth, currentY + 6.5);
-
-      // Account code
-      doc.setFont('courier', 'bold');
-      doc.setTextColor(27, 58, 107);
-      doc.text(acc.code, leftMargin + 3, currentY + 4.5);
-
-      // Account name
-      doc.setFont('helvetica', 'normal');
-      doc.setTextColor(15, 23, 42);
-      const nameTrunc = acc.name.length > 55 ? acc.name.substring(0, 52) + '...' : acc.name;
-      doc.text(nameTrunc, leftMargin + colCodeW + 3, currentY + 4.5);
-
-      // Numbers
-      doc.setFont('helvetica', 'normal');
-      doc.setTextColor(51, 65, 85);
-
-      const debStr = acc.periodDebit > 0 ? acc.periodDebit.toLocaleString('pt-PT', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '-';
-      const credStr = acc.periodCredit > 0 ? acc.periodCredit.toLocaleString('pt-PT', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '-';
-      const salDebStr = acc.debtorBalance > 0 ? acc.debtorBalance.toLocaleString('pt-PT', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '-';
-      const salCredStr = acc.creditorBalance > 0 ? acc.creditorBalance.toLocaleString('pt-PT', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '-';
-
-      doc.text(debStr, leftMargin + colCodeW + colNameW + colDebW - 3, currentY + 4.5, { align: 'right' });
-      doc.text(credStr, leftMargin + colCodeW + colNameW + colDebW + colCredW - 3, currentY + 4.5, { align: 'right' });
-
-      // Highlight balances
-      if (acc.debtorBalance > 0) doc.setTextColor(5, 150, 105);
-      doc.text(salDebStr, leftMargin + colCodeW + colNameW + colDebW + colCredW + colSalDebW - 3, currentY + 4.5, { align: 'right' });
-
-      if (acc.creditorBalance > 0) doc.setTextColor(79, 70, 229);
-      doc.text(salCredStr, leftMargin + contentWidth - 3, currentY + 4.5, { align: 'right' });
-
-      currentY += 6.5;
+      return [
+        acc.code,
+        acc.name,
+        formatNumber(acc.periodDebit || 0),
+        formatNumber(acc.periodCredit || 0),
+        formatNumber(acc.debtorBalance || 0),
+        formatNumber(acc.creditorBalance || 0)
+      ];
     });
 
-    // Totals Row
-    if (currentY > pageHeight - 30) {
+    const footRows = [[
+      { content: `TOTAIS GERAIS DO BALANCETE (${currency})`, colSpan: 2, styles: { halign: 'left' as const, fontStyle: 'bold' as const } },
+      { content: formatNumber(totalDebit), styles: { halign: 'right' as const, fontStyle: 'bold' as const, textColor: [5, 150, 105] as [number, number, number] } },
+      { content: formatNumber(totalCredit), styles: { halign: 'right' as const, fontStyle: 'bold' as const, textColor: [79, 70, 229] as [number, number, number] } },
+      { content: formatNumber(totalDebtorBalance), styles: { halign: 'right' as const, fontStyle: 'bold' as const, textColor: [5, 150, 105] as [number, number, number] } },
+      { content: formatNumber(totalCreditorBalance), styles: { halign: 'right' as const, fontStyle: 'bold' as const, textColor: [79, 70, 229] as [number, number, number] } }
+    ]];
+
+    autoTable(doc, {
+      startY: currentY + 19,
+      margin: { left: leftMargin, right: rightMargin, bottom: 25 },
+      head: [[
+        'CONTA PGC',
+        'DESIGNAÇÃO DA CONTA',
+        `MOV. DÉBITO (${currency})`,
+        `MOV. CRÉDITO (${currency})`,
+        `SALDO DEVEDOR (${currency})`,
+        `SALDO CREDOR (${currency})`
+      ]],
+      body: bodyRows,
+      foot: footRows,
+      theme: 'grid',
+      styles: {
+        fontSize: 7.5,
+        cellPadding: { top: 1.8, right: 2.5, bottom: 1.8, left: 2.5 },
+        lineColor: [226, 232, 240],
+        lineWidth: 0.15,
+        font: 'helvetica'
+      },
+      headStyles: {
+        fillColor: [15, 23, 42],
+        textColor: [255, 255, 255],
+        fontStyle: 'bold',
+        fontSize: 7.5,
+        halign: 'left'
+      },
+      alternateRowStyles: {
+        fillColor: [248, 250, 252]
+      },
+      footStyles: {
+        fillColor: [241, 245, 249],
+        textColor: [15, 23, 42],
+        fontStyle: 'bold',
+        fontSize: 7.5,
+        lineColor: [203, 213, 225],
+        lineWidth: 0.2
+      },
+      columnStyles: {
+        0: { cellWidth: 26, font: 'courier', fontStyle: 'bold', textColor: [27, 58, 107] },
+        1: { cellWidth: 'auto', textColor: [15, 23, 42] },
+        2: { cellWidth: 38, halign: 'right', textColor: [51, 65, 85] },
+        3: { cellWidth: 38, halign: 'right', textColor: [51, 65, 85] },
+        4: { cellWidth: 38, halign: 'right', textColor: [5, 150, 105], fontStyle: 'bold' },
+        5: { cellWidth: 38, halign: 'right', textColor: [79, 70, 229], fontStyle: 'bold' }
+      },
+      didDrawPage: (data) => {
+        // Footer on every page
+        const footerY = pageHeight - 8;
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(6.5);
+        doc.setTextColor(148, 163, 184);
+        doc.text('Documento Contabilístico Oficial emitido em conformidade com o PGC Angola (Decreto n.º 82/2001).', leftMargin, footerY);
+        doc.text(`Página ${data.pageNumber} • ${companyName}`, pageWidth - rightMargin, footerY, { align: 'right' });
+      }
+    });
+
+    // Signatures box after table if space permits, or on a fresh page
+    const finalY = (doc as any).lastAutoTable ? (doc as any).lastAutoTable.finalY : currentY + 40;
+    let sigY = finalY + 8;
+    if (sigY > pageHeight - 35) {
       doc.addPage();
-      currentY = 14;
+      sigY = 20;
     }
 
-    doc.setFillColor(241, 245, 249);
-    doc.rect(leftMargin, currentY, contentWidth, 8, 'F');
-    doc.setDrawColor(203, 213, 225);
-    doc.line(leftMargin, currentY, leftMargin + contentWidth, currentY);
-    doc.line(leftMargin, currentY + 8, leftMargin + contentWidth, currentY + 8);
-
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(8);
-    doc.setTextColor(15, 23, 42);
-    doc.text('TOTAIS GERAIS DO BALANCETE:', leftMargin + 3, currentY + 5.5);
-
-    doc.setTextColor(5, 150, 105);
-    doc.text(totalDebit.toLocaleString('pt-PT', { minimumFractionDigits: 2 }), leftMargin + colCodeW + colNameW + colDebW - 3, currentY + 5.5, { align: 'right' });
-
-    doc.setTextColor(79, 70, 229);
-    doc.text(totalCredit.toLocaleString('pt-PT', { minimumFractionDigits: 2 }), leftMargin + colCodeW + colNameW + colDebW + colCredW - 3, currentY + 5.5, { align: 'right' });
-
-    doc.setTextColor(5, 150, 105);
-    doc.text(totalDebtorBalance.toLocaleString('pt-PT', { minimumFractionDigits: 2 }), leftMargin + colCodeW + colNameW + colDebW + colCredW + colSalDebW - 3, currentY + 5.5, { align: 'right' });
-
-    doc.setTextColor(79, 70, 229);
-    doc.text(totalCreditorBalance.toLocaleString('pt-PT', { minimumFractionDigits: 2 }), leftMargin + contentWidth - 3, currentY + 5.5, { align: 'right' });
-
-    currentY += 12;
-
-    // Signatures
     const sigBoxW = (contentWidth - 20) / 3;
     doc.setDrawColor(203, 213, 225);
-    doc.line(leftMargin, currentY + 12, leftMargin + sigBoxW, currentY + 12);
-    doc.line(leftMargin + sigBoxW + 10, currentY + 12, leftMargin + sigBoxW * 2 + 10, currentY + 12);
-    doc.line(leftMargin + (sigBoxW + 10) * 2, currentY + 12, leftMargin + contentWidth, currentY + 12);
+    doc.setLineWidth(0.3);
+    doc.line(leftMargin, sigY + 12, leftMargin + sigBoxW, sigY + 12);
+    doc.line(leftMargin + sigBoxW + 10, sigY + 12, leftMargin + sigBoxW * 2 + 10, sigY + 12);
+    doc.line(leftMargin + (sigBoxW + 10) * 2, sigY + 12, leftMargin + contentWidth, sigY + 12);
 
     doc.setFont('helvetica', 'bold');
-    doc.setFontSize(7);
-    doc.setTextColor(100, 116, 139);
-    doc.text('ELABORADO PELO CONTABILISTA', leftMargin + sigBoxW / 2, currentY + 16, { align: 'center' });
-    doc.text('VERIFICADO PELO AUDITOR / OPC', leftMargin + sigBoxW * 1.5 + 10, currentY + 16, { align: 'center' });
-    doc.text('APROVADO PELA GERÊNCIA', leftMargin + (sigBoxW + 10) * 2 + sigBoxW / 2, currentY + 16, { align: 'center' });
-
-    // Footer
-    const footerY = pageHeight - 8;
-    doc.setFont('helvetica', 'normal');
     doc.setFontSize(6.5);
-    doc.setTextColor(148, 163, 184);
-    doc.text('Documento Contabilístico Oficial emitido em conformidade com o PGC Angola (Decreto n.º 82/2001).', leftMargin, footerY);
-    doc.text('GlobalAccount AI Studio Angola', pageWidth - rightMargin, footerY, { align: 'right' });
+    doc.setTextColor(100, 116, 139);
+    doc.text('ELABORADO PELO CONTABILISTA', leftMargin + sigBoxW / 2, sigY + 16, { align: 'center' });
+    doc.text('VERIFICADO PELO AUDITOR / OCPCA', leftMargin + sigBoxW * 1.5 + 10, sigY + 16, { align: 'center' });
+    doc.text('APROVADO PELA GERÊNCIA', leftMargin + (sigBoxW + 10) * 2 + sigBoxW / 2, sigY + 16, { align: 'center' });
 
     const safeDate = today.replace(/\//g, '-');
-    doc.save(`Balancete_Verificacao_PGC_Angola_${safeDate}.pdf`);
+    const safeCompany = companyName.replace(/[^a-zA-Z0-9]/g, '_').substring(0, 20);
+    doc.save(`Balancete_PGC_Angola_${safeCompany}_${safeDate}.pdf`);
+
+    return doc;
   } catch (error) {
-    console.error('[pdfExportService] Erro ao exportar Balancete para PDF:', error);
+    console.error('[pdfExportService] Erro ao gerar Balancete para PDF:', error);
     alert('Não foi possível gerar o Balancete em PDF. Por favor tente novamente.');
+    throw error;
   }
 }
+
+export const exportBalancetePDF = generatePdfBalancete;
 
 export interface PDFDemonstracoesFinanceirasData {
   companyName: string;

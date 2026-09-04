@@ -2264,15 +2264,6 @@ export default function App({ firebaseUser, firebaseUid }: { firebaseUser?: any;
                 onOpenFirestoreModal={() => setIsFirestoreModalOpen(true)} 
               />
             </div>
-
-            {/* Accounting Standard Badge - Full on Desktop (>1200px) */}
-            <div className="hidden xl:block shrink-0">
-              <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-700 dark:text-emerald-400 text-xs font-semibold">
-                <span>🇦🇴</span>
-                <span className="font-bold">PGC Angola</span>
-                <span className="text-[10px] text-emerald-600/70 dark:text-emerald-400/70 font-mono">(Dec. 82/01)</span>
-              </div>
-            </div>
           </div>
 
           {/* CENTER GROUP: GLOBAL SEARCH BAR */}
@@ -2402,16 +2393,7 @@ export default function App({ firebaseUser, firebaseUid }: { firebaseUser?: any;
                       Opções da Aplicação
                     </div>
 
-                    <div>
-                      <p className="text-[10px] font-bold text-slate-500 mb-1">Norma Contabilística:</p>
-                      <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-700 dark:text-emerald-400 text-xs font-semibold">
-                        <span>🇦🇴</span>
-                        <span className="font-bold">PGC Angola</span>
-                        <span className="text-[10px] text-emerald-600/70 dark:text-emerald-400/70 font-mono">(Dec. 82/01)</span>
-                      </div>
-                    </div>
-
-                    <div className="pt-2 border-t border-slate-100 flex items-center justify-between">
+                    <div className="flex items-center justify-between">
                       <span className="text-xs font-bold text-slate-700">Idioma:</span>
                       <LanguageSelector isTopbar={true} />
                     </div>
@@ -2728,16 +2710,6 @@ export default function App({ firebaseUser, firebaseUid }: { firebaseUser?: any;
                       setIsOfflineModalOpen(true);
                       setIsMobileDrawerOpen(false);
                     }} />
-                  </div>
-
-                  {/* Accounting Standard Section */}
-                  <div>
-                    <p className="text-[10px] font-black uppercase text-slate-400 dark:text-slate-400 tracking-wider mb-2">Norma Contabilística</p>
-                    <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-700 dark:text-emerald-400 text-xs font-semibold">
-                      <span>🇦🇴</span>
-                      <span className="font-bold">PGC Angola</span>
-                      <span className="text-[10px] text-emerald-600/70 dark:text-emerald-400/70 font-mono">(Dec. 82/01)</span>
-                    </div>
                   </div>
 
                   {/* Work Hours Focus Mode */}

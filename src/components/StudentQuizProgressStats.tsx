@@ -227,7 +227,7 @@ export const StudentQuizProgressStats: React.FC<StudentQuizProgressStatsProps> =
           <div>
             <div className="flex items-center gap-2">
               <h2 className="text-sm sm:text-base font-black text-slate-900">
-                Resumo Estatístico de Quizzes & Domínio PGC
+                Resumo Estatístico de Quizzes & Domínio
               </h2>
               {stats.isSyncedWithCloud && (
                 <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-100" title="Sincronizado com o Firestore">
@@ -310,7 +310,7 @@ export const StudentQuizProgressStats: React.FC<StudentQuizProgressStatsProps> =
 
           <p className="text-[11px] font-semibold text-emerald-700 flex items-center gap-1">
             <Award className="w-3 h-3 text-emerald-500" />
-            {stats.overallMasteryPercentage}% do currículo PGC consolidado
+            {stats.overallMasteryPercentage}% do currículo consolidado
           </p>
         </div>
 
@@ -327,7 +327,7 @@ export const StudentQuizProgressStats: React.FC<StudentQuizProgressStatsProps> =
           
           <div className="my-2">
             <div className="text-xl font-black text-amber-950 tracking-tight">
-              {stats.masteredTopicsCount >= 4 ? 'Especialista PGC' : stats.masteredTopicsCount >= 2 ? 'Intermédio Sólido' : 'Praticante Ativo'}
+              {stats.masteredTopicsCount >= 4 ? 'Especialista Contabilístico' : stats.masteredTopicsCount >= 2 ? 'Intermédio Sólido' : 'Praticante Ativo'}
             </div>
             <p className="text-xs text-amber-800 font-medium mt-1">
               {stats.totalQuizzesTaken} simulados & exercícios concluídos
@@ -336,7 +336,7 @@ export const StudentQuizProgressStats: React.FC<StudentQuizProgressStatsProps> =
 
           <div className="flex items-center gap-1 text-[11px] font-bold text-amber-800">
             <Flame className="w-3.5 h-3.5 fill-amber-500 text-amber-500" />
-            <span>Foco no PGC Angola (Dec. 82/2001)</span>
+            <span>Aprendizagem Ativa & Prática Contínua</span>
           </div>
         </div>
 

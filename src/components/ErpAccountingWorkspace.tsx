@@ -35,6 +35,7 @@ import {
   exportTransactionsReportPDF, 
   exportCurrentAccountPDF, 
   exportSingleTransactionVoucherPDF,
+  generatePdfBalancete,
   exportBalancetePDF,
   exportDemonstracoesFinanceirasPDF
 } from '../services/pdfExportService';
@@ -575,7 +576,7 @@ export const ErpAccountingWorkspace: React.FC<ErpAccountingWorkspaceProps> = ({ 
       creditorBalance: acc.saldoCredor
     }));
 
-    exportBalancetePDF({
+    generatePdfBalancete({
       companyName: activeWorkspace?.name || 'GlobalAccount Angola Lda',
       taxId: activeWorkspace?.settings?.taxId || 'AO-541289001',
       currency,

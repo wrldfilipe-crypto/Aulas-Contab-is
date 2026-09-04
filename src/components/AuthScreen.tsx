@@ -106,8 +106,8 @@ export default function AuthScreen({ onSuccess, initialNotificationMessage }: Au
   const createGoogleUser = (): UserSession => {
     let dynamicName = 'Usuário';
     try {
-      const saved = loadUserProfileMultiStore('standard-user-id-0002') || loadUserProfileMultiStore('wrldfilipe@gmail.com');
-      if (saved?.name && saved.name !== 'Filipe Carvalho' && saved.name !== 'Filipe wrld') {
+      const saved = loadUserProfileMultiStore('standard-user-id-0002');
+      if (saved?.name) {
         dynamicName = saved.name;
       }
     } catch (_) {}
@@ -199,8 +199,8 @@ export default function AuthScreen({ onSuccess, initialNotificationMessage }: Au
           const assignedUid = isDemoAdmin ? 'admin-user-id-0001' : 'standard-user-id-0002';
           let dynamicDemoName = isDemoAdmin ? 'Administrador Global' : 'Usuário';
           try {
-            const saved = loadUserProfileMultiStore(assignedUid) || loadUserProfileMultiStore(formattedEmail);
-            if (saved?.name && saved.name !== 'Filipe Carvalho' && saved.name !== 'Filipe wrld') {
+            const saved = loadUserProfileMultiStore(assignedUid);
+            if (saved?.name) {
               dynamicDemoName = saved.name;
             }
           } catch (_) {}

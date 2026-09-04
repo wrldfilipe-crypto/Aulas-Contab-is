@@ -17,6 +17,7 @@ import { getCurrentUser } from '../lib/db';
 import { salvarFeedbackYohanFirestore } from '../lib/firebase';
 import { PGC_CHART_OF_ACCOUNTS } from '../lib/pgc/pgcKnowledgeBase';
 import { VirtualizedChatMessagesList } from './VirtualizedChatMessagesList';
+import { perguntarYohanStreaming, gerarDocumentoGrande } from '../services/yohanAiService';
 import { SparklingAiAura } from './SparklingAiAura';
 import { YohanLogo } from './YohanLogo';
 
@@ -112,7 +113,19 @@ export const YohanAI: React.FC<YohanAIProps> = ({
   const currentUserId = currentUser?.userId || (currentUser as any)?.id || 'default_user';
 
   const [activeMode, setActiveMode] = useState<YohanMode>('chat');
-  const [isHistoryOpen, setIsHistoryOpen] = useState(false);
+  const [isDesktop, setIsDesktop] = useState<boolean>(() => typeof window !== 'undefined' ? window.innerWidth >= 900 : true);
+  const [isHistoryOpen, setIsHistoryOpen] = useState<boolean>(() => typeof window !== 'undefined' ? window.innerWidth >= 900 : false);
+  const [docProgress, setDocProgress] = useState<{ current: number; total: number; title: string } | null>(null);
+
+  useEffect(() => {
+    const handleResize = () => {
+      const desktop = window.innerWidth >= 900;
+      setIsDesktop(desktop);
+    };
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
   const [historySearchQuery, setHistorySearchQuery] = useState('');
   const [editingConvId, setEditingConvId] = useState<string | null>(null);
   const [editConvTitle, setEditConvTitle] = useState('');
@@ -626,144 +639,89 @@ function hashString(str: string): string {
     const botMsgId = `msg-${Date.now() + 1}`;
     const botTimestamp = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
-    // 4. Timeout de 60 segundos com gestão resiliente de sinal e retry
-    const executeChatRequest = async (maxRetries = 1): Promise<Response> => {
-      for (let attempt = 0; attempt <= maxRetries; attempt++) {
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => {
-          try {
-            controller.abort('timeout');
-          } catch (_) {}
-        }, 60000); // 60s para acomodar respostas complexas e streaming de IA
-
-        try {
-          const res = await fetch('/api/chat', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              message: `${userText}${fileContext}`,
-              history: recentHistory,
-              language: currentLanguage,
-              stream: true,
-              systemContext: 'Yohan AI - Consultor Sénior de Contabilidade PGC Angola (Decreto 82/2001)'
-            }),
-            signal: controller.signal
-          });
-          clearTimeout(timeoutId);
-          if (res.ok || attempt === maxRetries) {
-            return res;
-          }
-        } catch (err: any) {
-          clearTimeout(timeoutId);
-          const isAbort = err?.name === 'AbortError' || (err?.message && String(err.message).toLowerCase().includes('abort'));
-          if (attempt === maxRetries) {
-            if (isAbort) {
-              throw new Error('Tempo de resposta excedido. Por favor, tente novamente.');
-            }
-            throw err;
-          }
-          await new Promise(r => setTimeout(r, 800));
-        }
-      }
-      throw new Error('Tempo limite excedido.');
+    const updateAssistantMsg = (fullText: string) => {
+      setConversations(prev => prev.map(c => {
+        if (c.id !== activeConvId) return c;
+        const msgExists = c.messages.some(m => m.id === botMsgId);
+        const newMsgs = msgExists
+          ? c.messages.map(m => m.id === botMsgId ? { ...m, content: fullText } : m)
+          : [...c.messages, { id: botMsgId, role: 'assistant' as const, content: fullText, timestamp: botTimestamp }];
+        return {
+          ...c,
+          updatedAt: new Date().toISOString(),
+          messages: newMsgs
+        };
+      }));
     };
 
+    const fullUserPrompt = `${userText}${fileContext}`;
+
     try {
-      const res = await executeChatRequest(1);
-
-      let accumulatedText = '';
-      const updateAssistantMsg = (fullText: string) => {
-        accumulatedText = fullText;
-        setConversations(prev => prev.map(c => {
-          if (c.id !== activeConvId) return c;
-          const msgExists = c.messages.some(m => m.id === botMsgId);
-          const newMsgs = msgExists
-            ? c.messages.map(m => m.id === botMsgId ? { ...m, content: accumulatedText } : m)
-            : [...c.messages, { id: botMsgId, role: 'assistant' as const, content: accumulatedText, timestamp: botTimestamp }];
-          return {
-            ...c,
-            updatedAt: new Date().toISOString(),
-            messages: newMsgs
-          };
-        }));
-      };
-
-      // 5. Streaming decoding via ReadableStream & SSE
-      if (res.body && (res.headers.get('content-type')?.includes('text/event-stream') || res.headers.get('content-type')?.includes('text/plain'))) {
-        const reader = res.body.getReader();
-        const decoder = new TextDecoder('utf-8');
-        let buffer = '';
-
-        try {
-          while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
-            buffer += decoder.decode(value, { stream: true });
-            const lines = buffer.split('\n');
-            buffer = lines.pop() || '';
-
-            for (const line of lines) {
-              const trimmed = line.trim();
-              if (!trimmed || trimmed === 'data: [DONE]') continue;
-              if (trimmed.startsWith('data: ')) {
-                try {
-                  const parsed = JSON.parse(trimmed.slice(6));
-                  if (parsed.text) {
-                    accumulatedText += parsed.text;
-                    updateAssistantMsg(accumulatedText);
-                  } else if (parsed.error) {
-                    accumulatedText += `\n⚠️ ${parsed.error}`;
-                    updateAssistantMsg(accumulatedText);
-                  }
-                } catch (_) {
-                  accumulatedText += trimmed.slice(6);
-                  updateAssistantMsg(accumulatedText);
-                }
-              } else {
-                accumulatedText += trimmed;
-                updateAssistantMsg(accumulatedText);
-              }
-            }
+      if (activeMode === 'chat' || activeMode === 'tax-review') {
+        const fullResponse = await perguntarYohanStreaming(
+          fullUserPrompt,
+          recentHistory.slice(0, -1),
+          (chunkText) => {
+            updateAssistantMsg(chunkText);
           }
-        } catch (streamErr: any) {
-          console.warn('[YohanAI] Stream read interrupted:', streamErr);
-          // Se já tiver acumulado texto, preserva a resposta parcial em vez de falhar
-          if (!accumulatedText) {
-            throw streamErr;
-          }
+        );
+        updateAssistantMsg(fullResponse);
+
+        // Guardar no cache 24h se for resposta válida
+        if (fullResponse && !fullResponse.startsWith('⚠️') && !currentAttached) {
+          try {
+            localStorage.setItem(cacheKey, JSON.stringify({
+              response: fullResponse,
+              timestamp: Date.now()
+            }));
+          } catch (_) {}
         }
       } else {
-        const contentType = res.headers.get('content-type') || '';
-        if (contentType.includes('application/json')) {
-          const data = await res.json();
-          accumulatedText = data.text || data.reply || data.response || 'Desculpe, ocorreu um erro ao gerar a resposta.';
-        } else {
-          accumulatedText = await res.text();
-        }
-        updateAssistantMsg(accumulatedText);
-      }
+        // Modos Document / Spreadsheet / Presentation: geração profunda em 2 fases
+        setIsDocGenerating(true);
+        setDocProgress({ current: 0, total: 10, title: 'A estruturar seções do documento...' });
 
-      // Guardar no cache 24h se for resposta válida
-      if (accumulatedText && !accumulatedText.startsWith('⚠️') && !currentAttached) {
-        try {
-          localStorage.setItem(cacheKey, JSON.stringify({
-            response: accumulatedText,
-            timestamp: Date.now()
-          }));
-        } catch (_) {}
+        const fullDocText = await gerarDocumentoGrande(
+          fullUserPrompt,
+          (feitas, total, tituloSecao, textoAcumulado) => {
+            setDocProgress({ current: feitas, total, title: tituloSecao });
+            if (textoAcumulado) {
+              updateAssistantMsg(textoAcumulado);
+            }
+          }
+        );
+
+        updateAssistantMsg(fullDocText);
+        setDocProgress(null);
+
+        // Processar para botões de exportação (DOCX / XLSX / PPTX)
+        const titleMatch = fullDocText.match(/^#\s+(.+)$/m);
+        const docTitle = titleMatch ? titleMatch[1].trim() : userText.slice(0, 40);
+
+        const sectionMatches = Array.from(fullDocText.matchAll(/##\s+([^\n]+)\n\n([\s\S]*?)(?=(?:##|\n---|$))/g));
+        const structuredSections = sectionMatches.map(m => ({
+          heading: m[1].trim(),
+          paragraphs: m[2].split('\n\n').map(p => p.trim()).filter(Boolean)
+        }));
+
+        const newDoc = {
+          title: docTitle,
+          subtitle: 'Guia Técnico Aprofundado - Yohan AI (PGC Angola)',
+          sections: structuredSections.length > 0 ? structuredSections : [{ heading: 'Conteúdo Integral', paragraphs: [fullDocText] }]
+        };
+        setGeneratedDoc(newDoc);
+
+        if (onSaveToVault) {
+          onSaveToVault(activeMode, docTitle, newDoc);
+        }
       }
     } catch (err: any) {
-      console.error('Yohan AI Chat error:', err);
-      const rawErrMsg = err?.message || '';
-      const isAbort = err?.name === 'AbortError' || rawErrMsg.toLowerCase().includes('abort');
-      const userFriendlyError = isAbort 
-        ? 'O tempo de resposta do assistente foi excedido. Por favor, tente enviar a mensagem novamente.' 
-        : (rawErrMsg || 'Erro de conexão');
-
+      console.error('Yohan AI Error:', err);
+      const rawErrMsg = err?.message || String(err) || 'Erro de comunicação';
       const errorMsg: ChatMessage = {
         id: botMsgId,
         role: 'assistant',
-        content: `⚠️ Não foi possível obter resposta em tempo real (${userFriendlyError}).\n\n*Sugestão:* Pode clicar no botão abaixo para tentar novamente ou consultar o **Glossário PGC** acima.`,
+        content: `⚠️ Não foi possível obter resposta: ${rawErrMsg}\n\n*Sugestão:* Verifique as suas credenciais de API ou tente novamente em instantes.`,
         timestamp: botTimestamp
       };
 
@@ -781,6 +739,8 @@ function hashString(str: string): string {
       }));
     } finally {
       setIsLoading(false);
+      setIsDocGenerating(false);
+      setDocProgress(null);
     }
   };
 
@@ -795,100 +755,37 @@ function hashString(str: string): string {
       content: m.content
     }));
 
+    const updateAssistantMsg = (fullText: string) => {
+      setConversations(prev => prev.map(c => {
+        if (c.id !== activeConvId) return c;
+        const msgExists = c.messages.some(m => m.id === botMsgId);
+        const newMsgs = msgExists
+          ? c.messages.map(m => m.id === botMsgId ? { ...m, content: fullText } : m)
+          : [...c.messages, { id: botMsgId, role: 'assistant' as const, content: fullText, timestamp: botTimestamp }];
+        return {
+          ...c,
+          updatedAt: new Date().toISOString(),
+          messages: newMsgs
+        };
+      }));
+    };
+
     try {
-      const res = await fetch('/api/chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          message: editedUserText,
-          history: recentHistory.slice(0, -1),
-          language: currentLanguage,
-          stream: true,
-          systemContext: 'Yohan AI - Consultor Sénior de Contabilidade PGC Angola (Decreto 82/2001)'
-        })
-      });
-
-      let accumulatedText = '';
-      const updateAssistantMsg = (fullText: string) => {
-        accumulatedText = fullText;
-        setConversations(prev => prev.map(c => {
-          if (c.id !== activeConvId) return c;
-          const msgExists = c.messages.some(m => m.id === botMsgId);
-          const newMsgs = msgExists
-            ? c.messages.map(m => m.id === botMsgId ? { ...m, content: accumulatedText } : m)
-            : [...c.messages, { id: botMsgId, role: 'assistant' as const, content: accumulatedText, timestamp: botTimestamp }];
-          return {
-            ...c,
-            updatedAt: new Date().toISOString(),
-            messages: newMsgs
-          };
-        }));
-      };
-
-      if (res.body && (res.headers.get('content-type')?.includes('text/event-stream') || res.headers.get('content-type')?.includes('text/plain'))) {
-        const reader = res.body.getReader();
-        const decoder = new TextDecoder('utf-8');
-        let buffer = '';
-
-        try {
-          while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
-            buffer += decoder.decode(value, { stream: true });
-            const lines = buffer.split('\n');
-            buffer = lines.pop() || '';
-
-            for (const line of lines) {
-              const trimmed = line.trim();
-              if (!trimmed || trimmed === 'data: [DONE]') continue;
-              if (trimmed.startsWith('data: ')) {
-                try {
-                  const parsed = JSON.parse(trimmed.slice(6));
-                  if (parsed.text) {
-                    accumulatedText += parsed.text;
-                    updateAssistantMsg(accumulatedText);
-                  } else if (parsed.error) {
-                    accumulatedText += `\n⚠️ ${parsed.error}`;
-                    updateAssistantMsg(accumulatedText);
-                  }
-                } catch (_) {
-                  accumulatedText += trimmed.slice(6);
-                  updateAssistantMsg(accumulatedText);
-                }
-              } else {
-                accumulatedText += trimmed;
-                updateAssistantMsg(accumulatedText);
-              }
-            }
-          }
-        } catch (streamErr: any) {
-          console.warn('[YohanAI Edit] Stream read interrupted:', streamErr);
-          if (!accumulatedText) {
-            throw streamErr;
-          }
+      const fullResponse = await perguntarYohanStreaming(
+        editedUserText,
+        recentHistory.slice(0, -1),
+        (chunkText) => {
+          updateAssistantMsg(chunkText);
         }
-      } else {
-        const contentType = res.headers.get('content-type') || '';
-        if (contentType.includes('application/json')) {
-          const data = await res.json();
-          accumulatedText = data.text || data.reply || data.response || 'Desculpe, ocorreu um erro ao gerar a resposta.';
-        } else {
-          accumulatedText = await res.text();
-        }
-        updateAssistantMsg(accumulatedText);
-      }
+      );
+      updateAssistantMsg(fullResponse);
     } catch (err: any) {
       console.error('Yohan AI Edit Chat error:', err);
-      const rawErrMsg = err?.message || '';
-      const isAbort = err?.name === 'AbortError' || rawErrMsg.toLowerCase().includes('abort');
-      const userFriendlyError = isAbort 
-        ? 'O tempo de resposta do assistente foi excedido. Por favor, tente novamente.' 
-        : (rawErrMsg || 'Erro de conexão');
-
+      const rawErrMsg = err?.message || String(err) || 'Erro de comunicação';
       const errorMsg: ChatMessage = {
         id: botMsgId,
         role: 'assistant',
-        content: `⚠️ Não foi possível obter resposta após a edição (${userFriendlyError}).`,
+        content: `⚠️ Não foi possível obter resposta após a edição: ${rawErrMsg}`,
         timestamp: botTimestamp
       };
 
@@ -1002,29 +899,42 @@ function hashString(str: string): string {
     }
   };
 
-  // Generate Document Word
+  // Generate Document Word with Two-Phase Large Generation
   const handleGenerateDoc = async () => {
     if (!docPrompt.trim() || isDocGenerating) return;
     setIsDocGenerating(true);
+    setDocProgress({ current: 0, total: 10, title: 'A estruturar seções do documento...' });
     try {
-      const res = await fetch('/api/yohan/document', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt: docPrompt, language: currentLanguage, country: 'Angola' })
-      });
-      if (res.ok && res.headers.get('content-type')?.includes('application/json')) {
-        const data = await res.json();
-        setGeneratedDoc(data);
-        if (onSaveToVault) {
-          onSaveToVault('document', data.title || 'Documento PGC', data);
+      const fullDocText = await gerarDocumentoGrande(
+        docPrompt,
+        (feitas, total, tituloSecao) => {
+          setDocProgress({ current: feitas, total, title: tituloSecao });
         }
-      } else {
-        console.warn('Doc generation error:', res.status);
+      );
+
+      const titleMatch = fullDocText.match(/^#\s+(.+)$/m);
+      const docTitle = titleMatch ? titleMatch[1].trim() : docPrompt.slice(0, 40);
+
+      const sectionMatches = Array.from(fullDocText.matchAll(/##\s+([^\n]+)\n\n([\s\S]*?)(?=(?:##|\n---|$))/g));
+      const structuredSections = sectionMatches.map(m => ({
+        heading: m[1].trim(),
+        paragraphs: m[2].split('\n\n').map(p => p.trim()).filter(Boolean)
+      }));
+
+      const newDoc = {
+        title: docTitle,
+        subtitle: 'Documento Técnico Aprofundado - Yohan AI (PGC Angola)',
+        sections: structuredSections.length > 0 ? structuredSections : [{ heading: 'Conteúdo Integral', paragraphs: [fullDocText] }]
+      };
+      setGeneratedDoc(newDoc);
+      if (onSaveToVault) {
+        onSaveToVault('document', docTitle, newDoc);
       }
     } catch (e) {
       console.error('Doc generation error:', e);
     } finally {
       setIsDocGenerating(false);
+      setDocProgress(null);
     }
   };
 
@@ -1225,7 +1135,16 @@ function hashString(str: string): string {
   return (
     <div 
       id="yohan-ai-workspace"
-      className="ai-accountant-page flex h-full w-full bg-slate-900 text-slate-100 overflow-hidden font-sans select-text relative"
+      className="ai-accountant-page bg-slate-900 text-slate-100 font-sans select-text relative"
+      style={{
+        height: 'calc(100vh - 64px)',
+        width: '100%',
+        maxWidth: 1280,
+        margin: '0 auto',
+        display: 'flex',
+        overflow: 'hidden',
+        boxSizing: 'border-box'
+      }}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
@@ -1239,175 +1158,174 @@ function hashString(str: string): string {
         </div>
       )}
 
-      {/* CONVERSATIONS SIDEBAR / DRAWER (COMPLETELY ACCESSIBLE ON ALL DEVICES) */}
-      <AnimatePresence>
-        {isHistoryOpen && (
-          <>
-            {/* Backdrop on mobile/tablet */}
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              onClick={() => setIsHistoryOpen(false)}
-              className="fixed inset-0 bg-black/60 z-30 lg:hidden backdrop-blur-xs"
-            />
+      {/* CONVERSATIONS SIDEBAR / DRAWER */}
+      {/* 1. Mobile Backdrop (< 900px) */}
+      {!isDesktop && isHistoryOpen && (
+        <div
+          onClick={() => setIsHistoryOpen(false)}
+          className="fixed inset-0 bg-black/70 z-40 backdrop-blur-xs transition-opacity"
+        />
+      )}
 
-            {/* Sidebar content */}
-            <motion.aside
-              initial={{ x: -300, opacity: 0 }}
-              animate={{ x: 0, opacity: 1 }}
-              exit={{ x: -300, opacity: 0 }}
-              transition={{ type: 'spring', damping: 25, stiffness: 280 }}
-              className="fixed lg:relative z-40 top-0 left-0 h-full w-72 sm:w-80 bg-slate-950 border-r border-slate-800 flex flex-col shadow-2xl shrink-0"
-            >
-              {/* Sidebar Header */}
-              <div className="p-4 border-b border-slate-800 flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <YohanLogo size={18} />
-                  <h2 className="text-sm font-bold text-white">Conversas</h2>
-                </div>
+      {/* 2. Sidebar Column: 300px on desktop (in-flow), or overlay drawer on mobile */}
+      {(isHistoryOpen || isDesktop) && (
+        <aside
+          style={{ width: 300, minWidth: 300, maxWidth: 300 }}
+          className={`h-full bg-slate-950 border-r border-slate-800 flex flex-col shrink-0 transition-all duration-300 ${
+            isDesktop
+              ? (isHistoryOpen ? 'flex' : 'hidden')
+              : (isHistoryOpen ? 'fixed inset-y-0 left-0 z-50 shadow-2xl flex' : 'hidden')
+          }`}
+        >
+          {/* Sidebar Header */}
+          <div className="p-4 border-b border-slate-800 flex items-center justify-between shrink-0">
+            <div className="flex items-center gap-2">
+              <YohanLogo size={18} />
+              <h2 className="text-sm font-bold text-white">Conversas</h2>
+            </div>
 
-                <div className="flex items-center gap-1">
-                  <button
-                    type="button"
-                    onClick={handleCreateNewConversation}
-                    className="p-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white transition-colors cursor-pointer"
-                    title="Nova Conversa"
-                  >
-                    <Plus className="w-3.5 h-3.5" />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setIsHistoryOpen(false)}
-                    className="p-1.5 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-white transition-colors cursor-pointer"
-                    title="Fechar Painel"
-                  >
-                    <X className="w-4 h-4" />
-                  </button>
-                </div>
+            <div className="flex items-center gap-1">
+              <button
+                type="button"
+                onClick={handleCreateNewConversation}
+                className="p-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white transition-colors cursor-pointer"
+                title="Nova Conversa"
+              >
+                <Plus className="w-3.5 h-3.5" />
+              </button>
+              <button
+                type="button"
+                onClick={() => setIsHistoryOpen(false)}
+                className="p-1.5 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-white transition-colors cursor-pointer"
+                title="Fechar Painel"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+
+          {/* Search Conversations */}
+          <div className="p-3 border-b border-slate-800/80 shrink-0">
+            <div className="relative">
+              <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+              <input
+                type="text"
+                value={historySearchQuery}
+                onChange={(e) => setHistorySearchQuery(e.target.value)}
+                placeholder="Pesquisar histórico..."
+                className="w-full bg-slate-900 border border-slate-800 rounded-xl pl-8 pr-3 py-1.5 text-xs text-white placeholder:text-slate-500 focus:outline-none focus:border-indigo-500"
+              />
+            </div>
+          </div>
+
+          {/* Conversations List */}
+          <div className="flex-1 min-h-0 overflow-y-auto p-2 space-y-1 scrollbar-thin">
+            {filteredConversations.length === 0 ? (
+              <div className="p-6 text-center text-xs text-slate-500">
+                Nenhuma conversa encontrada.
               </div>
+            ) : (
+              filteredConversations.map((conv) => {
+                const isActive = conv.id === activeConvId;
+                const isEditing = editingConvId === conv.id;
 
-              {/* Search Conversations */}
-              <div className="p-3 border-b border-slate-800/80">
-                <div className="relative">
-                  <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-                  <input
-                    type="text"
-                    value={historySearchQuery}
-                    onChange={(e) => setHistorySearchQuery(e.target.value)}
-                    placeholder="Pesquisar histórico..."
-                    className="w-full bg-slate-900 border border-slate-800 rounded-xl pl-8 pr-3 py-1.5 text-xs text-white placeholder:text-slate-500 focus:outline-none focus:border-indigo-500"
-                  />
-                </div>
-              </div>
-
-              {/* Conversations List */}
-              <div className="flex-1 overflow-y-auto p-2 space-y-1 scrollbar-thin">
-                {filteredConversations.length === 0 ? (
-                  <div className="p-6 text-center text-xs text-slate-500">
-                    Nenhuma conversa encontrada.
-                  </div>
-                ) : (
-                  filteredConversations.map((conv) => {
-                    const isActive = conv.id === activeConvId;
-                    const isEditing = editingConvId === conv.id;
-
-                    return (
-                      <div
-                        key={conv.id}
-                        onClick={() => handleSelectConversation(conv.id)}
-                        className={`group relative flex flex-col p-2.5 rounded-xl transition-all cursor-pointer border ${
-                          isActive
-                            ? 'bg-indigo-950/40 border-indigo-500/40 text-white shadow-xs'
-                            : 'bg-transparent border-transparent hover:bg-slate-900 text-slate-300 hover:text-white'
-                        }`}
-                      >
-                        {isEditing ? (
-                          <div className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
-                            <input
-                              type="text"
-                              value={editConvTitle}
-                              onChange={(e) => setEditConvTitle(e.target.value)}
-                              onKeyDown={(e) => {
-                                if (e.key === 'Enter') handleSaveRename(conv.id);
-                                if (e.key === 'Escape') setEditingConvId(null);
-                              }}
-                              autoFocus
-                              className="flex-1 bg-slate-900 border border-indigo-500 rounded px-2 py-0.5 text-xs text-white"
-                            />
+                return (
+                  <div
+                    key={conv.id}
+                    onClick={() => handleSelectConversation(conv.id)}
+                    className={`group relative flex flex-col p-2.5 rounded-xl transition-all cursor-pointer border ${
+                      isActive
+                        ? 'bg-indigo-950/40 border-indigo-500/40 text-white shadow-xs'
+                        : 'bg-transparent border-transparent hover:bg-slate-900 text-slate-300 hover:text-white'
+                    }`}
+                  >
+                    {isEditing ? (
+                      <div className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
+                        <input
+                          type="text"
+                          value={editConvTitle}
+                          onChange={(e) => setEditConvTitle(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') handleSaveRename(conv.id);
+                            if (e.key === 'Escape') setEditingConvId(null);
+                          }}
+                          autoFocus
+                          className="flex-1 bg-slate-900 border border-indigo-500 rounded px-2 py-0.5 text-xs text-white"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => handleSaveRename(conv.id)}
+                          className="p-1 text-emerald-400 hover:text-emerald-300"
+                        >
+                          <Check className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setEditingConvId(null)}
+                          className="p-1 text-slate-400 hover:text-slate-300"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    ) : (
+                      <>
+                        <div className="flex items-center justify-between gap-1">
+                          <span className="text-xs font-bold truncate flex-1">{conv.title}</span>
+                          <div className="opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-0.5">
                             <button
                               type="button"
-                              onClick={() => handleSaveRename(conv.id)}
-                              className="p-1 text-emerald-400 hover:text-emerald-300"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setEditingConvId(conv.id);
+                                setEditConvTitle(conv.title);
+                              }}
+                              className="p-1 hover:text-indigo-300 text-slate-400"
+                              title="Renomear"
                             >
-                              <Check className="w-3.5 h-3.5" />
+                              <Edit3 className="w-3 h-3" />
                             </button>
                             <button
                               type="button"
-                              onClick={() => setEditingConvId(null)}
-                              className="p-1 text-slate-400 hover:text-slate-300"
+                              onClick={(e) => handleDeleteConversation(conv.id, e)}
+                              className="p-1 hover:text-red-400 text-slate-400"
+                              title="Apagar conversa"
                             >
-                              <X className="w-3.5 h-3.5" />
+                              <Trash2 className="w-3 h-3" />
                             </button>
                           </div>
-                        ) : (
-                          <>
-                            <div className="flex items-center justify-between gap-1">
-                              <span className="text-xs font-bold truncate flex-1">{conv.title}</span>
-                              <div className="opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-0.5">
-                                <button
-                                  type="button"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    setEditingConvId(conv.id);
-                                    setEditConvTitle(conv.title);
-                                  }}
-                                  className="p-1 hover:text-indigo-300 text-slate-400"
-                                  title="Renomear"
-                                >
-                                  <Edit3 className="w-3 h-3" />
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={(e) => handleDeleteConversation(conv.id, e)}
-                                  className="p-1 hover:text-red-400 text-slate-400"
-                                  title="Apagar conversa"
-                                >
-                                  <Trash2 className="w-3 h-3" />
-                                </button>
-                              </div>
-                            </div>
-                            <div className="flex items-center justify-between text-[10px] text-slate-500 mt-1">
-                              <span>{conv.messages.length} msg{conv.messages.length !== 1 ? 's' : ''}</span>
-                              <span className="font-mono">{new Date(conv.updatedAt).toLocaleDateString([], { day: '2-digit', month: '2-digit' })}</span>
-                            </div>
-                          </>
-                        )}
-                      </div>
-                    );
-                  })
-                )}
-              </div>
+                        </div>
+                        <div className="flex items-center justify-between text-[10px] text-slate-500 mt-1">
+                          <span>{conv.messages.length} msg{conv.messages.length !== 1 ? 's' : ''}</span>
+                          <span className="font-mono">{new Date(conv.updatedAt).toLocaleDateString([], { day: '2-digit', month: '2-digit' })}</span>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                );
+              })
+            )}
+          </div>
 
-              {/* Sidebar Footer */}
-              <div className="p-3 border-t border-slate-800 bg-slate-950/60 flex items-center justify-between">
-                <button
-                  type="button"
-                  onClick={() => setShowClearAllModal(true)}
-                  className="text-xs text-rose-400 hover:text-rose-300 flex items-center gap-1.5 transition-colors cursor-pointer"
-                >
-                  <Trash2 className="w-3 h-3" />
-                  <span>Limpar todas</span>
-                </button>
-                <span className="text-[10px] text-slate-500 font-mono">v3.7 PGC</span>
-              </div>
-            </motion.aside>
-          </>
-        )}
-      </AnimatePresence>
+          {/* Sidebar Footer */}
+          <div className="p-3 border-t border-slate-800 bg-slate-950/60 flex items-center justify-between shrink-0">
+            <button
+              type="button"
+              onClick={() => setShowClearAllModal(true)}
+              className="text-xs text-rose-400 hover:text-rose-300 flex items-center gap-1.5 transition-colors cursor-pointer"
+            >
+              <Trash2 className="w-3 h-3" />
+              <span>Limpar todas</span>
+            </button>
+            <span className="text-[10px] text-slate-500 font-mono">v3.7 PGC</span>
+          </div>
+        </aside>
+      )}
 
-      {/* MAIN CONTAINER */}
-      <div className="flex-1 flex flex-col min-w-0 h-full overflow-hidden">
+      {/* MAIN CHAT COLUMN */}
+      <div 
+        className="flex-1 flex flex-col min-w-0 min-h-0 h-full overflow-hidden relative"
+        style={{ flex: 1, minWidth: 0, minHeight: 0, display: 'flex', flexDirection: 'column' }}
+      >
         {/* TOP BAR WITH DYNAMIC GENERATION GRADIENT ANIMATION */}
         <header className={`ai-models-bar flex flex-wrap items-center justify-between gap-2.5 px-4 sm:px-6 py-3 bg-slate-950 border-b relative overflow-hidden shrink-0 transition-all duration-500 ${
           isLoading || isDocGenerating || isSheetGenerating || isPptGenerating || isVizGenerating || isTaxAuditing
@@ -1569,6 +1487,27 @@ function hashString(str: string): string {
           {/* TAB 1: CHAT */}
           {activeMode === 'chat' && (
             <div className="ai-chat-area flex-1 flex flex-col min-h-0 overflow-hidden">
+              {/* TWO-PHASE GENERATION PROGRESS BANNER */}
+              {docProgress && (
+                <div className="px-4 py-2.5 bg-indigo-950/90 border-b border-indigo-500/30 flex flex-col gap-1.5 shrink-0 z-10 shadow-md">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="font-bold text-indigo-200 flex items-center gap-1.5">
+                      <Loader2 className="w-3.5 h-3.5 animate-spin text-indigo-400" />
+                      <span>{docProgress.title}</span>
+                    </span>
+                    <span className="text-indigo-300 font-mono text-[11px]">
+                      {docProgress.current} / {docProgress.total} seções ({Math.round((docProgress.current / Math.max(1, docProgress.total)) * 100)}%)
+                    </span>
+                  </div>
+                  <div className="w-full bg-slate-800 rounded-full h-1.5 overflow-hidden">
+                    <div
+                      className="bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 h-full transition-all duration-300 rounded-full"
+                      style={{ width: `${Math.round((docProgress.current / Math.max(1, docProgress.total)) * 100)}%` }}
+                    />
+                  </div>
+                </div>
+              )}
+
               {/* MESSAGES VIRTUALIZED / SCROLL LIST */}
               <VirtualizedChatMessagesList
                 messages={messages.map(m => ({
@@ -1678,26 +1617,41 @@ function hashString(str: string): string {
                     {isRecordingVoice ? <MicOff className="w-4 h-4" /> : <Mic className="w-4 h-4" />}
                   </button>
 
-                  {/* Main text input */}
-                  <input
-                    type="text"
-                    value={inputMessage}
-                    onChange={(e) => setInputMessage(e.target.value)}
-                    placeholder="Coloque a sua dúvida sobre lançamentos, PGC Angola, IVA, balancetes..."
-                    className="flex-1 bg-slate-800/90 border border-slate-700/80 rounded-xl px-4 py-2.5 text-sm text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all"
-                    disabled={isLoading}
-                  />
+                  {/* Main text input textarea (Enter for newline, Ctrl+Enter / Cmd+Enter to send) */}
+                  <div className="flex-1 flex flex-col">
+                    <textarea
+                      rows={1}
+                      value={inputMessage}
+                      onChange={(e) => setInputMessage(e.target.value)}
+                      onKeyDown={(e) => {
+                        const isSendShortcut = e.key === 'Enter' && (e.ctrlKey || e.metaKey);
+                        if (isSendShortcut) {
+                          e.preventDefault();
+                          handleSendMessage();
+                        }
+                        // Enter alone creates a new line normally
+                      }}
+                      placeholder="Coloque a sua dúvida sobre lançamentos, PGC Angola, IVA, balancetes..."
+                      className="w-full bg-slate-800/90 border border-slate-700/80 rounded-xl px-4 py-2.5 text-sm text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all resize-none min-h-[42px] max-h-32 font-sans leading-relaxed"
+                      disabled={isLoading}
+                    />
+                  </div>
 
                   {/* Send button */}
                   <button
                     type="submit"
                     disabled={isLoading || (!inputMessage.trim() && !attachedFile)}
-                    className="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white font-bold rounded-xl text-xs flex items-center gap-1.5 transition-all shadow-md cursor-pointer shrink-0"
+                    className="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white font-bold rounded-xl text-xs flex items-center gap-1.5 transition-all shadow-md cursor-pointer shrink-0 self-end mb-0.5"
                   >
                     <Send className="w-3.5 h-3.5" />
                     <span className="hidden sm:inline">Enviar</span>
                   </button>
                 </form>
+
+                {/* Visual shortcut hint */}
+                <p className="text-[10px] text-slate-500 text-center mt-1.5 font-medium select-none">
+                  <span className="font-semibold text-slate-400">Enter</span> para nova linha &middot; <span className="font-semibold text-slate-400">Ctrl+Enter</span> para enviar
+                </p>
               </div>
             </div>
           )}
@@ -1734,6 +1688,26 @@ function hashString(str: string): string {
                     <span>Gerar Documento</span>
                   </button>
                 </div>
+
+                {docProgress && (
+                  <div className="bg-slate-900/90 border border-indigo-500/40 rounded-xl p-3.5 space-y-2 mt-3">
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="font-bold text-indigo-300 flex items-center gap-1.5">
+                        <Loader2 className="w-3.5 h-3.5 animate-spin text-indigo-400" />
+                        <span>{docProgress.title}</span>
+                      </span>
+                      <span className="text-slate-400 font-mono text-[11px]">
+                        {docProgress.current} / {docProgress.total} seções ({Math.round((docProgress.current / Math.max(1, docProgress.total)) * 100)}%)
+                      </span>
+                    </div>
+                    <div className="w-full bg-slate-800 rounded-full h-2 overflow-hidden">
+                      <div
+                        className="bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 h-full transition-all duration-300 rounded-full"
+                        style={{ width: `${Math.round((docProgress.current / Math.max(1, docProgress.total)) * 100)}%` }}
+                      />
+                    </div>
+                  </div>
+                )}
               </div>
 
               {generatedDoc && (
