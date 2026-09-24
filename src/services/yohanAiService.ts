@@ -1,25 +1,7 @@
 import { GoogleGenAI, Type } from '@google/genai';
+import { SYSTEM_INSTRUCTION_YOHAN } from './yohanSystemPrompt';
 
-export const SYSTEM_INSTRUCTION_YOHAN = `Você é Yohan AI, consultor e auditor contabilístico sénior humano, especialista de topo no Plano Geral de Contabilidade de Angola (PGC - Decreto n.º 82/01, atualizado pelo Decreto Presidencial n.º 180/19 — contas do IVA 34.5.x) e na legislação fiscal da AGT (Código do IVA - Lei n.º 7/19 e DP 180/19, Código do Imposto Industrial, Código do IRT e RITI).
-
-IDENTIDADE E VOZ:
-- Profissional experiente, didático, caloroso, paciente e prático. Comunica diretamente como um auditor ou professor de contabilidade a orientar um colega de profissão ou estudante.
-- Rigor técnico absoluto na terminologia do PGC Angola: usa "Proveito" (nunca "Receita"), "Custo" (nunca "Despesa"), "Capital Próprio" (nunca "Patrimônio Líquido"), "Activo", "Imobilizações Corpóreas/Incorpóreas", "Amortizações".
-- Estrutura obrigatória de Lançamentos Contabilísticos PGC:
-  [D] Débito  : código — nome da conta — valor AOA
-  [C] Crédito : código — nome da conta — valor AOA
-  Histórico   : descrição sucinta da operação
-- Subcontas oficiais do IVA segundo o DP n.º 180/19:
-  * 34.5.1 IVA Suportado
-  * 34.5.2 IVA Dedutível
-  * 34.5.3 IVA Liquidado
-  * 34.5.5 IVA Apuramento
-  * 34.5.6 IVA a Pagar
-  * 34.5.7 IVA a Recuperar / Crédito de IVA
-- Regras fiscais angolanas fundamentais:
-  * Retenção na fonte de 6,5% a título de Imposto Industrial sobre prestação de serviços (incide estritamente sobre o valor base do serviço sem IVA).
-  * Prazo de submissão do Modelo 7 (Declaração Periódica do IVA): último dia do mês seguinte ao período a que respeita.
-  * Imposto Industrial: taxa geral de 25% (ou 35% no setor financeiro/telecomunicações; 10% agricultura).`;
+export { SYSTEM_INSTRUCTION_YOHAN };
 
 /**
  * Obtém a chave da API Gemini do ambiente ou lança um erro explicativo.
@@ -60,9 +42,9 @@ export interface DocumentOutlineResult {
 
 /**
  * Envia uma pergunta ao Yohan AI com streaming em tempo real.
- * Utiliza o modelo gemini-2.5-flash com thinkingConfig: { thinkingBudget: 0 }.
- * Se a API direta não estiver acessível no cliente (ou sem chave no browser),
- * utiliza fallback transparente para a rota de streaming do servidor /api/chat.
+ * Utiliza o modelo gemini-3.8-flash com thinkingConfig: { thinkingBudget: 0 } e maxOutputTokens: 8192.
+ * Trata o erro "Incomplete JSON segment" garantindo que respostas truncadas parciais
+ * (>200 caracteres) sejam preservadas com nota discreta para continuação.
  */
 export async function perguntarYohanStreaming(
   prompt: string,
@@ -70,6 +52,12 @@ export async function perguntarYohanStreaming(
   onChunk: (parcial: string) => void
 ): Promise<string> {
   const apiKey = getGeminiApiKey();
+
+  // Defesa extra de idioma: assegura instrução reforçada de português de Angola
+  const PORTUGUESE_TAG = '\n\n[Responde exclusivamente em português (Angola).]';
+  const promptComDefesa = prompt.includes('[Responde exclusivamente em português (Angola).]')
+    ? prompt
+    : `${prompt}${PORTUGUESE_TAG}`;
 
   // Se tivermos a chave configurada no frontend, chamamos o SDK @google/genai diretamente com streaming
   if (apiKey) {
@@ -82,15 +70,16 @@ export async function perguntarYohanStreaming(
         })),
         {
           role: 'user',
-          parts: [{ text: prompt }]
+          parts: [{ text: promptComDefesa }]
         }
       ];
 
       const stream = await ai.models.generateContentStream({
-        model: 'gemini-2.5-flash',
+        model: 'gemini-3.8-flash',
         contents,
         config: {
           systemInstruction: SYSTEM_INSTRUCTION_YOHAN,
+          maxOutputTokens: 8192,
           thinkingConfig: {
             thinkingBudget: 0
           }
@@ -98,12 +87,31 @@ export async function perguntarYohanStreaming(
       });
 
       let textoCompleto = '';
-      for await (const chunk of stream) {
-        const chunkText = chunk.text || '';
-        if (chunkText) {
-          textoCompleto += chunkText;
-          onChunk(textoCompleto);
+      try {
+        for await (const chunk of stream) {
+          const chunkText = chunk.text || '';
+          if (chunkText) {
+            textoCompleto += chunkText;
+            onChunk(textoCompleto);
+          }
         }
+      } catch (streamErr: any) {
+        const streamErrMsg = streamErr?.message || String(streamErr);
+        console.warn('[YohanAiService] Direct SDK stream encountered error:', streamErrMsg);
+        if (
+          streamErrMsg.includes('Incomplete JSON segment') ||
+          streamErrMsg.includes('JSON segment') ||
+          streamErrMsg.includes('interrupted')
+        ) {
+          if (textoCompleto.trim().length > 200) {
+            const finalInterrompida = `${textoCompleto.trim()}\n\n> ⚠️ Resposta interrompida — toca para continuar.`;
+            onChunk(finalInterrompida);
+            return finalInterrompida;
+          } else {
+            throw new Error('Não consegui concluir a resposta. Tenta novamente ou divide a pergunta.');
+          }
+        }
+        throw streamErr;
       }
 
       if (textoCompleto.trim()) {
@@ -111,10 +119,12 @@ export async function perguntarYohanStreaming(
       }
     } catch (err: any) {
       console.warn('[YohanAiService] Direct SDK stream failed, falling back to server /api/chat:', err);
-      // Se for erro de quota (429) ou chave inválida direta, lançar se relevante
       const errMsg = err?.message || String(err);
       if (errMsg.includes('429') || errMsg.includes('RESOURCE_EXHAUSTED')) {
         throw new Error('⚠️ Limite de quota da API Gemini atingido (429). Aguarde alguns instantes antes de tentar novamente.');
+      }
+      if (errMsg.includes('Não consegui concluir a resposta')) {
+        throw err;
       }
       // Se falhar por CORS ou outro motivo de browser, recorre ao proxy backend abaixo
     }
@@ -125,9 +135,11 @@ export async function perguntarYohanStreaming(
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      message: prompt,
+      message: promptComDefesa,
       history: historico.slice(-8),
       stream: true,
+      language: 'pt-AO',
+      systemInstruction: SYSTEM_INSTRUCTION_YOHAN,
       systemContext: SYSTEM_INSTRUCTION_YOHAN
     })
   });
@@ -158,35 +170,97 @@ export async function perguntarYohanStreaming(
     const decoder = new TextDecoder('utf-8');
     let buffer = '';
 
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split('\n');
-      buffer = lines.pop() || '';
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
 
-      for (const line of lines) {
-        const trimmed = line.trim();
-        if (!trimmed || trimmed === 'data: [DONE]') continue;
-        if (trimmed.startsWith('data: ')) {
-          try {
-            const parsed = JSON.parse(trimmed.slice(6));
-            if (parsed.text) {
-              textoAcumulado += parsed.text;
-              onChunk(textoAcumulado);
-            } else if (parsed.error) {
-              throw new Error(parsed.error);
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (!trimmed || trimmed === 'data: [DONE]') continue;
+          if (trimmed.startsWith('data: ')) {
+            const rawPayload = trimmed.slice(6).trim();
+            if (!rawPayload) continue;
+
+            try {
+              const parsed = JSON.parse(rawPayload);
+              if (parsed.text) {
+                textoAcumulado += parsed.text;
+                onChunk(textoAcumulado);
+              } else if (parsed.interrupted) {
+                if (textoAcumulado.trim().length > 200) {
+                  const finalInterrompida = `${textoAcumulado.trim()}\n\n> ⚠️ Resposta interrompida — toca para continuar.`;
+                  onChunk(finalInterrompida);
+                  return finalInterrompida;
+                } else {
+                  throw new Error('Não consegui concluir a resposta. Tenta novamente ou divide a pergunta.');
+                }
+              } else if (parsed.error) {
+                const errStr = typeof parsed.error === 'string' ? parsed.error : JSON.stringify(parsed.error);
+                if (
+                  errStr.includes('Incomplete JSON') ||
+                  errStr.includes('JSON segment') ||
+                  errStr.includes('STREAM_INCOMPLETE') ||
+                  errStr.includes('interrupted')
+                ) {
+                  if (textoAcumulado.trim().length > 200) {
+                    const finalInterrompida = `${textoAcumulado.trim()}\n\n> ⚠️ Resposta interrompida — toca para continuar.`;
+                    onChunk(finalInterrompida);
+                    return finalInterrompida;
+                  } else {
+                    throw new Error('Não consegui concluir a resposta. Tenta novamente ou divide a pergunta.');
+                  }
+                }
+                throw new Error(errStr);
+              }
+            } catch (e: any) {
+              if (e.message && (e.message.includes('Não consegui') || e.message.includes('Quota'))) {
+                throw e;
+              }
+              // Tratamento para chunk com JSON incompleto
+              if (rawPayload.includes('Incomplete JSON') || rawPayload.includes('JSON segment')) {
+                if (textoAcumulado.trim().length > 200) {
+                  const finalInterrompida = `${textoAcumulado.trim()}\n\n> ⚠️ Resposta interrompida — toca para continuar.`;
+                  onChunk(finalInterrompida);
+                  return finalInterrompida;
+                } else {
+                  throw new Error('Não consegui concluir a resposta. Tenta novamente ou divide a pergunta.');
+                }
+              }
+              // Nunca anexar mensagens de erro cruas JSON ao texto acumulado
+              if (!rawPayload.startsWith('{') && !rawPayload.startsWith('[')) {
+                textoAcumulado += rawPayload;
+                onChunk(textoAcumulado);
+              }
             }
-          } catch (e: any) {
-            if (e.message && e.message.includes('Quota')) throw e;
-            textoAcumulado += trimmed.slice(6);
-            onChunk(textoAcumulado);
+          } else {
+            // Linha não-data
+            if (!trimmed.startsWith('{') && !trimmed.startsWith('[')) {
+              textoAcumulado += trimmed;
+              onChunk(textoAcumulado);
+            }
           }
-        } else {
-          textoAcumulado += trimmed;
-          onChunk(textoAcumulado);
         }
       }
+    } catch (readErr: any) {
+      const readErrMsg = readErr?.message || String(readErr);
+      if (
+        readErrMsg.includes('Incomplete JSON') ||
+        readErrMsg.includes('JSON segment') ||
+        readErrMsg.includes('interrupted')
+      ) {
+        if (textoAcumulado.trim().length > 200) {
+          const finalInterrompida = `${textoAcumulado.trim()}\n\n> ⚠️ Resposta interrompida — toca para continuar.`;
+          onChunk(finalInterrompida);
+          return finalInterrompida;
+        } else {
+          throw new Error('Não consegui concluir a resposta. Tenta novamente ou divide a pergunta.');
+        }
+      }
+      throw readErr;
     }
   } else {
     const json = await res.json();
@@ -218,15 +292,20 @@ export async function gerarDocumentoGrande(
       onSecao(0, 10, 'A definir estrutura e índice do documento...', '');
 
       const outlinePrompt = `Você é Yohan AI, contabilista sénior e auditor do PGC Angola.
+IDIOMA — REGRA ABSOLUTA: Responde SEMPRE e APENAS em português (variante de Angola). NUNCA inicies a resposta em inglês. Toda a estrutura e títulos devem ser em português de Angola.
+
 Crie a estrutura detalhada de um documento técnico ou manual aprofundado para o seguinte pedido:
 "${pedido}"
 
 Exigência obrigatória:
 - Gere de 8 a 15 secções bem delimitadas, cobrindo o tema do enquadramento legal à prática de lançamentos e checklists.
-- Nenhuma secção deve ser superficial. Cada uma deve ter um propósito claro.`;
+- Nenhuma secção deve ser superficial. Cada uma deve ter um propósito claro.
+- Todo o conteúdo em português de Angola.
+
+Lembrete final: nenhuma resposta em inglês. Português de Angola sempre.`;
 
       const outlineResponse = await ai.models.generateContent({
-        model: 'gemini-2.5-flash',
+        model: 'gemini-3.8-flash',
         contents: outlinePrompt,
         config: {
           systemInstruction: SYSTEM_INSTRUCTION_YOHAN,
@@ -285,6 +364,7 @@ Exigência obrigatória:
         onSecao(i, total, `A redigir Secção ${sec.numero}/${total}: ${sec.titulo}...`, textoAcumulado);
 
         const sectionPrompt = `Você é Yohan AI. Estamos a redigir o documento formal intitulado: "${outline.tituloDocumento}".
+IDIOMA — REGRA ABSOLUTA: Responde SEMPRE e APENAS em português (variante de Angola). NUNCA inicies a resposta em inglês.
 
 ÍNDICE GERAL DO DOCUMENTO:
 ${indiceResumo}
@@ -302,11 +382,13 @@ REQUISITOS OBRIGATÓRIOS:
    Histórico: descrição
 4. Inclua uma tabela markdown informativa ou quadro comparativo onde for pedagogicamente útil.
 5. Termine a secção com uma nota de atenção ou erro comum de auditoria.
+6. Texto integralmente em português de Angola.
 
-Não repita o título geral do documento. Comece diretamente com a explicação desenvolvida da Secção ${sec.numero}.`;
+Não repita o título geral do documento. Comece diretamente com a explicação desenvolvida da Secção ${sec.numero}.
+Lembrete final: nenhuma resposta em inglês. Português de Angola sempre.`;
 
         const secRes = await ai.models.generateContent({
-          model: 'gemini-2.5-flash',
+          model: 'gemini-3.8-flash',
           contents: sectionPrompt,
           config: {
             systemInstruction: SYSTEM_INSTRUCTION_YOHAN,

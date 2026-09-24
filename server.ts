@@ -194,7 +194,12 @@ async function startServer() {
         }
 
         if (chunksEmitted > 0) {
-          res.write(`data: ${JSON.stringify({ error: err?.message || 'Stream generation interrupted' })}\n\n`);
+          const errMsg = err?.message || '';
+          if (errMsg.includes('Incomplete JSON') || errMsg.includes('JSON segment') || errMsg.includes('interrupted')) {
+            res.write(`data: ${JSON.stringify({ interrupted: true })}\n\n`);
+          } else {
+            res.write(`data: ${JSON.stringify({ error: errMsg || 'Stream generation interrupted' })}\n\n`);
+          }
           res.write(`data: [DONE]\n\n`);
           res.end();
           return;
@@ -459,11 +464,11 @@ async function startServer() {
       }
 
       // Determine model to use based on requested features
-      let modelToUse = selectedModel || 'gemini-3.7-flash';
+      let modelToUse = selectedModel || 'gemini-3.8-flash';
       if (thinkingMode) {
         modelToUse = 'gemini-3.1-pro-preview';
       } else if (useSearch) {
-        modelToUse = 'gemini-3.7-flash';
+        modelToUse = 'gemini-3.8-flash';
       }
 
       // Convert history format to Google GenAI structure if present
@@ -480,8 +485,10 @@ async function startServer() {
       });
 
       const userLanguageInstruction: Record<string, string> = {
-        'pt-BR': 'Write the entire response in Brazilian Portuguese (pt-BR). Use formal Brazilian accounting and legal terminology.',
-        'pt-PT': 'Write the entire response in European Portuguese (pt-PT). Use formal Portuguese accounting and legal terminology.',
+        'pt-AO': 'IDIOMA — REGRA ABSOLUTA: Responde SEMPRE e APENAS em português (variante de Angola). Isto aplica-se a TODAS as respostas, títulos, listas, tabelas, cabeçalhos e fórmulas — mesmo quando o utilizador usa termos técnicos em inglês (VAT, deductible, ledger, etc.) ou quando o documento anexado estiver em inglês. NUNCA inicies a resposta em inglês. Única excepção: manter entre parênteses, quando útil, o termo técnico original inglês entre parênteses, ex.: \'IVA suportado (input VAT)\'. Lembrete final: nenhuma resposta em inglês. Português de Angola sempre.',
+        'pt-PT': 'IDIOMA — REGRA ABSOLUTA: Responde SEMPRE e APENAS em português (variante de Angola). NUNCA inicies a resposta em inglês. Lembrete final: nenhuma resposta em inglês. Português de Angola sempre.',
+        'pt-BR': 'IDIOMA — REGRA ABSOLUTA: Responde SEMPRE e APENAS em português (variante de Angola). NUNCA inicies a resposta em inglês. Lembrete final: nenhuma resposta em inglês. Português de Angola sempre.',
+        'pt':    'IDIOMA — REGRA ABSOLUTA: Responde SEMPRE e APENAS em português (variante de Angola). NUNCA inicies a resposta em inglês. Lembrete final: nenhuma resposta em inglês. Português de Angola sempre.',
         'en':    'Write the entire response in English. Use formal international accounting and legal terminology.',
         'fr':    'Rédigez l\'intégralité do document en français. Utilisez la terminologie comptable et juridique formelle française.',
         'de':    'Schreiben Sie das gesamte Dokument auf Deutsch. Verwenden Sie formelle deutsche Buchhaltungs- und Rechtsterminologie.',
@@ -489,14 +496,16 @@ async function startServer() {
         'es':    'Redacte todo el documento en español. Utilice terminología contable y jurídica formal en español.',
       };
 
-      const langKey = language || 'en';
-      const langInstruction = userLanguageInstruction[langKey] || userLanguageInstruction['en'];
+      const langKey = language || 'pt-AO';
+      const langInstruction = userLanguageInstruction[langKey] || userLanguageInstruction['pt-AO'];
       const memoryPrompt = req.body.memoryPrompt || '';
 
       // Extração dinâmica e cirúrgica do Plano Geral de Contabilidade de Angola
       const targetedPGCKnowledge = getRelevantPGCKnowledge(`${message} ${(history || []).slice(-2).map((h: any) => h.content || '').join(' ')}`);
 
       const defaultAccountingPrompt = `És o YOHAN AI, um consultor e auditor contabilístico sénior humano, altamente experiente, especializado no Plano Geral de Contabilidade de Angola (PGC - Decreto n.º 82/01) e na legislação fiscal da AGT (Código do IVA - DP 180/19, Regime do IRT, Código do Imposto Industrial e RITI).
+
+IDIOMA — REGRA ABSOLUTA: Responde SEMPRE e APENAS em português (variante de Angola). Isto aplica-se a TODAS as respostas, títulos, listas, tabelas, cabeçalhos e fórmulas — mesmo quando o utilizador usa termos técnicos em inglês (VAT, deductible, ledger, etc.) ou quando o documento anexado estiver em inglês. NUNCA inicies a resposta em inglês. Única excepção: manter entre parênteses, quando útil, o termo técnico original inglês entre parênteses, ex.: 'IVA suportado (input VAT)'.
 
 IDENTIDADE, PERSONALIDADE E VOZ:
 - Falas e pensas como um profissional humano experiente, paciente, caloroso e didático que está conversando pessoalmente com o utilizador.
@@ -534,19 +543,21 @@ RIGOR TÉCNICO E CONTABILÍSTICO PGC ANGOLA:
    - Classe 7: 71 CMVMC, 72 Custos Pessoal, 73 Amortizações Exercício, 75 FST (75.2) e Outros Custos Operacionais
    - Classe 8: 81 Resultados Transitados, 82 Resultados Operacionais, 87 Imposto sobre Lucros, 88 Resultado Líquido
 
+Lembrete final: nenhuma resposta em inglês. Português de Angola sempre.
+
 ${targetedPGCKnowledge ? `BASE DE CONHECIMENTO PGC RELEVANTE:\n${targetedPGCKnowledge}\n` : ''}`;
 
       const baseSystemInstruction = [
         defaultAccountingPrompt,
         customSystemPrompt?.trim(),
-        langInstruction ? `Idioma: ${langInstruction}` : `Idioma: ${language || 'pt-PT'}.`,
+        langInstruction ? `Idioma: ${langInstruction}` : `Idioma: Português de Angola (pt-AO).`,
         memoryPrompt
       ].filter(Boolean).join('\n\n');
 
       const config: any = {
         systemInstruction: baseSystemInstruction,
         temperature: 0.7,
-        maxOutputTokens: 2048,
+        maxOutputTokens: 8192,
         topP: 0.90,
         topK: 30
       };

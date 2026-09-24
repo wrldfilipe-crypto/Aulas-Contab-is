@@ -52,9 +52,11 @@ function obterApiKey(): string {
   return key;
 }
 
-const MODELO = "gemini-2.5-flash";
+const MODELO = "gemini-3.8-flash";
 
 const SYSTEM = `
+IDIOMA — REGRA ABSOLUTA: Responde SEMPRE e APENAS em português (variante de Angola). Isto aplica-se a TODAS as frentes, versos, temas e explicações dos flashcards — mesmo se o texto fonte estiver em inglês. NUNCA respondas em inglês.
+
 És um criador de flashcards de estudo para contabilidade em Angola (PGC,
 Decreto n.º 82/01, actualizado pelo Decreto Presidencial n.º 180/19 — contas
 do IVA 34.5.x). A partir do texto fornecido, gera cartões que testem:
@@ -62,6 +64,8 @@ conceitos, códigos de contas, classificações, cálculos simples e mini-casos
 práticos. PROIBIDO: perguntas de sim/não, triviais ou repetitivas.
 Formato de frente: pergunta curta e precisa. Verso: resposta completa mas
 concisa (2-4 linhas), com o código da conta quando aplicável.
+
+Lembrete final: nenhuma resposta em inglês. Português de Angola sempre.
 `.trim();
 
 const schemaFlashcards = {

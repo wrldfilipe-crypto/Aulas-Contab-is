@@ -27,6 +27,7 @@ interface VirtualizedChatMessagesListProps {
   onEditMessage?: (messageId: string, newContent: string) => void;
   onDeleteMessage?: (messageId: string) => void;
   onQuickSearchInsert?: (term: string) => void;
+  onContinueMessage?: (msg: ChatMessage) => void;
 }
 
 export const VirtualizedChatMessagesList: React.FC<VirtualizedChatMessagesListProps> = ({
@@ -39,7 +40,8 @@ export const VirtualizedChatMessagesList: React.FC<VirtualizedChatMessagesListPr
   onFeedback,
   onEditMessage,
   onDeleteMessage,
-  onQuickSearchInsert
+  onQuickSearchInsert,
+  onContinueMessage
 }) => {
   const bottomRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -125,10 +127,10 @@ export const VirtualizedChatMessagesList: React.FC<VirtualizedChatMessagesListPr
     <div 
       ref={containerRef}
       id="yohan-chat-messages-container"
-      className="ai-messages-list flex-1 min-h-0 overflow-y-auto p-3 sm:p-4 md:p-6 scrollbar-thin scrollbar-thumb-slate-700/50 scrollbar-track-transparent"
+      className="ai-messages-list flex-1 min-h-0 overflow-y-auto scrollbar-thin scrollbar-thumb-slate-700/50 scrollbar-track-transparent"
       style={{ minHeight: 0 }}
     >
-      <div className="w-full max-w-[860px] mx-auto space-y-5 sm:space-y-6">
+      <div className="chat-messages space-y-5 sm:space-y-6 py-4 sm:py-6">
         {messages.map((msg) => {
           const isAssistant = msg.role === 'assistant';
           const isEditing = editingMessageId === msg.id;
@@ -150,10 +152,10 @@ export const VirtualizedChatMessagesList: React.FC<VirtualizedChatMessagesListPr
               )}
 
               <div
-                className={`max-w-[88%] sm:max-w-[78%] rounded-2xl p-3 sm:p-4 md:p-5 shadow-sm text-xs sm:text-sm leading-relaxed relative ${
+                className={`rounded-2xl p-3 sm:p-4 md:p-5 shadow-sm text-xs sm:text-sm leading-relaxed relative ${
                   isAssistant
-                    ? 'bg-slate-900/95 border border-slate-800 text-slate-200'
-                    : 'bg-indigo-600 text-white rounded-br-none shadow-indigo-500/10'
+                    ? 'bg-slate-900/95 border border-slate-800 text-slate-200 flex-1 min-w-0'
+                    : 'bg-indigo-600 text-white rounded-br-none shadow-indigo-500/10 max-w-[88%] sm:max-w-[75%]'
                 }`}
                 style={{ wordBreak: 'break-word', overflowWrap: 'anywhere' }}
               >
@@ -163,6 +165,34 @@ export const VirtualizedChatMessagesList: React.FC<VirtualizedChatMessagesListPr
                   <div className="prose prose-invert prose-indigo max-w-none text-slate-200 text-xs sm:text-sm leading-relaxed overflow-x-auto">
                     <MarkdownRenderer content={msg.content} className="text-slate-100 prose-invert" />
                   </div>
+
+                  {/* ⚠️ NOTA E BOTÃO DE CONTINUAÇÃO SE A RESPOSTA FOI INTERROMPIDA */}
+                  {msg.content.includes('⚠️ Resposta interrompida') && (
+                    <div 
+                      onClick={() => onContinueMessage && onContinueMessage(msg)}
+                      className="p-2.5 rounded-xl bg-amber-500/10 hover:bg-amber-500/15 border border-amber-500/30 flex flex-wrap items-center justify-between gap-2.5 text-xs text-amber-200 transition-all cursor-pointer select-none"
+                      title="Clique para continuar a resposta exatamente de onde parou"
+                    >
+                      <div className="flex items-center gap-2 text-amber-300 font-medium">
+                        <Sparkles className="w-4 h-4 text-amber-400 shrink-0 animate-pulse" />
+                        <span>⚠️ Resposta interrompida — toca para continuar.</span>
+                      </div>
+                      {onContinueMessage && (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onContinueMessage(msg);
+                          }}
+                          disabled={isGenerating}
+                          className="px-3 py-1 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold rounded-lg transition-colors flex items-center gap-1.5 shrink-0 shadow-sm active:scale-95 disabled:opacity-50 cursor-pointer"
+                        >
+                          <Send className="w-3 h-3 text-slate-950" />
+                          <span>Continuar</span>
+                        </button>
+                      )}
+                    </div>
+                  )}
 
                   {/* Actions footer on assistant messages */}
                   <div className="flex flex-wrap items-center justify-between gap-2 pt-2.5 border-t border-slate-800/80 text-xs text-slate-400">
@@ -480,7 +510,7 @@ export const VirtualizedChatMessagesList: React.FC<VirtualizedChatMessagesListPr
             <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-slate-900 border border-indigo-500/40 p-1 flex items-center justify-center shrink-0 shadow-lg shadow-indigo-500/10 animate-pulse">
               <YohanLogo size={22} showGlow={true} />
             </div>
-            <div className="bg-slate-900/90 border border-indigo-500/30 rounded-2xl p-4 shadow-lg shadow-indigo-500/5 text-slate-300 flex items-center gap-3">
+            <div className="bg-slate-900/90 border border-indigo-500/30 rounded-2xl p-4 shadow-lg shadow-indigo-500/5 text-slate-300 flex items-center gap-3 flex-1 min-w-0">
               <div className="flex space-x-1.5">
                 <div className="w-2 h-2 rounded-full bg-indigo-400 animate-bounce" style={{ animationDelay: '0ms' }} />
                 <div className="w-2 h-2 rounded-full bg-cyan-400 animate-bounce" style={{ animationDelay: '150ms' }} />

@@ -718,10 +718,18 @@ function hashString(str: string): string {
     } catch (err: any) {
       console.error('Yohan AI Error:', err);
       const rawErrMsg = err?.message || String(err) || 'Erro de comunicação';
+      let friendlyError = rawErrMsg;
+
+      if (rawErrMsg.includes('Incomplete JSON') || rawErrMsg.includes('JSON segment') || rawErrMsg.includes('STREAM_INCOMPLETE')) {
+        friendlyError = 'Não consegui concluir a resposta. Tenta novamente ou divide a pergunta.';
+      }
+
       const errorMsg: ChatMessage = {
         id: botMsgId,
         role: 'assistant',
-        content: `⚠️ Não foi possível obter resposta: ${rawErrMsg}\n\n*Sugestão:* Verifique as suas credenciais de API ou tente novamente em instantes.`,
+        content: friendlyError.startsWith('⚠️') || friendlyError.startsWith('❌') || friendlyError.startsWith('Não')
+          ? (friendlyError.startsWith('Não') ? `⚠️ ${friendlyError}` : friendlyError)
+          : `⚠️ Não foi possível obter resposta: ${friendlyError}\n\n*Sugestão:* Tente novamente ou formule a pergunta de forma mais direta.`,
         timestamp: botTimestamp
       };
 
@@ -782,10 +790,16 @@ function hashString(str: string): string {
     } catch (err: any) {
       console.error('Yohan AI Edit Chat error:', err);
       const rawErrMsg = err?.message || String(err) || 'Erro de comunicação';
+      let friendlyError = rawErrMsg;
+
+      if (rawErrMsg.includes('Incomplete JSON') || rawErrMsg.includes('JSON segment') || rawErrMsg.includes('STREAM_INCOMPLETE')) {
+        friendlyError = 'Não consegui concluir a resposta. Tenta novamente ou divide a pergunta.';
+      }
+
       const errorMsg: ChatMessage = {
         id: botMsgId,
         role: 'assistant',
-        content: `⚠️ Não foi possível obter resposta após a edição: ${rawErrMsg}`,
+        content: `⚠️ Não foi possível obter resposta após a edição: ${friendlyError}`,
         timestamp: botTimestamp
       };
 
@@ -1137,10 +1151,8 @@ function hashString(str: string): string {
       id="yohan-ai-workspace"
       className="ai-accountant-page bg-slate-900 text-slate-100 font-sans select-text relative"
       style={{
-        height: 'calc(100vh - 64px)',
+        height: '100%',
         width: '100%',
-        maxWidth: 1280,
-        margin: '0 auto',
         display: 'flex',
         overflow: 'hidden',
         boxSizing: 'border-box'
@@ -1327,7 +1339,7 @@ function hashString(str: string): string {
         style={{ flex: 1, minWidth: 0, minHeight: 0, display: 'flex', flexDirection: 'column' }}
       >
         {/* TOP BAR WITH DYNAMIC GENERATION GRADIENT ANIMATION */}
-        <header className={`ai-models-bar flex flex-wrap items-center justify-between gap-2.5 px-4 sm:px-6 py-3 bg-slate-950 border-b relative overflow-hidden shrink-0 transition-all duration-500 ${
+        <header className={`w-full bg-slate-950 border-b relative overflow-hidden shrink-0 transition-all duration-500 py-2.5 sm:py-3 ${
           isLoading || isDocGenerating || isSheetGenerating || isPptGenerating || isVizGenerating || isTaxAuditing
             ? 'border-indigo-500/50 shadow-lg shadow-indigo-500/10'
             : 'border-slate-800'
@@ -1342,143 +1354,174 @@ function hashString(str: string): string {
             <div className="absolute bottom-0 left-0 right-0 h-[2px] bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 animate-pulse" />
           )}
 
-          <div className="flex items-center gap-3 relative z-10">
-            {/* Sidebar toggle button */}
-            <button
-              type="button"
-              onClick={() => setIsHistoryOpen(prev => !prev)}
-              className="p-2 rounded-xl bg-slate-800/90 hover:bg-slate-750 text-slate-300 hover:text-white border border-slate-700 transition-all cursor-pointer flex items-center gap-1.5"
-              title="Alternar painel de conversas"
-            >
-              <Menu className="w-4 h-4 text-indigo-400" />
-              <span className="text-xs font-semibold hidden sm:inline">Histórico</span>
-            </button>
+          <div className="chat-messages flex flex-wrap items-center justify-between gap-2.5 relative z-10 min-w-0">
+            <div className="flex items-center gap-3 shrink-0">
+              {/* Sidebar toggle button */}
+              <button
+                type="button"
+                onClick={() => setIsHistoryOpen(prev => !prev)}
+                className="p-2 rounded-xl bg-slate-800/90 hover:bg-slate-750 text-slate-300 hover:text-white border border-slate-700 transition-all cursor-pointer flex items-center gap-1.5 shrink-0"
+                title="Alternar painel de conversas"
+              >
+                <Menu className="w-4 h-4 text-indigo-400" />
+                <span className="text-xs font-semibold hidden sm:inline">Histórico</span>
+              </button>
 
-            <div className="flex items-center gap-2.5">
-              <div className="relative">
-                <SparklingAiAura 
-                  isActive={isLoading || isDocGenerating || isSheetGenerating || isPptGenerating || isVizGenerating || isTaxAuditing} 
-                  label="Yohan AI a processar consulta contabilística"
-                />
-                <div className={`w-9 h-9 rounded-xl flex items-center justify-center bg-slate-900 border border-indigo-500/40 p-1 shadow-md transition-all relative z-10 ${
-                  isLoading || isDocGenerating || isSheetGenerating || isPptGenerating || isVizGenerating || isTaxAuditing
-                    ? 'shadow-indigo-500/40 animate-pulse ring-2 ring-indigo-400/50'
-                    : 'shadow-indigo-500/20'
-                }`}>
-                  <YohanLogo size={24} showGlow={true} />
-                </div>
-              </div>
-              <div>
-                <div className="flex items-center gap-2">
-                  <h1 className="text-sm sm:text-base font-black tracking-tight text-white flex items-center gap-1.5">
-                    Yohan AI
-                  </h1>
-                  <span className={`px-2 py-0.5 text-[10px] font-extrabold uppercase tracking-wider rounded-full border transition-all flex items-center gap-1 ${
-                    isLoading || isDocGenerating || isSheetGenerating
-                      ? 'bg-indigo-500/30 text-indigo-200 border-indigo-400/60 shadow-xs shadow-indigo-500/30 animate-pulse'
-                      : 'bg-indigo-500/20 text-indigo-300 border-indigo-500/30'
+              <div className="flex items-center gap-2.5 min-w-0">
+                <div className="relative shrink-0">
+                  <SparklingAiAura 
+                    isActive={isLoading || isDocGenerating || isSheetGenerating || isPptGenerating || isVizGenerating || isTaxAuditing} 
+                    label="Yohan AI a processar consulta contabilística"
+                  />
+                  <div className={`w-9 h-9 rounded-xl flex items-center justify-center bg-slate-900 border border-indigo-500/40 p-1 shadow-md transition-all relative z-10 ${
+                    isLoading || isDocGenerating || isSheetGenerating || isPptGenerating || isVizGenerating || isTaxAuditing
+                      ? 'shadow-indigo-500/40 animate-pulse ring-2 ring-indigo-400/50'
+                      : 'shadow-indigo-500/20'
                   }`}>
-                    {(isLoading || isDocGenerating || isSheetGenerating) && <span className="animate-spin text-[10px]">✨</span>}
-                    PGC Angola
-                  </span>
+                    <YohanLogo size={24} showGlow={true} />
+                  </div>
                 </div>
-                <p className="text-[11px] text-slate-400 font-medium hidden sm:block">
-                  {isLoading ? '✨ A analisar o PGC Angola e a redigir...' : 'Consultor & Auditor Contabilístico Sénior'}
-                </p>
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2">
+                    <h1 className="text-sm sm:text-base font-black tracking-tight text-white flex items-center gap-1.5 truncate">
+                      Yohan AI
+                    </h1>
+                    <span className={`px-2 py-0.5 text-[10px] font-extrabold uppercase tracking-wider rounded-full border transition-all flex items-center gap-1 shrink-0 ${
+                      isLoading || isDocGenerating || isSheetGenerating
+                        ? 'bg-indigo-500/30 text-indigo-200 border-indigo-400/60 shadow-xs shadow-indigo-500/30 animate-pulse'
+                        : 'bg-indigo-500/20 text-indigo-300 border-indigo-500/30'
+                    }`}>
+                      {(isLoading || isDocGenerating || isSheetGenerating) && <span className="animate-spin text-[10px]">✨</span>}
+                      PGC Angola
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-slate-400 font-medium hidden sm:block truncate">
+                    {isLoading ? '✨ A analisar o PGC Angola e a redigir...' : 'Consultor & Auditor Contabilístico Sénior'}
+                  </p>
+                </div>
               </div>
             </div>
-          </div>
 
-          {/* MODE SELECTOR TABS & TOOLS */}
-          <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0 scrollbar-none relative z-10">
-            <button
-              type="button"
-              onClick={() => setActiveMode('chat')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 shrink-0 cursor-pointer ${
-                activeMode === 'chat'
-                  ? 'bg-indigo-600 text-white shadow-xs'
-                  : 'bg-slate-800/80 text-slate-300 hover:bg-slate-800 hover:text-white'
-              }`}
-            >
-              <MessageSquare className="w-3.5 h-3.5" />
-              <span>Chat PGC</span>
-            </button>
+            {/* MODE SELECTOR TABS & TOOLS */}
+            <div className="relative w-full md:w-auto min-w-0 max-w-full overflow-hidden">
+              <div 
+                className="flex items-center gap-2 overflow-x-auto pb-1 sm:pb-0 snap-x snap-proximity [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+                style={{
+                  display: 'flex',
+                  flexWrap: 'nowrap',
+                  overflowX: 'auto',
+                  WebkitOverflowScrolling: 'touch',
+                  scrollSnapType: 'x proximity',
+                  scrollbarWidth: 'none',
+                  msOverflowStyle: 'none'
+                }}
+              >
+                <button
+                  type="button"
+                  onClick={() => setActiveMode('chat')}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 shrink-0 snap-start cursor-pointer ${
+                    activeMode === 'chat'
+                      ? 'bg-indigo-600 text-white shadow-xs'
+                      : 'bg-slate-800/80 text-slate-300 hover:bg-slate-800 hover:text-white'
+                  }`}
+                  style={{ flexShrink: 0, scrollSnapAlign: 'start' }}
+                >
+                  <MessageSquare className="w-3.5 h-3.5 shrink-0" />
+                  <span className="whitespace-nowrap">Chat PGC</span>
+                </button>
 
-            <button
-              type="button"
-              onClick={() => setActiveMode('document')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 shrink-0 cursor-pointer ${
-                activeMode === 'document'
-                  ? 'bg-indigo-600 text-white shadow-xs'
-                  : 'bg-slate-800/80 text-slate-300 hover:bg-slate-800 hover:text-white'
-              }`}
-            >
-              <FileText className="w-3.5 h-3.5" />
-              <span>Word</span>
-            </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveMode('document')}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 shrink-0 snap-start cursor-pointer ${
+                    activeMode === 'document'
+                      ? 'bg-indigo-600 text-white shadow-xs'
+                      : 'bg-slate-800/80 text-slate-300 hover:bg-slate-800 hover:text-white'
+                  }`}
+                  style={{ flexShrink: 0, scrollSnapAlign: 'start' }}
+                >
+                  <FileText className="w-3.5 h-3.5 shrink-0" />
+                  <span className="whitespace-nowrap">Word</span>
+                </button>
 
-            <button
-              type="button"
-              onClick={() => setActiveMode('spreadsheet')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 shrink-0 cursor-pointer ${
-                activeMode === 'spreadsheet'
-                  ? 'bg-indigo-600 text-white shadow-xs'
-                  : 'bg-slate-800/80 text-slate-300 hover:bg-slate-800 hover:text-white'
-              }`}
-            >
-              <Grid className="w-3.5 h-3.5" />
-              <span>Excel</span>
-            </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveMode('spreadsheet')}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 shrink-0 snap-start cursor-pointer ${
+                    activeMode === 'spreadsheet'
+                      ? 'bg-indigo-600 text-white shadow-xs'
+                      : 'bg-slate-800/80 text-slate-300 hover:bg-slate-800 hover:text-white'
+                  }`}
+                  style={{ flexShrink: 0, scrollSnapAlign: 'start' }}
+                >
+                  <Grid className="w-3.5 h-3.5 shrink-0" />
+                  <span className="whitespace-nowrap">Excel</span>
+                </button>
 
-            <button
-              type="button"
-              onClick={() => setActiveMode('presentation')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 shrink-0 cursor-pointer ${
-                activeMode === 'presentation'
-                  ? 'bg-indigo-600 text-white shadow-xs'
-                  : 'bg-slate-800/80 text-slate-300 hover:bg-slate-800 hover:text-white'
-              }`}
-            >
-              <Presentation className="w-3.5 h-3.5" />
-              <span>Slides</span>
-            </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveMode('presentation')}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 shrink-0 snap-start cursor-pointer ${
+                    activeMode === 'presentation'
+                      ? 'bg-indigo-600 text-white shadow-xs'
+                      : 'bg-slate-800/80 text-slate-300 hover:bg-slate-800 hover:text-white'
+                  }`}
+                  style={{ flexShrink: 0, scrollSnapAlign: 'start' }}
+                >
+                  <Presentation className="w-3.5 h-3.5 shrink-0" />
+                  <span className="whitespace-nowrap">Slides</span>
+                </button>
 
-            <button
-              type="button"
-              onClick={() => setActiveMode('visualization')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 shrink-0 cursor-pointer ${
-                activeMode === 'visualization'
-                  ? 'bg-indigo-600 text-white shadow-xs'
-                  : 'bg-slate-800/80 text-slate-300 hover:bg-slate-800 hover:text-white'
-              }`}
-            >
-              <BarChart3 className="w-3.5 h-3.5" />
-              <span>Diagramas</span>
-            </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveMode('visualization')}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 shrink-0 snap-start cursor-pointer ${
+                    activeMode === 'visualization'
+                      ? 'bg-indigo-600 text-white shadow-xs'
+                      : 'bg-slate-800/80 text-slate-300 hover:bg-slate-800 hover:text-white'
+                  }`}
+                  style={{ flexShrink: 0, scrollSnapAlign: 'start' }}
+                >
+                  <BarChart3 className="w-3.5 h-3.5 shrink-0" />
+                  <span className="whitespace-nowrap">Diagramas</span>
+                </button>
 
-            <button
-              type="button"
-              onClick={() => setActiveMode('tax-review')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 shrink-0 cursor-pointer ${
-                activeMode === 'tax-review'
-                  ? 'bg-indigo-600 text-white shadow-xs'
-                  : 'bg-slate-800/80 text-slate-300 hover:bg-slate-800 hover:text-white'
-              }`}
-            >
-              <ShieldCheck className="w-3.5 h-3.5" />
-              <span>Auditoria</span>
-            </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveMode('tax-review')}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 shrink-0 snap-start cursor-pointer ${
+                    activeMode === 'tax-review'
+                      ? 'bg-indigo-600 text-white shadow-xs'
+                      : 'bg-slate-800/80 text-slate-300 hover:bg-slate-800 hover:text-white'
+                  }`}
+                  style={{ flexShrink: 0, scrollSnapAlign: 'start' }}
+                >
+                  <ShieldCheck className="w-3.5 h-3.5 shrink-0" />
+                  <span className="whitespace-nowrap">Auditoria</span>
+                </button>
 
-            {/* QUICK TOOLS MODAL TRIGGER */}
-            <button
-              type="button"
-              onClick={() => setShowGlossaryModal(true)}
-              className="px-2.5 py-1.5 rounded-lg text-xs font-bold bg-slate-800/90 hover:bg-slate-750 text-indigo-300 hover:text-indigo-200 border border-slate-700 transition-all flex items-center gap-1 cursor-pointer shrink-0"
-              title="Pesquisar contas, regras e glossário do PGC"
-            >
-              <BookOpen className="w-3.5 h-3.5" />
-              <span className="hidden md:inline">Glossário & Contas PGC</span>
-            </button>
+                {/* QUICK TOOLS MODAL TRIGGER */}
+                <button
+                  type="button"
+                  onClick={() => setShowGlossaryModal(true)}
+                  className="px-2.5 py-1.5 rounded-lg text-xs font-bold bg-slate-800/90 hover:bg-slate-750 text-indigo-300 hover:text-indigo-200 border border-slate-700 transition-all flex items-center gap-1 cursor-pointer shrink-0 snap-start"
+                  style={{ flexShrink: 0, scrollSnapAlign: 'start' }}
+                  title="Pesquisar contas, regras e glossário do PGC"
+                >
+                  <BookOpen className="w-3.5 h-3.5 shrink-0" />
+                  <span className="whitespace-nowrap">Glossário & Contas PGC</span>
+                </button>
+
+                {/* Spacer 24px no fim da lista para nunca cortar o último item */}
+                <div className="w-6 shrink-0" style={{ flexShrink: 0, width: 24 }} aria-hidden="true" />
+              </div>
+
+              {/* Fade sutil de 24px na borda direita */}
+              <div 
+                className="absolute right-0 top-0 bottom-0 w-6 pointer-events-none z-10 bg-gradient-to-l from-slate-950 via-slate-950/80 to-transparent dark:from-slate-950" 
+                aria-hidden="true" 
+              />
+            </div>
           </div>
         </header>
 
@@ -1489,21 +1532,23 @@ function hashString(str: string): string {
             <div className="ai-chat-area flex-1 flex flex-col min-h-0 overflow-hidden">
               {/* TWO-PHASE GENERATION PROGRESS BANNER */}
               {docProgress && (
-                <div className="px-4 py-2.5 bg-indigo-950/90 border-b border-indigo-500/30 flex flex-col gap-1.5 shrink-0 z-10 shadow-md">
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="font-bold text-indigo-200 flex items-center gap-1.5">
-                      <Loader2 className="w-3.5 h-3.5 animate-spin text-indigo-400" />
-                      <span>{docProgress.title}</span>
-                    </span>
-                    <span className="text-indigo-300 font-mono text-[11px]">
-                      {docProgress.current} / {docProgress.total} seções ({Math.round((docProgress.current / Math.max(1, docProgress.total)) * 100)}%)
-                    </span>
-                  </div>
-                  <div className="w-full bg-slate-800 rounded-full h-1.5 overflow-hidden">
-                    <div
-                      className="bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 h-full transition-all duration-300 rounded-full"
-                      style={{ width: `${Math.round((docProgress.current / Math.max(1, docProgress.total)) * 100)}%` }}
-                    />
+                <div className="w-full bg-indigo-950/90 border-b border-indigo-500/30 py-2.5 shrink-0 z-10 shadow-md">
+                  <div className="chat-messages flex flex-col gap-1.5">
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="font-bold text-indigo-200 flex items-center gap-1.5">
+                        <Loader2 className="w-3.5 h-3.5 animate-spin text-indigo-400" />
+                        <span>{docProgress.title}</span>
+                      </span>
+                      <span className="text-indigo-300 font-mono text-[11px]">
+                        {docProgress.current} / {docProgress.total} seções ({Math.round((docProgress.current / Math.max(1, docProgress.total)) * 100)}%)
+                      </span>
+                    </div>
+                    <div className="w-full bg-slate-800 rounded-full h-1.5 overflow-hidden">
+                      <div
+                        className="bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 h-full transition-all duration-300 rounded-full"
+                        style={{ width: `${Math.round((docProgress.current / Math.max(1, docProgress.total)) * 100)}%` }}
+                      />
+                    </div>
                   </div>
                 </div>
               )}
@@ -1531,134 +1576,168 @@ function hashString(str: string): string {
                 onQuickSearchInsert={(term) => {
                   setInputMessage(prev => prev ? `${prev} ${term}` : term);
                 }}
+                onContinueMessage={() => {
+                  handleSendMessage(undefined, 'Continua exactamente de onde paraste, sem repetir o que já foi dito.');
+                }}
               />
 
               {/* PROMPT TEMPLATES QUICK CHIPS */}
-              <div className="px-4 py-2 bg-slate-950/60 border-t border-slate-800/60 overflow-x-auto scrollbar-none flex items-center gap-2 shrink-0">
-                <span className="text-[10px] uppercase tracking-wider font-extrabold text-slate-500 shrink-0">
-                  Modelos:
-                </span>
-                {PROMPT_TEMPLATES.slice(0, 5).map((t, idx) => (
-                  <button
-                    key={idx}
-                    type="button"
-                    onClick={() => handleSendMessage(undefined, t.prompt)}
-                    className="px-2.5 py-1 rounded-lg bg-slate-800/80 hover:bg-slate-750 text-slate-300 hover:text-white border border-slate-700/80 text-[11px] font-medium shrink-0 transition-all flex items-center gap-1.5 cursor-pointer active:scale-95"
+              <div className="w-full bg-slate-950/60 border-t border-slate-800/60 shrink-0 py-2">
+                <div className="chat-messages relative min-w-0">
+                  <div 
+                    className="flex items-center gap-2 overflow-x-auto snap-x snap-proximity [scrollbar-width:none] [&::-webkit-scrollbar]:hidden py-0.5"
+                    style={{
+                      display: 'flex',
+                      flexWrap: 'nowrap',
+                      overflowX: 'auto',
+                      WebkitOverflowScrolling: 'touch',
+                      scrollSnapType: 'x proximity',
+                      scrollbarWidth: 'none',
+                      msOverflowStyle: 'none'
+                    }}
                   >
-                    <span>{t.icon}</span>
-                    <span>{t.title}</span>
-                  </button>
-                ))}
-                <button
-                  type="button"
-                  onClick={() => setShowTemplatesModal(true)}
-                  className="px-2.5 py-1 rounded-lg bg-indigo-950/50 hover:bg-indigo-900/60 text-indigo-300 border border-indigo-500/30 text-[11px] font-bold shrink-0 transition-all flex items-center gap-1 cursor-pointer"
-                >
-                  <Sparkles className="w-3 h-3" />
-                  <span>Ver Todos</span>
-                </button>
+                    <span 
+                      className="text-[10px] uppercase tracking-wider font-extrabold text-slate-500 shrink-0 snap-start select-none"
+                      style={{ flexShrink: 0, scrollSnapAlign: 'start' }}
+                    >
+                      Modelos:
+                    </span>
+                    {PROMPT_TEMPLATES.slice(0, 5).map((t, idx) => (
+                      <button
+                        key={idx}
+                        type="button"
+                        onClick={() => handleSendMessage(undefined, t.prompt)}
+                        className="px-2.5 py-1 rounded-lg bg-slate-800/80 hover:bg-slate-750 text-slate-300 hover:text-white border border-slate-700/80 text-[11px] font-medium shrink-0 snap-start transition-all flex items-center gap-1.5 cursor-pointer active:scale-95"
+                        style={{ flexShrink: 0, scrollSnapAlign: 'start' }}
+                      >
+                        <span className="shrink-0">{t.icon}</span>
+                        <span className="whitespace-nowrap">{t.title}</span>
+                      </button>
+                    ))}
+                    <button
+                      type="button"
+                      onClick={() => setShowTemplatesModal(true)}
+                      className="px-2.5 py-1 rounded-lg bg-indigo-950/50 hover:bg-indigo-900/60 text-indigo-300 border border-indigo-500/30 text-[11px] font-bold shrink-0 snap-start transition-all flex items-center gap-1 cursor-pointer"
+                      style={{ flexShrink: 0, scrollSnapAlign: 'start' }}
+                    >
+                      <Sparkles className="w-3 h-3 shrink-0" />
+                      <span className="whitespace-nowrap">Ver Todos</span>
+                    </button>
+
+                    {/* Spacer 24px no fim da lista para nunca cortar o último item */}
+                    <div className="w-6 shrink-0" style={{ flexShrink: 0, width: 24 }} aria-hidden="true" />
+                  </div>
+
+                  {/* Fade sutil de 24px na borda direita */}
+                  <div 
+                    className="absolute right-0 top-0 bottom-0 w-6 pointer-events-none z-10 bg-gradient-to-l from-slate-950 via-slate-950/80 to-transparent dark:from-slate-950" 
+                    aria-hidden="true" 
+                  />
+                </div>
               </div>
 
               {/* INPUT CONTAINER */}
-              <div className="ai-input-container p-3 sm:p-4 bg-slate-950 border-t border-slate-800 mb-0">
-                {/* ATTACHED FILE PREVIEW */}
-                {attachedFile && (
-                  <div className="max-w-4xl mx-auto mb-2 flex items-center justify-between px-3 py-1.5 bg-indigo-950/70 border border-indigo-500/40 rounded-xl text-xs text-indigo-200">
-                    <div className="flex items-center gap-2">
-                      <Paperclip className="w-3.5 h-3.5 text-indigo-400" />
-                      <span className="font-semibold">{attachedFile.name}</span>
-                      {attachedFile.size && (
-                        <span className="text-[10px] text-indigo-400">({Math.round(attachedFile.size / 1024)} KB)</span>
-                      )}
+              <div className="ai-input-container w-full bg-slate-950 border-t border-slate-800 shrink-0 py-3 sm:py-4">
+                <div className="chat-messages flex flex-col gap-2">
+                  {/* ATTACHED FILE PREVIEW */}
+                  {attachedFile && (
+                    <div className="w-full mb-1 flex items-center justify-between px-3 py-1.5 bg-indigo-950/70 border border-indigo-500/40 rounded-xl text-xs text-indigo-200">
+                      <div className="flex items-center gap-2">
+                        <Paperclip className="w-3.5 h-3.5 text-indigo-400" />
+                        <span className="font-semibold">{attachedFile.name}</span>
+                        {attachedFile.size && (
+                          <span className="text-[10px] text-indigo-400">({Math.round(attachedFile.size / 1024)} KB)</span>
+                        )}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setAttachedFile(null)}
+                        className="p-1 hover:text-white text-indigo-400 cursor-pointer"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
                     </div>
+                  )}
+
+                  <form onSubmit={handleSendMessage} className="w-full flex items-center gap-2">
+                    {/* File Upload Button */}
+                    <input
+                      type="file"
+                      ref={fileInputRef}
+                      onChange={(e) => {
+                        if (e.target.files && e.target.files.length > 0) {
+                          handleFileUpload(e.target.files[0]);
+                        }
+                      }}
+                      className="hidden"
+                      accept=".pdf,.doc,.docx,.xls,.xlsx,.csv,.txt,.json"
+                    />
                     <button
                       type="button"
-                      onClick={() => setAttachedFile(null)}
-                      className="p-1 hover:text-white text-indigo-400 cursor-pointer"
+                      onClick={() => fileInputRef.current?.click()}
+                      className="p-2.5 rounded-xl bg-slate-800/90 hover:bg-slate-750 text-slate-300 hover:text-white border border-slate-700 transition-all cursor-pointer shrink-0"
+                      title="Anexar documento (PDF, Word, Excel, TXT)"
                     >
-                      <X className="w-3.5 h-3.5" />
+                      <Paperclip className="w-4 h-4" />
                     </button>
-                  </div>
-                )}
 
-                <form onSubmit={handleSendMessage} className="max-w-4xl mx-auto flex items-center gap-2">
-                  {/* File Upload Button */}
-                  <input
-                    type="file"
-                    ref={fileInputRef}
-                    onChange={(e) => {
-                      if (e.target.files && e.target.files.length > 0) {
-                        handleFileUpload(e.target.files[0]);
-                      }
-                    }}
-                    className="hidden"
-                    accept=".pdf,.doc,.docx,.xls,.xlsx,.csv,.txt,.json"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => fileInputRef.current?.click()}
-                    className="p-2.5 rounded-xl bg-slate-800/90 hover:bg-slate-750 text-slate-300 hover:text-white border border-slate-700 transition-all cursor-pointer shrink-0"
-                    title="Anexar documento (PDF, Word, Excel, TXT)"
-                  >
-                    <Paperclip className="w-4 h-4" />
-                  </button>
+                    {/* Microphone Voice Input */}
+                    <button
+                      type="button"
+                      onClick={handleToggleVoiceInput}
+                      className={`p-2.5 rounded-xl border transition-all cursor-pointer shrink-0 ${
+                        isRecordingVoice
+                          ? 'bg-rose-600 text-white border-rose-500 animate-pulse'
+                          : 'bg-slate-800/90 hover:bg-slate-750 text-slate-300 hover:text-white border-slate-700'
+                      }`}
+                      title={isRecordingVoice ? 'Parar gravação' : 'Falar por voz'}
+                    >
+                      {isRecordingVoice ? <MicOff className="w-4 h-4" /> : <Mic className="w-4 h-4" />}
+                    </button>
 
-                  {/* Microphone Voice Input */}
-                  <button
-                    type="button"
-                    onClick={handleToggleVoiceInput}
-                    className={`p-2.5 rounded-xl border transition-all cursor-pointer shrink-0 ${
-                      isRecordingVoice
-                        ? 'bg-rose-600 text-white border-rose-500 animate-pulse'
-                        : 'bg-slate-800/90 hover:bg-slate-750 text-slate-300 hover:text-white border-slate-700'
-                    }`}
-                    title={isRecordingVoice ? 'Parar gravação' : 'Falar por voz'}
-                  >
-                    {isRecordingVoice ? <MicOff className="w-4 h-4" /> : <Mic className="w-4 h-4" />}
-                  </button>
+                    {/* Main text input textarea (Enter for newline, Ctrl+Enter / Cmd+Enter to send) */}
+                    <div className="flex-1 flex flex-col">
+                      <textarea
+                        rows={1}
+                        value={inputMessage}
+                        onChange={(e) => setInputMessage(e.target.value)}
+                        onKeyDown={(e) => {
+                          const isSendShortcut = e.key === 'Enter' && (e.ctrlKey || e.metaKey);
+                          if (isSendShortcut) {
+                            e.preventDefault();
+                            handleSendMessage();
+                          }
+                          // Enter alone creates a new line normally
+                        }}
+                        placeholder="Coloque a sua dúvida sobre lançamentos, PGC Angola, IVA, balancetes..."
+                        className="w-full bg-slate-800/90 border border-slate-700/80 rounded-xl px-4 py-2.5 text-sm text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all resize-none min-h-[42px] max-h-32 font-sans leading-relaxed"
+                        disabled={isLoading}
+                      />
+                    </div>
 
-                  {/* Main text input textarea (Enter for newline, Ctrl+Enter / Cmd+Enter to send) */}
-                  <div className="flex-1 flex flex-col">
-                    <textarea
-                      rows={1}
-                      value={inputMessage}
-                      onChange={(e) => setInputMessage(e.target.value)}
-                      onKeyDown={(e) => {
-                        const isSendShortcut = e.key === 'Enter' && (e.ctrlKey || e.metaKey);
-                        if (isSendShortcut) {
-                          e.preventDefault();
-                          handleSendMessage();
-                        }
-                        // Enter alone creates a new line normally
-                      }}
-                      placeholder="Coloque a sua dúvida sobre lançamentos, PGC Angola, IVA, balancetes..."
-                      className="w-full bg-slate-800/90 border border-slate-700/80 rounded-xl px-4 py-2.5 text-sm text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all resize-none min-h-[42px] max-h-32 font-sans leading-relaxed"
-                      disabled={isLoading}
-                    />
-                  </div>
+                    {/* Send button */}
+                    <button
+                      type="submit"
+                      disabled={isLoading || (!inputMessage.trim() && !attachedFile)}
+                      className="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white font-bold rounded-xl text-xs flex items-center gap-1.5 transition-all shadow-md cursor-pointer shrink-0 self-end mb-0.5"
+                    >
+                      <Send className="w-3.5 h-3.5" />
+                      <span className="hidden sm:inline">Enviar</span>
+                    </button>
+                  </form>
 
-                  {/* Send button */}
-                  <button
-                    type="submit"
-                    disabled={isLoading || (!inputMessage.trim() && !attachedFile)}
-                    className="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white font-bold rounded-xl text-xs flex items-center gap-1.5 transition-all shadow-md cursor-pointer shrink-0 self-end mb-0.5"
-                  >
-                    <Send className="w-3.5 h-3.5" />
-                    <span className="hidden sm:inline">Enviar</span>
-                  </button>
-                </form>
-
-                {/* Visual shortcut hint */}
-                <p className="text-[10px] text-slate-500 text-center mt-1.5 font-medium select-none">
-                  <span className="font-semibold text-slate-400">Enter</span> para nova linha &middot; <span className="font-semibold text-slate-400">Ctrl+Enter</span> para enviar
-                </p>
+                  {/* Visual shortcut hint */}
+                  <p className="text-[10px] text-slate-500 text-center mt-1 font-medium select-none">
+                    <span className="font-semibold text-slate-400">Enter</span> para nova linha &middot; <span className="font-semibold text-slate-400">Ctrl+Enter</span> para enviar
+                  </p>
+                </div>
               </div>
             </div>
           )}
 
           {/* TAB 2: DOCUMENT GENERATOR (WORD .DOCX) */}
           {activeMode === 'document' && (
-            <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-6 max-w-5xl mx-auto w-full">
+            <div className="flex-1 overflow-y-auto py-4 sm:py-6 space-y-6 chat-messages">
               <div className="bg-slate-800/80 border border-slate-700 rounded-2xl p-5 space-y-4">
                 <div>
                   <h2 className="text-sm font-bold text-white flex items-center gap-2">
@@ -1748,7 +1827,7 @@ function hashString(str: string): string {
 
           {/* TAB 3: SPREADSHEET GENERATOR (EXCEL .XLSX) */}
           {activeMode === 'spreadsheet' && (
-            <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-6 max-w-5xl mx-auto w-full">
+            <div className="flex-1 overflow-y-auto py-4 sm:py-6 space-y-6 chat-messages">
               <div className="bg-slate-800/80 border border-slate-700 rounded-2xl p-5 space-y-4">
                 <div>
                   <h2 className="text-sm font-bold text-white flex items-center gap-2">
@@ -1829,7 +1908,7 @@ function hashString(str: string): string {
 
           {/* TAB 4: PRESENTATION GENERATOR (POWERPOINT .PPTX) */}
           {activeMode === 'presentation' && (
-            <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-6 max-w-5xl mx-auto w-full">
+            <div className="flex-1 overflow-y-auto py-4 sm:py-6 space-y-6 chat-messages">
               <div className="bg-slate-800/80 border border-slate-700 rounded-2xl p-5 space-y-4">
                 <div>
                   <h2 className="text-sm font-bold text-white flex items-center gap-2">
@@ -1938,7 +2017,7 @@ function hashString(str: string): string {
 
           {/* TAB 5: VISUALIZATION / DIAGRAM GENERATOR (SVG) */}
           {activeMode === 'visualization' && (
-            <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-6 max-w-5xl mx-auto w-full">
+            <div className="flex-1 overflow-y-auto py-4 sm:py-6 space-y-6 chat-messages">
               <div className="bg-slate-800/80 border border-slate-700 rounded-2xl p-5 space-y-4">
                 <div>
                   <h2 className="text-sm font-bold text-white flex items-center gap-2">
@@ -2007,7 +2086,7 @@ function hashString(str: string): string {
 
           {/* TAB 6: TAX REVIEW & AUDITING */}
           {activeMode === 'tax-review' && (
-            <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-6 max-w-5xl mx-auto w-full">
+            <div className="flex-1 overflow-y-auto py-4 sm:py-6 space-y-6 chat-messages">
               <div className="bg-slate-800/80 border border-slate-700 rounded-2xl p-5 space-y-4">
                 <div>
                   <h2 className="text-sm font-bold text-white flex items-center gap-2">
@@ -2181,15 +2260,24 @@ function hashString(str: string): string {
               </div>
 
               {/* Class Filter Chips */}
-              <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none">
+              <div 
+                className="flex items-center gap-1.5 overflow-x-auto pb-1 snap-x snap-proximity [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+                style={{
+                  WebkitOverflowScrolling: 'touch',
+                  scrollSnapType: 'x proximity',
+                  scrollbarWidth: 'none',
+                  msOverflowStyle: 'none'
+                }}
+              >
                 <button
                   type="button"
                   onClick={() => setSelectedGlossaryClass(null)}
-                  className={`px-2.5 py-1 rounded-lg text-xs font-semibold shrink-0 transition-colors ${
+                  className={`px-2.5 py-1 rounded-lg text-xs font-semibold shrink-0 snap-start transition-colors cursor-pointer ${
                     selectedGlossaryClass === null
                       ? 'bg-indigo-600 text-white'
                       : 'bg-slate-800 text-slate-300 hover:bg-slate-750'
                   }`}
+                  style={{ flexShrink: 0, scrollSnapAlign: 'start' }}
                 >
                   Todas as Classes
                 </button>
@@ -2198,15 +2286,17 @@ function hashString(str: string): string {
                     key={cNum}
                     type="button"
                     onClick={() => setSelectedGlossaryClass(cNum === selectedGlossaryClass ? null : cNum)}
-                    className={`px-2.5 py-1 rounded-lg text-xs font-semibold shrink-0 transition-colors ${
+                    className={`px-2.5 py-1 rounded-lg text-xs font-semibold shrink-0 snap-start transition-colors cursor-pointer ${
                       selectedGlossaryClass === cNum
                         ? 'bg-indigo-600 text-white'
                         : 'bg-slate-800 text-slate-300 hover:bg-slate-750'
                     }`}
+                    style={{ flexShrink: 0, scrollSnapAlign: 'start' }}
                   >
                     Classe {cNum}
                   </button>
                 ))}
+                <div className="w-6 shrink-0" style={{ flexShrink: 0, width: 24 }} aria-hidden="true" />
               </div>
 
               {/* Search Results / Content Area */}
