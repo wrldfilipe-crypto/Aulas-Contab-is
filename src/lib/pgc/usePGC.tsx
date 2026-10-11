@@ -1,7 +1,7 @@
-import React, { createContext, useContext, useEffect, useState, type ReactNode } from "react";
-import { carregarPlano, ingestarDocumentoOficial } from "./pgcRag";
-import { validarConta, pesquisarConta } from "./pgcValidator";
-import type { PlanoContas, NormaSelecionada } from "./types";
+import React, { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
+import { carregarPlano, ingestarDocumentoOficial } from './pgcRag';
+import { validarConta, pesquisarConta } from './pgcValidator';
+import type { PlanoContas, NormaSelecionada } from './types';
 
 interface PGCCtx {
   plano: PlanoContas | null;
@@ -12,16 +12,31 @@ interface PGCCtx {
   ingestar: (file: File) => Promise<{ plano: PlanoContas; segmentos: number }>;
 }
 
-const Ctx = createContext<PGCCtx | null>(null);
+const defaultCtx: PGCCtx = {
+  plano: null,
+  norma: 'PGC_ANGOLA_82_2001',
+  setNorma: () => {},
+  validarConta: (codigo: string) => validarConta(null, codigo),
+  pesquisarConta: (termo: string, limite?: number) => pesquisarConta(null, termo, limite),
+  ingestar: async () => ({ plano: null as any, segmentos: 0 }),
+};
+
+const Ctx = createContext<PGCCtx>(defaultCtx);
 
 export function PGCProvider({ children }: { children: ReactNode }) {
   const [plano, setPlano] = useState<PlanoContas | null>(null);
-  const [norma, setNorma] = useState<NormaSelecionada>("PGC_ANGOLA_82_2001");
+  const [norma, setNorma] = useState<NormaSelecionada>('PGC_ANGOLA_82_2001');
 
   useEffect(() => {
-    carregarPlano().then(setPlano).catch((err) => {
-      console.warn("Plano local carregado por fallback:", err?.message || err);
+    let isMounted = true;
+    carregarPlano().then((p) => {
+      if (isMounted) setPlano(p);
+    }).catch((err) => {
+      console.warn('Plano local carregado por fallback:', err?.message || err);
     });
+    return () => {
+      isMounted = false;
+    };
   }, []);
 
   const ingestar = async (file: File) => {
@@ -46,6 +61,6 @@ export function PGCProvider({ children }: { children: ReactNode }) {
 
 export function usePGC(): PGCCtx {
   const ctx = useContext(Ctx);
-  if (!ctx) throw new Error("usePGC deve ser usado dentro de <PGCProvider>");
-  return ctx;
+  return ctx || defaultCtx;
 }
+

@@ -1,5 +1,5 @@
 import React, { useRef, useEffect, useState } from 'react';
-import { User, Copy, Check, Volume2, VolumeX, ThumbsUp, ThumbsDown, Sparkles, Edit3, Trash2, X, Send, FileText, FileSpreadsheet, Presentation, Download, Loader2 } from 'lucide-react';
+import { User, Copy, Check, Volume2, VolumeX, ThumbsUp, ThumbsDown, Sparkles, Edit3, Trash2, X, Send, FileText, FileSpreadsheet, Presentation, Download, Loader2, RefreshCw } from 'lucide-react';
 import { MarkdownRenderer } from './MarkdownRenderer';
 import { YohanLogo } from './YohanLogo';
 import { exportChatMessageToWord, generateExcelDoc, generatePptxDoc, parseDocumentData } from '../services/documentGenerator';
@@ -21,9 +21,11 @@ interface VirtualizedChatMessagesListProps {
   isGenerating: boolean;
   copiedId: string | null;
   speakingMsgId: string | null;
+  regeneratingMsgId?: string | null;
   onCopy: (text: string, id: string) => void;
   onSpeak: (text: string, id: string) => void;
   onFeedback: (messageId: string, rating: 'up' | 'down') => void;
+  onRegenerate?: (messageId: string) => void;
   onEditMessage?: (messageId: string, newContent: string) => void;
   onDeleteMessage?: (messageId: string) => void;
   onQuickSearchInsert?: (term: string) => void;
@@ -35,9 +37,11 @@ export const VirtualizedChatMessagesList: React.FC<VirtualizedChatMessagesListPr
   isGenerating,
   copiedId,
   speakingMsgId,
+  regeneratingMsgId,
   onCopy,
   onSpeak,
   onFeedback,
+  onRegenerate,
   onEditMessage,
   onDeleteMessage,
   onQuickSearchInsert,
@@ -78,8 +82,11 @@ export const VirtualizedChatMessagesList: React.FC<VirtualizedChatMessagesListPr
   };
 
   useEffect(() => {
-    if (bottomRef.current) {
-      bottomRef.current.scrollIntoView({ behavior: 'smooth' });
+    if (containerRef.current) {
+      containerRef.current.scrollTo({
+        top: containerRef.current.scrollHeight,
+        behavior: 'smooth'
+      });
     }
   }, [messages.length, isGenerating]);
 
@@ -304,6 +311,27 @@ export const VirtualizedChatMessagesList: React.FC<VirtualizedChatMessagesListPr
                           </>
                         )}
                       </button>
+
+                      {/* 🔄 Regenerar Resposta da IA */}
+                      {onRegenerate && (
+                        <button
+                          type="button"
+                          id={`btn-regenerate-${msg.id}`}
+                          onClick={() => onRegenerate(msg.id)}
+                          disabled={isGenerating || regeneratingMsgId === msg.id}
+                          className={`p-1 rounded-lg transition-colors flex items-center gap-1.5 text-xs cursor-pointer ${
+                            regeneratingMsgId === msg.id
+                              ? 'text-indigo-400 bg-indigo-500/10 font-medium'
+                              : 'text-white/40 hover:text-white'
+                          } disabled:opacity-40 disabled:cursor-not-allowed`}
+                          title="Regenerar resposta"
+                        >
+                          <RefreshCw className={`w-[18px] h-[18px] ${regeneratingMsgId === msg.id ? 'animate-spin text-indigo-400' : ''}`} />
+                          <span className="hidden sm:inline text-[11px]">
+                            {regeneratingMsgId === msg.id ? 'A regenerar...' : 'Regenerar'}
+                          </span>
+                        </button>
+                      )}
 
                       {/* 🗑️ Apagar Mensagem da IA */}
                       <button

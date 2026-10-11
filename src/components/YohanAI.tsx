@@ -2,12 +2,13 @@ import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   Bot, MessageSquare, FileText, Grid, BarChart3, Presentation, ShieldCheck, 
-  Send, Sparkles, Download, Edit3, Trash2, ArrowRight, RefreshCw, 
+  Send, Sparkles, Download, Edit3, Trash2, ArrowRight, ArrowLeft, RefreshCw, 
   CheckCircle, AlertTriangle, Info, Upload, ChevronRight, ChevronLeft, 
-  Share2, Plus, Volume2, VolumeX, Copy, Check, X, RotateCcw,
+  Share2, Plus, Volume2, VolumeX, Copy, Check, X, RotateCcw, RotateCw,
   Paperclip, Loader2, Calculator, BookOpen, Layers, Maximize2, FileSpreadsheet,
   Mic, MicOff, ThumbsUp, ThumbsDown, Search, SlidersHorizontal, ArrowUpRight,
-  HelpCircle, Eye, FileCode, CheckSquare, Sparkle, History, Menu
+  HelpCircle, Eye, FileCode, CheckSquare, Sparkle, History, Menu,
+  Pin, PinOff, MoreVertical, ChevronUp, ChevronDown, Wrench
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import pptxgen from 'pptxgenjs';
@@ -18,12 +19,27 @@ import { salvarFeedbackYohanFirestore } from '../lib/firebase';
 import { PGC_CHART_OF_ACCOUNTS } from '../lib/pgc/pgcKnowledgeBase';
 import { VirtualizedChatMessagesList } from './VirtualizedChatMessagesList';
 import { perguntarYohanStreaming, gerarDocumentoGrande } from '../services/yohanAiService';
+import { extrairTextoDocumento } from '../services/documentExtractor';
 import { SparklingAiAura } from './SparklingAiAura';
 import { YohanLogo } from './YohanLogo';
+import {
+  getLocalConversations,
+  saveConversation,
+  deleteConversation,
+  syncConversationsWithFirestore,
+  setupChatSyncListener,
+  getUserChatPref,
+  setUserChatPref,
+  togglePinConversation,
+  renameConversation,
+  type ChatConversation
+} from '../services/aiChatPersistenceService';
 
 export interface YohanAIProps {
   currentLanguage?: string;
   onSaveToVault?: (type: string, title: string, content: any) => void;
+  onBack?: () => void;
+  onOpenNav?: () => void;
 }
 
 export interface ChatMessage {
@@ -39,9 +55,15 @@ export interface ChatMessage {
 
 export interface Conversation {
   id: string;
+  uid?: string;
   title: string;
-  updatedAt: string;
-  tag: string;
+  updatedAt: number | string;
+  tag?: string;
+  standard?: string;
+  date?: string;
+  timestamp?: string;
+  pinned?: boolean;
+  synced?: boolean;
   messages: ChatMessage[];
 }
 
@@ -107,19 +129,49 @@ const PROMPT_TEMPLATES = [
 
 export const YohanAI: React.FC<YohanAIProps> = ({
   currentLanguage = 'pt-PT',
-  onSaveToVault
+  onSaveToVault,
+  onBack,
+  onOpenNav
 }) => {
   const currentUser = getCurrentUser();
   const currentUserId = currentUser?.userId || (currentUser as any)?.id || 'default_user';
 
+  const handleOpenNav = () => {
+    if (onOpenNav) {
+      onOpenNav();
+    } else if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('ga-open-mobile-nav'));
+    }
+  };
+
+  const handleGoBack = () => {
+    if (onBack) {
+      onBack();
+    } else if (typeof window !== 'undefined' && window.history.length > 1) {
+      window.history.back();
+    } else {
+      // Fallback: emit global event to navigate to dashboard
+      window.dispatchEvent(new CustomEvent('navigate_tab', { detail: 'dashboard' }));
+    }
+  };
+
   const [activeMode, setActiveMode] = useState<YohanMode>('chat');
-  const [isDesktop, setIsDesktop] = useState<boolean>(() => typeof window !== 'undefined' ? window.innerWidth >= 900 : true);
-  const [isHistoryOpen, setIsHistoryOpen] = useState<boolean>(() => typeof window !== 'undefined' ? window.innerWidth >= 900 : false);
+  const [isDesktop, setIsDesktop] = useState<boolean>(() => typeof window !== 'undefined' ? window.innerWidth >= 1024 : true);
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState<boolean>(false);
+  const [isHistoryOpen, setIsHistoryOpen] = useState<boolean>(() => typeof window !== 'undefined' ? window.innerWidth >= 1024 : false);
   const [docProgress, setDocProgress] = useState<{ current: number; total: number; title: string } | null>(null);
+
+  // Qualidade de resposta: rápido (budget 0) vs detalhado (budget 24576)
+  const [qualityMode, setQualityMode] = useState<'fast' | 'detailed'>('fast');
+  const [showQualityMenu, setShowQualityMenu] = useState(false);
+  const [regeneratingMsgId, setRegeneratingMsgId] = useState<string | null>(null);
+  const [menuOpenConvId, setMenuOpenConvId] = useState<string | null>(null);
+  const [confirmDeleteConvId, setConfirmDeleteConvId] = useState<string | null>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     const handleResize = () => {
-      const desktop = window.innerWidth >= 900;
+      const desktop = window.innerWidth >= 1024;
       setIsDesktop(desktop);
     };
     window.addEventListener('resize', handleResize);
@@ -136,10 +188,11 @@ export const YohanAI: React.FC<YohanAIProps> = ({
   const [selectedGlossaryClass, setSelectedGlossaryClass] = useState<number | null>(null);
   const [glossarySearchQuery, setGlossarySearchQuery] = useState('');
 
-  // Conversations Storage
+  // Conversations Storage: fallback síncrono inicial + sincronização IndexedDB/Firestore
   const [conversations, setConversations] = useState<Conversation[]>(() => {
-    const key = `ga_yohan_conversations_${currentUserId}`;
-    const saved = localStorage.getItem(key);
+    const key = `ga_ai_accountant_history_${currentUserId}`;
+    const legacyKey = `ga_yohan_conversations_${currentUserId}`;
+    const saved = typeof window !== 'undefined' ? (localStorage.getItem(key) || localStorage.getItem(legacyKey)) : null;
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
@@ -153,8 +206,9 @@ export const YohanAI: React.FC<YohanAIProps> = ({
     const defaultConv: Conversation = {
       id: `conv-${Date.now()}`,
       title: 'Consultoria Inicial PGC Angola',
-      updatedAt: new Date().toISOString(),
+      updatedAt: Date.now(),
       tag: '#Geral',
+      pinned: false,
       messages: [
         {
           id: 'msg-welcome-yohan',
@@ -178,12 +232,90 @@ Como posso ajudar hoje?
     return conversations[0]?.id || `conv-${Date.now()}`;
   });
 
+  // Sincronização offline-first persistente em IndexedDB e Firestore
+  useEffect(() => {
+    let isMounted = true;
+
+    // Carregar preferências persistentes do utilizador
+    getUserChatPref(currentUserId, 'isSidebarCollapsed', false).then((val) => {
+      if (isMounted) {
+        const collapsed = !!val;
+        setIsSidebarCollapsed(collapsed);
+        if (typeof window !== 'undefined' && window.innerWidth >= 1024) {
+          setIsHistoryOpen(!collapsed);
+        }
+      }
+    });
+    getUserChatPref(currentUserId, 'qualityMode', 'fast').then((val) => {
+      if (isMounted) setQualityMode(val === 'detailed' ? 'detailed' : 'fast');
+    });
+
+    // 1. Carregar do IndexedDB local
+    getLocalConversations(currentUserId).then((local) => {
+      if (isMounted && local && local.length > 0) {
+        setConversations(local as any);
+        if (!local.some(c => c.id === activeConvId)) {
+          setActiveConvId(local[0].id);
+        }
+      }
+    });
+
+    // 2. Sincronizar com Firestore
+    syncConversationsWithFirestore(currentUserId, (synced) => {
+      if (isMounted && synced && synced.length > 0) {
+        setConversations(synced as any);
+        if (!synced.some(c => c.id === activeConvId)) {
+          setActiveConvId(synced[0].id);
+        }
+      }
+    });
+
+    // 3. Listener em tempo real e online
+    const unsubscribe = setupChatSyncListener(currentUserId, (updated) => {
+      if (isMounted && updated && updated.length > 0) {
+        setConversations(updated as any);
+      }
+    });
+
+    return () => {
+      isMounted = false;
+      unsubscribe();
+    };
+  }, [currentUserId]);
+
+  // Fechar menus dropdown ao clicar fora
+  useEffect(() => {
+    const handleClickOutside = () => {
+      if (menuOpenConvId) setMenuOpenConvId(null);
+      if (showQualityMenu) setShowQualityMenu(false);
+    };
+    window.addEventListener('click', handleClickOutside);
+    return () => window.removeEventListener('click', handleClickOutside);
+  }, [menuOpenConvId, showQualityMenu]);
+
   // Current active conversation
   const activeConversation = useMemo(() => {
     return conversations.find(c => c.id === activeConvId) || conversations[0];
   }, [conversations, activeConvId]);
 
   const messages = activeConversation?.messages || [];
+
+  // Indica se a conversa atual já tem mensagens do utilizador (para alternar entre estado vazio centrado e lista de mensagens)
+  const hasUserMessages = useMemo(() => {
+    return messages.some(m => m.role === 'user');
+  }, [messages]);
+
+  const getActiveModeLabel = (mode: YohanMode): string => {
+    switch (mode) {
+      case 'chat': return 'Chat PGC';
+      case 'document': return 'Word (.docx)';
+      case 'spreadsheet': return 'Excel (.xlsx)';
+      case 'presentation': return 'Slides (.pptx)';
+      case 'visualization': return 'Diagramas';
+      case 'tax-review': return 'Auditoria AGT';
+      default: return 'Chat PGC';
+    }
+  };
 
   // Chat Input State
   const [inputMessage, setInputMessage] = useState('');
@@ -224,10 +356,10 @@ Como posso ajudar hoje?
   const [generatedTaxAudit, setGeneratedTaxAudit] = useState<any>(null);
   const [isTaxAuditing, setIsTaxAuditing] = useState(false);
 
-  // Save conversations to localStorage whenever they change
+  // Save conversations to localStorage whenever they change as backup
   useEffect(() => {
     try {
-      localStorage.setItem(`ga_yohan_conversations_${currentUserId}`, JSON.stringify(conversations));
+      localStorage.setItem(`ga_ai_accountant_history_${currentUserId}`, JSON.stringify(conversations.slice(0, 50)));
       localStorage.setItem(`ga_yohan_chat_history`, JSON.stringify(messages));
     } catch (e) {
       console.warn('Failed saving Yohan AI conversations:', e);
@@ -236,7 +368,9 @@ Como posso ajudar hoje?
 
   // Listen to Global Header Events
   useEffect(() => {
-    const handleOpenHistory = () => setIsHistoryOpen(prev => !prev);
+    const handleOpenHistory = () => {
+      setIsHistoryOpen(prev => !prev);
+    };
     const handleNewChat = () => handleCreateNewConversation();
 
     window.addEventListener('ga-open-ai-history', handleOpenHistory);
@@ -246,22 +380,88 @@ Como posso ajudar hoje?
       window.removeEventListener('ga-open-ai-history', handleOpenHistory);
       window.removeEventListener('ga-new-ai-chat', handleNewChat);
     };
-  }, [conversations]);
+  }, [isDesktop]);
 
-  // Scroll to bottom on new messages
+  // Atalhos de teclado locais do chat Yohan AI (Ctrl/Cmd+Shift+O e Ctrl/Cmd+K)
   useEffect(() => {
-    if (activeMode === 'chat') {
-      chatBottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const isCtrlOrCmd = e.ctrlKey || e.metaKey;
+      if (!isCtrlOrCmd) return;
+
+      // Ctrl/Cmd + Shift + O -> Nova conversa
+      if (e.shiftKey && (e.key === 'O' || e.key === 'o')) {
+        e.preventDefault();
+        handleCreateNewConversation();
+        return;
+      }
+
+      // Ctrl/Cmd + K -> Abrir busca rápida de conversas
+      if (!e.shiftKey && (e.key === 'k' || e.key === 'K')) {
+        e.preventDefault();
+        if (isDesktop) {
+          handleToggleSidebarCollapse(false);
+        } else {
+          setIsHistoryOpen(true);
+        }
+        setTimeout(() => {
+          searchInputRef.current?.focus();
+          searchInputRef.current?.select();
+        }, 50);
+        return;
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isDesktop]);
+
+  // Scroll to bottom gerido internamente pelo VirtualizedChatMessagesList
+
+  // Alternar colapso da barra lateral (Desktop)
+  const handleToggleSidebarCollapse = (collapsed: boolean) => {
+    setIsSidebarCollapsed(collapsed);
+    setIsHistoryOpen(!collapsed);
+    setUserChatPref(currentUserId, 'isSidebarCollapsed', collapsed).catch(() => {});
+  };
+
+  // Alternar histórico (drawer em mobile, sidebar em desktop via isHistoryOpen)
+  const handleToggleHistory = () => {
+    setIsHistoryOpen(prev => {
+      const next = !prev;
+      if (isDesktop) {
+        setIsSidebarCollapsed(!next);
+        setUserChatPref(currentUserId, 'isSidebarCollapsed', !next).catch(() => {});
+      }
+      return next;
+    });
+  };
+
+  // Sincronizar isSidebarCollapsed quando isHistoryOpen muda no Desktop
+  useEffect(() => {
+    if (isDesktop) {
+      const collapsed = !isHistoryOpen;
+      if (isSidebarCollapsed !== collapsed) {
+        setIsSidebarCollapsed(collapsed);
+        setUserChatPref(currentUserId, 'isSidebarCollapsed', collapsed).catch(() => {});
+      }
     }
-  }, [messages, activeMode, isLoading]);
+  }, [isHistoryOpen, isDesktop, currentUserId]);
+
+  // Alterar modo de resposta (Rápido vs Detalhado)
+  const handleSetQualityMode = (mode: 'fast' | 'detailed') => {
+    setQualityMode(mode);
+    setShowQualityMenu(false);
+    setUserChatPref(currentUserId, 'qualityMode', mode).catch(() => {});
+  };
 
   // Create New Conversation
   const handleCreateNewConversation = () => {
     const newConv: Conversation = {
       id: `conv-${Date.now()}`,
       title: 'Nova Consulta PGC',
-      updatedAt: new Date().toISOString(),
+      updatedAt: Date.now(),
       tag: '#Geral',
+      pinned: false,
       messages: [
         {
           id: `msg-welcome-${Date.now()}`,
@@ -276,6 +476,7 @@ Como posso ajudar hoje?
     setActiveConvId(newConv.id);
     setActiveMode('chat');
     setIsHistoryOpen(false);
+    saveConversation(currentUserId, newConv as any).catch(err => console.warn('Error saving new conv:', err));
   };
 
   // Switch Conversation
@@ -283,29 +484,65 @@ Como posso ajudar hoje?
     setActiveConvId(id);
     setActiveMode('chat');
     setIsHistoryOpen(false);
+    setMenuOpenConvId(null);
+  };
+
+  // Alternar fixação (Pin / Unpin)
+  const handleTogglePin = async (id: string, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    setMenuOpenConvId(null);
+    const target = conversations.find(c => c.id === id);
+    if (!target) return;
+    const newPinned = !target.pinned;
+    const now = Date.now();
+
+    setConversations(prev => prev.map(c => 
+      c.id === id ? { ...c, pinned: newPinned, updatedAt: now } : c
+    ));
+
+    try {
+      await togglePinConversation(currentUserId, id, newPinned);
+    } catch (err) {
+      console.warn('Error toggling pin:', err);
+    }
   };
 
   // Rename Conversation
-  const handleSaveRename = (id: string) => {
+  const handleSaveRename = async (id: string) => {
     if (!editConvTitle.trim()) {
       setEditingConvId(null);
       return;
     }
-    setConversations(prev => prev.map(c => c.id === id ? { ...c, title: editConvTitle.trim() } : c));
+    const newTitle = editConvTitle.trim();
     setEditingConvId(null);
     setEditConvTitle('');
+    const now = Date.now();
+
+    setConversations(prev => prev.map(c => 
+      c.id === id ? { ...c, title: newTitle, updatedAt: now } : c
+    ));
+
+    try {
+      await renameConversation(currentUserId, id, newTitle);
+    } catch (err) {
+      console.warn('Error renaming conversation:', err);
+    }
   };
 
   // Delete Single Conversation
-  const handleDeleteConversation = (id: string, e: React.MouseEvent) => {
-    e.stopPropagation();
+  const handleDeleteConversation = async (id: string, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    setConfirmDeleteConvId(null);
+    setMenuOpenConvId(null);
+
     const updated = conversations.filter(c => c.id !== id);
     if (updated.length === 0) {
       const freshConv: Conversation = {
         id: `conv-${Date.now()}`,
         title: 'Nova Consulta PGC',
-        updatedAt: new Date().toISOString(),
+        updatedAt: Date.now(),
         tag: '#Geral',
+        pinned: false,
         messages: [
           {
             id: `msg-welcome-${Date.now()}`,
@@ -317,11 +554,18 @@ Como posso ajudar hoje?
       };
       setConversations([freshConv]);
       setActiveConvId(freshConv.id);
+      saveConversation(currentUserId, freshConv as any).catch(() => {});
     } else {
       setConversations(updated);
       if (activeConvId === id) {
         setActiveConvId(updated[0].id);
       }
+    }
+
+    try {
+      await deleteConversation(currentUserId, id);
+    } catch (err) {
+      console.warn('Error deleting conversation:', err);
     }
   };
 
@@ -330,8 +574,9 @@ Como posso ajudar hoje?
     const freshConv: Conversation = {
       id: `conv-${Date.now()}`,
       title: 'Nova Consulta PGC',
-      updatedAt: new Date().toISOString(),
+      updatedAt: Date.now(),
       tag: '#Geral',
+      pinned: false,
       messages: [
         {
           id: `msg-welcome-${Date.now()}`,
@@ -345,6 +590,77 @@ Como posso ajudar hoje?
     setActiveConvId(freshConv.id);
     setShowClearAllModal(false);
     setIsHistoryOpen(false);
+    saveConversation(currentUserId, freshConv as any).catch(() => {});
+  };
+
+  // Regenerar resposta de mensagem do assistente
+  const handleRegenerateMessage = async (msgId: string) => {
+    if (isLoading || regeneratingMsgId) return;
+
+    const msgIndex = messages.findIndex(m => m.id === msgId);
+    if (msgIndex === -1) return;
+
+    const priorMessages = messages.slice(0, msgIndex);
+    const lastUserMsg = [...priorMessages].reverse().find(m => m.role === 'user');
+    if (!lastUserMsg) {
+      console.warn('No user prompt found prior to message:', msgId);
+      return;
+    }
+
+    const userPrompt = lastUserMsg.content;
+    const lastUserIndex = priorMessages.lastIndexOf(lastUserMsg);
+    const historyForModel = priorMessages.slice(0, lastUserIndex).map(m => ({
+      role: m.role,
+      content: m.content
+    }));
+
+    setRegeneratingMsgId(msgId);
+    setIsLoading(true);
+
+    const updateAssistantMsg = (fullText: string) => {
+      setConversations(prev => prev.map(c => {
+        if (c.id !== activeConvId) return c;
+        return {
+          ...c,
+          updatedAt: Date.now(),
+          messages: c.messages.map(m => m.id === msgId ? { ...m, content: fullText, feedback: null } : m)
+        };
+      }));
+    };
+
+    updateAssistantMsg('');
+
+    try {
+      const thinkingBudget = qualityMode === 'detailed' ? 24576 : 0;
+      const fullResponse = await perguntarYohanStreaming(
+        userPrompt,
+        historyForModel,
+        (chunkText) => {
+          updateAssistantMsg(chunkText);
+        },
+        { thinkingBudget }
+      );
+      updateAssistantMsg(fullResponse);
+
+      const active = conversations.find(c => c.id === activeConvId);
+      if (active) {
+        const updatedMsgs = active.messages.map(m => m.id === msgId ? { ...m, content: fullResponse } : m);
+        saveConversation(currentUserId, {
+          ...active,
+          messages: updatedMsgs,
+          updatedAt: Date.now()
+        } as any).catch(() => {});
+      }
+    } catch (err: any) {
+      const errMsg = err?.message || String(err);
+      const friendlyError = errMsg.includes('429')
+        ? '⚠️ Limite de quota da API Gemini atingido. Aguarde alguns instantes.'
+        : `⚠️ Não foi possível regenerar a resposta: ${errMsg}`;
+      updateAssistantMsg(friendlyError);
+    } finally {
+      setIsLoading(false);
+      setRegeneratingMsgId(null);
+    }
   };
 
   // Feedback on Message (Thumbs up / down)
@@ -484,41 +800,85 @@ Como posso ajudar hoje?
     }
   };
 
-  // File Upload and Text Extraction
+  // File Upload and Text Extraction with Client-First Extraction & Resilient OCR Fallback
   const handleFileUpload = async (file: File) => {
     if (!file) return;
+    setIsLoading(true);
     try {
-      setIsLoading(true);
+      const ext = file.name.split('.').pop()?.toLowerCase() || '';
 
-      // Check if text/json/csv
-      if (file.type.includes('text') || file.name.endsWith('.txt') || file.name.endsWith('.csv') || file.name.endsWith('.json')) {
+      // 1. Ficheiros baseados em texto (txt, csv, json, md, tsv)
+      if (file.type.includes('text') || ['txt', 'csv', 'json', 'md', 'tsv'].includes(ext)) {
         const text = await file.text();
-        setAttachedFile({ name: file.name, content: text.slice(0, 15000), size: file.size });
-      } else {
-        // Send to backend extract endpoint
-        const formData = new FormData();
-        formData.append('file', file);
+        setAttachedFile({ name: file.name, content: text.slice(0, 20000), size: file.size });
+        return;
+      }
 
-        const res = await fetch('/api/yohan/extract-doc', {
-          method: 'POST',
-          body: formData
-        });
-
-        if (res.ok) {
-          const data = await res.json();
-          setAttachedFile({ name: file.name, content: data.text || 'Documento carregado', size: file.size });
-        } else {
-          // Fallback reading
-          const reader = new FileReader();
-          reader.onload = (e) => {
-            const content = e.target?.result as string;
-            setAttachedFile({ name: file.name, content: content ? content.slice(0, 5000) : 'Ficheiro lido', size: file.size });
-          };
-          reader.readAsText(file);
+      // 2. Extração client-side para PDF e DOCX (rápido, sem rede, à prova de falhas)
+      if (ext === 'pdf' || ext === 'docx') {
+        try {
+          const docData = await extrairTextoDocumento(file);
+          if (docData && docData.texto && docData.texto.length > 20) {
+            setAttachedFile({ name: file.name, content: docData.texto.slice(0, 25000), size: file.size });
+            return;
+          }
+        } catch (clientErr) {
+          console.warn('[Yohan AI] Client extraction notice, trying OCR backend:', clientErr);
         }
       }
+
+      // 3. OCR no backend para PDFs digitalizados, Imagens (PNG, JPG, etc.) ou ficheiros complexos
+      try {
+        const base64 = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve((reader.result as string) || '');
+          reader.onerror = () => reject(new Error('Falha ao codificar ficheiro'));
+          reader.readAsDataURL(file);
+        });
+
+        if (base64) {
+          const res = await fetch('/api/yohan/extract-doc', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              fileBase64: base64,
+              fileName: file.name,
+              mimeType: file.type || 'application/octet-stream',
+              language: currentLanguage || 'pt-AO'
+            })
+          });
+
+          const contentType = res.headers.get('content-type') || '';
+          if (res.ok && contentType.includes('application/json')) {
+            const data = await res.json();
+            const extracted = data.extractedText || data.summary || data.text || '';
+            if (extracted) {
+              setAttachedFile({ name: file.name, content: extracted.slice(0, 25000), size: file.size });
+              return;
+            }
+          }
+        }
+      } catch (backendErr) {
+        console.warn('[Yohan AI] Backend OCR notice:', backendErr);
+      }
+
+      // 4. Fallback seguro para qualquer ficheiro: leitura em texto bruto ou descritor de anexo
+      const fallbackText = await new Promise<string>((resolve) => {
+        const reader = new FileReader();
+        reader.onload = (e) => resolve((e.target?.result as string) || '');
+        reader.onerror = () => resolve('');
+        reader.readAsText(file);
+      });
+
+      const cleanFallback = fallbackText && fallbackText.length > 20 && !fallbackText.includes('\u0000')
+        ? fallbackText.slice(0, 10000)
+        : `[Documento anexado: ${file.name} (${(file.size / 1024).toFixed(1)} KB)]`;
+
+      setAttachedFile({ name: file.name, content: cleanFallback, size: file.size });
     } catch (err) {
-      console.error('File extraction error:', err);
+      console.warn('[Yohan AI] File extraction warning:', err);
+      // Garante que o ficheiro fica anexado para o utilizador poder interagir
+      setAttachedFile({ name: file.name, content: `[Ficheiro carregado: ${file.name}]`, size: file.size });
     } finally {
       setIsLoading(false);
     }
@@ -658,14 +1018,27 @@ function hashString(str: string): string {
 
     try {
       if (activeMode === 'chat' || activeMode === 'tax-review') {
+        const thinkingBudget = qualityMode === 'detailed' ? 24576 : 0;
         const fullResponse = await perguntarYohanStreaming(
           fullUserPrompt,
           recentHistory.slice(0, -1),
           (chunkText) => {
             updateAssistantMsg(chunkText);
-          }
+          },
+          { thinkingBudget }
         );
         updateAssistantMsg(fullResponse);
+
+        // Guardar persistente em IndexedDB e Firestore
+        const currentConv = conversations.find(c => c.id === activeConvId);
+        if (currentConv) {
+          saveConversation(currentUserId, {
+            ...currentConv,
+            title: newTitle,
+            updatedAt: Date.now(),
+            messages: [...updatedMessages, { id: botMsgId, role: 'assistant', content: fullResponse, timestamp: botTimestamp }]
+          } as any).catch(err => console.warn('Error saving chat message to Firestore/IndexedDB:', err));
+        }
 
         // Guardar no cache 24h se for resposta válida
         if (fullResponse && !fullResponse.startsWith('⚠️') && !currentAttached) {
@@ -1135,27 +1508,338 @@ function hashString(str: string): string {
     }
   };
 
-  // Filtered conversations list
-  const filteredConversations = useMemo(() => {
-    if (!historySearchQuery.trim()) return conversations;
-    const q = historySearchQuery.toLowerCase();
-    return conversations.filter(c => 
-      c.title.toLowerCase().includes(q) || 
-      c.tag.toLowerCase().includes(q) ||
-      c.messages.some(m => m.content.toLowerCase().includes(q))
-    );
+  // Data relativa formatada (Hoje, Ontem, ou dd/mm)
+  const formatRelativeDate = (timestamp: number | string | undefined): string => {
+    if (!timestamp) return 'Hoje';
+    const time = typeof timestamp === 'string' ? new Date(timestamp).getTime() : timestamp;
+    if (isNaN(time) || time <= 0) return 'Hoje';
+    const now = new Date();
+    const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+    const startOfYesterday = startOfToday - 24 * 60 * 60 * 1000;
+
+    if (time >= startOfToday) {
+      return 'Hoje';
+    } else if (time >= startOfYesterday) {
+      return 'Ontem';
+    } else {
+      return new Date(time).toLocaleDateString([], { day: '2-digit', month: '2-digit' });
+    }
+  };
+
+  // Separar conversas fixadas e recentes com filtro de busca (título, tag e 1ª mensagem)
+  const { pinnedConversations, recentConversations } = useMemo(() => {
+    const q = historySearchQuery.toLowerCase().trim();
+    const filtered = conversations.filter(c => {
+      if (!q) return true;
+      const titleMatch = (c.title || '').toLowerCase().includes(q);
+      const tagMatch = (c.tag || '').toLowerCase().includes(q);
+      const firstMsg = c.messages?.[0]?.content || '';
+      const firstMsgMatch = firstMsg.toLowerCase().includes(q);
+      return titleMatch || tagMatch || firstMsgMatch;
+    });
+
+    const toTime = (v: any) => {
+      if (typeof v === 'number') return v;
+      if (typeof v === 'string') {
+        const parsed = new Date(v).getTime();
+        return isNaN(parsed) ? 0 : parsed;
+      }
+      return 0;
+    };
+
+    const pinned = filtered
+      .filter(c => !!c.pinned)
+      .sort((a, b) => toTime(b.updatedAt) - toTime(a.updatedAt));
+
+    const recent = filtered
+      .filter(c => !c.pinned)
+      .sort((a, b) => toTime(b.updatedAt) - toTime(a.updatedAt));
+
+    return { pinnedConversations: pinned, recentConversations: recent };
   }, [conversations, historySearchQuery]);
+
+  // Renderizador de item de conversa (com renomear inline, fixar/desafixar e apagar)
+  const renderConversationItem = (conv: Conversation) => {
+    const isActive = conv.id === activeConvId;
+    const isEditing = editingConvId === conv.id;
+    const isMenuOpen = menuOpenConvId === conv.id;
+    const isConfirmingDelete = confirmDeleteConvId === conv.id;
+
+    return (
+      <div
+        key={conv.id}
+        onClick={() => handleSelectConversation(conv.id)}
+        className={`group relative flex flex-col p-2.5 rounded-xl transition-all cursor-pointer border ${
+          isActive
+            ? 'bg-indigo-950/40 border-indigo-500 text-white shadow-xs'
+            : 'bg-transparent border-transparent hover:bg-slate-900/90 text-slate-300 hover:text-white'
+        }`}
+      >
+        {isEditing ? (
+          <div className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
+            <input
+              type="text"
+              value={editConvTitle}
+              onChange={(e) => setEditConvTitle(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') handleSaveRename(conv.id);
+                if (e.key === 'Escape') setEditingConvId(null);
+              }}
+              autoFocus
+              className="flex-1 bg-slate-900 border border-indigo-500 rounded-lg px-2 py-1 text-xs text-white focus:outline-none"
+            />
+            <button
+              type="button"
+              onClick={() => handleSaveRename(conv.id)}
+              className="p-1 text-emerald-400 hover:text-emerald-300 cursor-pointer"
+              title="Guardar título"
+            >
+              <Check className="w-3.5 h-3.5" />
+            </button>
+            <button
+              type="button"
+              onClick={() => setEditingConvId(null)}
+              className="p-1 text-slate-400 hover:text-slate-300 cursor-pointer"
+              title="Cancelar"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        ) : isConfirmingDelete ? (
+          <div 
+            onClick={(e) => e.stopPropagation()} 
+            className="p-2 bg-rose-950/80 border border-rose-500/50 rounded-lg flex items-center justify-between text-xs text-rose-200"
+          >
+            <span className="text-[11px] truncate">Apagar conversa?</span>
+            <div className="flex items-center gap-1 shrink-0">
+              <button
+                type="button"
+                onClick={(e) => handleDeleteConversation(conv.id, e)}
+                className="px-2 py-0.5 bg-rose-600 hover:bg-rose-500 text-white font-bold rounded text-[10px] cursor-pointer"
+              >
+                Sim
+              </button>
+              <button
+                type="button"
+                onClick={() => setConfirmDeleteConvId(null)}
+                className="px-2 py-0.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded text-[10px] cursor-pointer"
+              >
+                Não
+              </button>
+            </div>
+          </div>
+        ) : (
+          <>
+            <div className="flex items-center justify-between gap-1">
+              <span className="text-xs font-semibold truncate flex-1 leading-snug">
+                {conv.title}
+              </span>
+
+              {/* Ações rápidas (Pin & Menu More) */}
+              <div className="flex items-center gap-0.5 shrink-0">
+                {/* Botão Pin */}
+                <button
+                  type="button"
+                  onClick={(e) => handleTogglePin(conv.id, e)}
+                  className={`p-1 rounded-md transition-all cursor-pointer ${
+                    conv.pinned
+                      ? 'text-indigo-400 hover:text-indigo-300 opacity-100'
+                      : 'text-slate-500 hover:text-slate-300 opacity-0 group-hover:opacity-100'
+                  }`}
+                  title={conv.pinned ? "Desafixar conversa" : "Fixar conversa"}
+                >
+                  {conv.pinned ? <Pin className="w-3 h-3 fill-indigo-400 rotate-45" /> : <Pin className="w-3 h-3 rotate-45" />}
+                </button>
+
+                {/* Botão Mais Opções */}
+                <div className="relative">
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setMenuOpenConvId(isMenuOpen ? null : conv.id);
+                    }}
+                    className="p-1 rounded-md text-slate-500 hover:text-slate-300 opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
+                    title="Mais opções"
+                  >
+                    <MoreVertical className="w-3 h-3" />
+                  </button>
+
+                  {isMenuOpen && (
+                    <div
+                      onClick={(e) => e.stopPropagation()}
+                      className="absolute right-0 top-full mt-1 w-32 bg-slate-900 border border-slate-700 rounded-xl shadow-xl py-1 z-30 flex flex-col text-xs"
+                    >
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setMenuOpenConvId(null);
+                          setEditingConvId(conv.id);
+                          setEditConvTitle(conv.title);
+                        }}
+                        className="px-2.5 py-1.5 text-left text-slate-300 hover:text-white hover:bg-slate-800 flex items-center gap-2 cursor-pointer"
+                      >
+                        <Edit3 className="w-3 h-3 text-indigo-400" />
+                        <span>Renomear</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={(e) => handleTogglePin(conv.id, e)}
+                        className="px-2.5 py-1.5 text-left text-slate-300 hover:text-white hover:bg-slate-800 flex items-center gap-2 cursor-pointer"
+                      >
+                        {conv.pinned ? <PinOff className="w-3 h-3 text-amber-400" /> : <Pin className="w-3 h-3 text-indigo-400" />}
+                        <span>{conv.pinned ? 'Desafixar' : 'Fixar'}</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setMenuOpenConvId(null);
+                          setConfirmDeleteConvId(conv.id);
+                        }}
+                        className="px-2.5 py-1.5 text-left text-rose-400 hover:text-rose-300 hover:bg-rose-950/40 flex items-center gap-2 cursor-pointer border-t border-slate-800/80"
+                      >
+                        <Trash2 className="w-3 h-3" />
+                        <span>Apagar</span>
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-between text-[10px] text-slate-500 mt-1">
+              <span className="font-mono">{formatRelativeDate(conv.updatedAt)}</span>
+              <span>{conv.messages?.length || 0} msg{(conv.messages?.length || 0) !== 1 ? 's' : ''}</span>
+            </div>
+          </>
+        )}
+      </div>
+    );
+  };
+
+  // Conteúdo unificado da barra lateral (reutilizado no desktop e drawer mobile)
+  const renderSidebarContent = (isDrawer = false) => (
+    <div className="flex flex-col h-full w-full bg-slate-950 text-slate-200 select-none">
+      {/* Topo com botão Nova Conversa e fechar/recolher */}
+      <div className="p-3 border-b border-slate-800 flex items-center justify-between gap-2 shrink-0">
+        <button
+          type="button"
+          onClick={handleCreateNewConversation}
+          className="flex-1 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold py-2 px-3 rounded-xl flex items-center justify-center gap-2 transition-all shadow-md shadow-indigo-600/20 active:scale-98 cursor-pointer"
+          title="Nova conversa (Ctrl+Shift+O)"
+        >
+          <Plus className="w-4 h-4 shrink-0" />
+          <span>Nova conversa</span>
+          <kbd className="hidden lg:inline-block ml-auto text-[10px] bg-indigo-700/60 px-1.5 py-0.5 rounded font-mono text-indigo-200">
+            Ctrl+⇧+O
+          </kbd>
+        </button>
+
+        {isDrawer ? (
+          <button
+            type="button"
+            onClick={() => setIsHistoryOpen(false)}
+            className="p-2 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800 transition-colors cursor-pointer shrink-0"
+            title="Fechar gaveta"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={() => handleToggleSidebarCollapse(true)}
+            className="p-2 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800 transition-colors cursor-pointer shrink-0"
+            title="Recolher barra lateral"
+          >
+            <ChevronLeft className="w-4 h-4" />
+          </button>
+        )}
+      </div>
+
+      {/* Campo de Busca de Conversas */}
+      <div className="p-3 border-b border-slate-800/80 shrink-0">
+        <div className="relative">
+          <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" />
+          <input
+            ref={searchInputRef}
+            type="text"
+            value={historySearchQuery}
+            onChange={(e) => setHistorySearchQuery(e.target.value)}
+            placeholder="Pesquisar conversas... (Ctrl+K)"
+            className="w-full bg-slate-900 border border-slate-800 rounded-xl pl-8 pr-7 py-1.5 text-xs text-white placeholder:text-slate-500 focus:outline-none focus:border-indigo-500 transition-all"
+          />
+          {historySearchQuery && (
+            <button
+              type="button"
+              onClick={() => setHistorySearchQuery('')}
+              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-500 hover:text-white p-0.5 cursor-pointer"
+            >
+              <X className="w-3 h-3" />
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Lista com scroll próprio: Fixados e Recentes */}
+      <div className="flex-1 min-h-0 overflow-y-auto p-2 space-y-3 scrollbar-thin">
+        {/* 1. Secção FIXADOS */}
+        {pinnedConversations.length > 0 && (
+          <div className="space-y-1">
+            <div className="px-2 py-1 flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-indigo-400">
+              <Pin className="w-3 h-3 rotate-45" />
+              <span>Fixados</span>
+              <span className="text-[10px] text-slate-500 ml-auto font-mono">({pinnedConversations.length})</span>
+            </div>
+            {pinnedConversations.map(renderConversationItem)}
+          </div>
+        )}
+
+        {/* 2. Secção RECENTES */}
+        <div className="space-y-1">
+          {pinnedConversations.length > 0 && (
+            <div className="px-2 py-1 flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-slate-500">
+              <History className="w-3 h-3" />
+              <span>Recentes</span>
+            </div>
+          )}
+          {recentConversations.length === 0 && pinnedConversations.length === 0 ? (
+            <div className="p-6 text-center text-xs text-slate-500">
+              {historySearchQuery ? 'Nenhuma conversa encontrada.' : 'Sem conversas anteriores.'}
+            </div>
+          ) : (
+            recentConversations.map(renderConversationItem)
+          )}
+        </div>
+      </div>
+
+      {/* Rodapé da Sidebar */}
+      <div className="p-2.5 border-t border-slate-800/80 bg-slate-950/80 flex items-center justify-between text-[11px] text-slate-500 shrink-0">
+        <button
+          type="button"
+          onClick={() => setShowClearAllModal(true)}
+          className="text-slate-400 hover:text-rose-400 flex items-center gap-1.5 transition-colors cursor-pointer py-1 px-1.5 rounded-lg hover:bg-slate-900"
+        >
+          <Trash2 className="w-3 h-3" />
+          <span>Limpar histórico</span>
+        </button>
+        <span className="font-mono text-[10px]">PGC Angola</span>
+      </div>
+    </div>
+  );
 
   return (
     <div 
       id="yohan-ai-workspace"
-      className="ai-accountant-page bg-slate-900 text-slate-100 font-sans select-text relative"
+      className="ai-accountant-page bg-slate-900 text-slate-100 font-sans select-text relative w-full flex-1 h-full min-h-0"
       style={{
         height: '100%',
         width: '100%',
         display: 'flex',
+        flexDirection: 'row',
         overflow: 'hidden',
-        boxSizing: 'border-box'
+        boxSizing: 'border-box',
+        minHeight: 0,
+        flex: 1
       }}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
@@ -1170,176 +1854,58 @@ function hashString(str: string): string {
         </div>
       )}
 
-      {/* CONVERSATIONS SIDEBAR / DRAWER */}
-      {/* 1. Mobile Backdrop (< 900px) */}
-      {!isDesktop && isHistoryOpen && (
-        <div
-          onClick={() => setIsHistoryOpen(false)}
-          className="fixed inset-0 bg-black/70 z-40 backdrop-blur-xs transition-opacity"
-        />
+      {/* SIDEBAR: DESKTOP (>=1024px) - Coluna lateral fixa à esquerda de ~280px */}
+      {isDesktop && isHistoryOpen && (
+        <aside
+          style={{ width: 280, minWidth: 280, maxWidth: 280 }}
+          className="h-full bg-slate-950 border-r border-slate-800 flex flex-col shrink-0 transition-all duration-200 ease-out z-20"
+        >
+          {renderSidebarContent(false)}
+        </aside>
       )}
 
-      {/* 2. Sidebar Column: 300px on desktop (in-flow), or overlay drawer on mobile */}
-      {(isHistoryOpen || isDesktop) && (
-        <aside
-          style={{ width: 300, minWidth: 300, maxWidth: 300 }}
-          className={`h-full bg-slate-950 border-r border-slate-800 flex flex-col shrink-0 transition-all duration-300 ${
-            isDesktop
-              ? (isHistoryOpen ? 'flex' : 'hidden')
-              : (isHistoryOpen ? 'fixed inset-y-0 left-0 z-50 shadow-2xl flex' : 'hidden')
-          }`}
-        >
-          {/* Sidebar Header */}
-          <div className="p-4 border-b border-slate-800 flex items-center justify-between shrink-0">
-            <div className="flex items-center gap-2">
-              <YohanLogo size={18} />
-              <h2 className="text-sm font-bold text-white">Conversas</h2>
-            </div>
-
-            <div className="flex items-center gap-1">
-              <button
-                type="button"
-                onClick={handleCreateNewConversation}
-                className="p-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white transition-colors cursor-pointer"
-                title="Nova Conversa"
-              >
-                <Plus className="w-3.5 h-3.5" />
-              </button>
-              <button
-                type="button"
+      {/* DRAWER: MOBILE (<1024px) - Gaveta deslizante 85% com animação suave */}
+      {!isDesktop && (
+        <AnimatePresence>
+          {isHistoryOpen && (
+            <>
+              {/* Overlay / Backdrop que fecha ao tocar */}
+              <motion.div
+                key="drawer-overlay"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.22, ease: 'easeOut' }}
                 onClick={() => setIsHistoryOpen(false)}
-                className="p-1.5 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-white transition-colors cursor-pointer"
-                title="Fechar Painel"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-          </div>
-
-          {/* Search Conversations */}
-          <div className="p-3 border-b border-slate-800/80 shrink-0">
-            <div className="relative">
-              <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-              <input
-                type="text"
-                value={historySearchQuery}
-                onChange={(e) => setHistorySearchQuery(e.target.value)}
-                placeholder="Pesquisar histórico..."
-                className="w-full bg-slate-900 border border-slate-800 rounded-xl pl-8 pr-3 py-1.5 text-xs text-white placeholder:text-slate-500 focus:outline-none focus:border-indigo-500"
+                className="fixed inset-0 bg-black/60 z-40 backdrop-blur-xs"
               />
-            </div>
-          </div>
 
-          {/* Conversations List */}
-          <div className="flex-1 min-h-0 overflow-y-auto p-2 space-y-1 scrollbar-thin">
-            {filteredConversations.length === 0 ? (
-              <div className="p-6 text-center text-xs text-slate-500">
-                Nenhuma conversa encontrada.
-              </div>
-            ) : (
-              filteredConversations.map((conv) => {
-                const isActive = conv.id === activeConvId;
-                const isEditing = editingConvId === conv.id;
-
-                return (
-                  <div
-                    key={conv.id}
-                    onClick={() => handleSelectConversation(conv.id)}
-                    className={`group relative flex flex-col p-2.5 rounded-xl transition-all cursor-pointer border ${
-                      isActive
-                        ? 'bg-indigo-950/40 border-indigo-500/40 text-white shadow-xs'
-                        : 'bg-transparent border-transparent hover:bg-slate-900 text-slate-300 hover:text-white'
-                    }`}
-                  >
-                    {isEditing ? (
-                      <div className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
-                        <input
-                          type="text"
-                          value={editConvTitle}
-                          onChange={(e) => setEditConvTitle(e.target.value)}
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter') handleSaveRename(conv.id);
-                            if (e.key === 'Escape') setEditingConvId(null);
-                          }}
-                          autoFocus
-                          className="flex-1 bg-slate-900 border border-indigo-500 rounded px-2 py-0.5 text-xs text-white"
-                        />
-                        <button
-                          type="button"
-                          onClick={() => handleSaveRename(conv.id)}
-                          className="p-1 text-emerald-400 hover:text-emerald-300"
-                        >
-                          <Check className="w-3.5 h-3.5" />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setEditingConvId(null)}
-                          className="p-1 text-slate-400 hover:text-slate-300"
-                        >
-                          <X className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-                    ) : (
-                      <>
-                        <div className="flex items-center justify-between gap-1">
-                          <span className="text-xs font-bold truncate flex-1">{conv.title}</span>
-                          <div className="opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-0.5">
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setEditingConvId(conv.id);
-                                setEditConvTitle(conv.title);
-                              }}
-                              className="p-1 hover:text-indigo-300 text-slate-400"
-                              title="Renomear"
-                            >
-                              <Edit3 className="w-3 h-3" />
-                            </button>
-                            <button
-                              type="button"
-                              onClick={(e) => handleDeleteConversation(conv.id, e)}
-                              className="p-1 hover:text-red-400 text-slate-400"
-                              title="Apagar conversa"
-                            >
-                              <Trash2 className="w-3 h-3" />
-                            </button>
-                          </div>
-                        </div>
-                        <div className="flex items-center justify-between text-[10px] text-slate-500 mt-1">
-                          <span>{conv.messages.length} msg{conv.messages.length !== 1 ? 's' : ''}</span>
-                          <span className="font-mono">{new Date(conv.updatedAt).toLocaleDateString([], { day: '2-digit', month: '2-digit' })}</span>
-                        </div>
-                      </>
-                    )}
-                  </div>
-                );
-              })
-            )}
-          </div>
-
-          {/* Sidebar Footer */}
-          <div className="p-3 border-t border-slate-800 bg-slate-950/60 flex items-center justify-between shrink-0">
-            <button
-              type="button"
-              onClick={() => setShowClearAllModal(true)}
-              className="text-xs text-rose-400 hover:text-rose-300 flex items-center gap-1.5 transition-colors cursor-pointer"
-            >
-              <Trash2 className="w-3 h-3" />
-              <span>Limpar todas</span>
-            </button>
-            <span className="text-[10px] text-slate-500 font-mono">v3.7 PGC</span>
-          </div>
-        </aside>
+              {/* Drawer Gaveta */}
+              <motion.aside
+                key="drawer-panel"
+                initial={{ x: '-100%' }}
+                animate={{ x: 0 }}
+                exit={{ x: '-100%' }}
+                transition={{ duration: 0.22, ease: 'easeOut' }}
+                className="fixed inset-y-0 left-0 z-50 shadow-2xl flex flex-col bg-slate-950 border-r border-slate-800"
+                style={{ width: '85%', maxWidth: '340px' }}
+              >
+                {renderSidebarContent(true)}
+              </motion.aside>
+            </>
+          )}
+        </AnimatePresence>
       )}
 
       {/* MAIN CHAT COLUMN */}
       <div 
         className="flex-1 flex flex-col min-w-0 min-h-0 h-full overflow-hidden relative"
-        style={{ flex: 1, minWidth: 0, minHeight: 0, display: 'flex', flexDirection: 'column' }}
+        style={{ flex: 1, minWidth: 0, minHeight: 0, display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}
       >
         {/* TOP BAR WITH DYNAMIC GENERATION GRADIENT ANIMATION */}
-        <header className={`w-full bg-slate-950 border-b relative overflow-hidden shrink-0 transition-all duration-500 py-2.5 sm:py-3 ${
+        <header 
+          style={{ flexShrink: 0 }}
+          className={`w-full bg-slate-950 border-b relative overflow-hidden shrink-0 transition-all duration-500 py-2.5 sm:py-3 ${
           isLoading || isDocGenerating || isSheetGenerating || isPptGenerating || isVizGenerating || isTaxAuditing
             ? 'border-indigo-500/50 shadow-lg shadow-indigo-500/10'
             : 'border-slate-800'
@@ -1354,17 +1920,72 @@ function hashString(str: string): string {
             <div className="absolute bottom-0 left-0 right-0 h-[2px] bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 animate-pulse" />
           )}
 
-          <div className="chat-messages flex flex-wrap items-center justify-between gap-2.5 relative z-10 min-w-0">
+          {/* MOBILE HEADER (<1024px): 1. MENU NAVEGAÇÃO, 2. ÍCONE HISTÓRICO, 3. LOGO + TÍTULO + BADGE PGC, 4. BOTÃO "+" NOVA CONVERSA */}
+          <div className="flex lg:hidden items-center justify-between w-full px-2.5 py-1.5 relative z-10 min-w-0 select-none">
+            {/* Esquerda: 1. Menu Navegação Principal + 2. Ícone de Histórico de Conversas */}
+            <div className="flex items-center gap-1 shrink-0">
+              {/* 1. Menu Navegação Principal (abre a sidebar mobile da app) */}
+              <button
+                type="button"
+                onClick={handleOpenNav}
+                className="p-2 rounded-xl bg-slate-850 hover:bg-slate-800 text-slate-300 hover:text-white border border-slate-750 transition-all cursor-pointer flex items-center justify-center shrink-0 min-w-[36px] min-h-[36px]"
+                title="Menu de navegação"
+                aria-label="Abrir menu de navegação"
+              >
+                <Menu className="w-4 h-4 text-slate-200" />
+              </button>
+
+              {/* 2. Ícone de histórico (abre o drawer de histórico do Yohan) */}
+              <button
+                type="button"
+                onClick={() => setIsHistoryOpen(prev => !prev)}
+                className="p-2 rounded-xl bg-slate-850 hover:bg-slate-800 text-slate-300 hover:text-white border border-slate-750 transition-all cursor-pointer flex items-center justify-center shrink-0 min-w-[36px] min-h-[36px]"
+                title="Histórico de conversas"
+                aria-label="Abrir histórico de conversas"
+              >
+                <History className="w-4 h-4 text-indigo-400" />
+              </button>
+            </div>
+
+            {/* Centro: 3. Avatar + "Yohan AI" + badge "PGC Angola" compacto centrado */}
+            <div className="flex items-center gap-1.5 min-w-0 mx-auto justify-center px-1">
+              <div className="w-6 h-6 rounded-lg flex items-center justify-center bg-slate-900 border border-indigo-500/40 p-0.5 shadow-xs shrink-0">
+                <YohanLogo size={16} showGlow={false} />
+              </div>
+              <h1 className="text-sm font-black tracking-tight text-white truncate">
+                Yohan AI
+              </h1>
+              <span className="px-1.5 py-0.5 text-[9px] font-extrabold uppercase tracking-wider rounded-md border bg-indigo-500/20 text-indigo-300 border-indigo-500/30 shrink-0">
+                PGC Angola
+              </span>
+            </div>
+
+            {/* Direita: 4. Botão "+" (nova conversa) */}
+            <div className="flex items-center shrink-0">
+              <button
+                type="button"
+                onClick={handleCreateNewConversation}
+                className="p-2 rounded-xl bg-slate-850 hover:bg-slate-800 text-slate-300 hover:text-white border border-slate-750 transition-all cursor-pointer flex items-center justify-center shrink-0 min-w-[36px] min-h-[36px]"
+                title="Nova conversa"
+                aria-label="Nova conversa"
+              >
+                <Plus className="w-4 h-4 text-indigo-400" />
+              </button>
+            </div>
+          </div>
+
+          {/* DESKTOP HEADER (>=1024px) - MANTÉM TODAS AS ABAS E FERRAMENTAS VISÍVEIS NO TOPO */}
+          <div className="hidden lg:flex chat-messages items-center justify-between gap-3 relative z-10 min-w-0">
             <div className="flex items-center gap-3 shrink-0">
-              {/* Sidebar toggle button */}
               <button
                 type="button"
                 onClick={() => setIsHistoryOpen(prev => !prev)}
                 className="p-2 rounded-xl bg-slate-800/90 hover:bg-slate-750 text-slate-300 hover:text-white border border-slate-700 transition-all cursor-pointer flex items-center gap-1.5 shrink-0"
-                title="Alternar painel de conversas"
+                title={!isHistoryOpen ? "Expandir histórico (Ctrl+K)" : "Recolher histórico"}
+                aria-label="Alternar histórico de conversas"
               >
-                <Menu className="w-4 h-4 text-indigo-400" />
-                <span className="text-xs font-semibold hidden sm:inline">Histórico</span>
+                <History className="w-4 h-4 text-indigo-400" />
+                <span className="text-xs font-semibold">Histórico</span>
               </button>
 
               <div className="flex items-center gap-2.5 min-w-0">
@@ -1373,163 +1994,130 @@ function hashString(str: string): string {
                     isActive={isLoading || isDocGenerating || isSheetGenerating || isPptGenerating || isVizGenerating || isTaxAuditing} 
                     label="Yohan AI a processar consulta contabilística"
                   />
-                  <div className={`w-9 h-9 rounded-xl flex items-center justify-center bg-slate-900 border border-indigo-500/40 p-1 shadow-md transition-all relative z-10 ${
-                    isLoading || isDocGenerating || isSheetGenerating || isPptGenerating || isVizGenerating || isTaxAuditing
-                      ? 'shadow-indigo-500/40 animate-pulse ring-2 ring-indigo-400/50'
-                      : 'shadow-indigo-500/20'
-                  }`}>
+                  <div className="w-9 h-9 rounded-xl flex items-center justify-center bg-slate-900 border border-indigo-500/40 p-1 shadow-md relative z-10">
                     <YohanLogo size={24} showGlow={true} />
                   </div>
                 </div>
                 <div className="min-w-0">
                   <div className="flex items-center gap-2">
-                    <h1 className="text-sm sm:text-base font-black tracking-tight text-white flex items-center gap-1.5 truncate">
+                    <h1 className="text-base font-black tracking-tight text-white flex items-center gap-1.5 truncate">
                       Yohan AI
                     </h1>
-                    <span className={`px-2 py-0.5 text-[10px] font-extrabold uppercase tracking-wider rounded-full border transition-all flex items-center gap-1 shrink-0 ${
-                      isLoading || isDocGenerating || isSheetGenerating
-                        ? 'bg-indigo-500/30 text-indigo-200 border-indigo-400/60 shadow-xs shadow-indigo-500/30 animate-pulse'
-                        : 'bg-indigo-500/20 text-indigo-300 border-indigo-500/30'
-                    }`}>
-                      {(isLoading || isDocGenerating || isSheetGenerating) && <span className="animate-spin text-[10px]">✨</span>}
+                    <span className="px-2 py-0.5 text-[10px] font-extrabold uppercase tracking-wider rounded-full border bg-indigo-500/20 text-indigo-300 border-indigo-500/30 shrink-0">
                       PGC Angola
                     </span>
                   </div>
-                  <p className="text-[11px] text-slate-400 font-medium hidden sm:block truncate">
+                  <p className="text-[11px] text-slate-400 font-medium truncate">
                     {isLoading ? '✨ A analisar o PGC Angola e a redigir...' : 'Consultor & Auditor Contabilístico Sénior'}
                   </p>
                 </div>
               </div>
             </div>
 
-            {/* MODE SELECTOR TABS & TOOLS */}
-            <div className="relative w-full md:w-auto min-w-0 max-w-full overflow-hidden">
-              <div 
-                className="flex items-center gap-2 overflow-x-auto pb-1 sm:pb-0 snap-x snap-proximity [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-                style={{
-                  display: 'flex',
-                  flexWrap: 'nowrap',
-                  overflowX: 'auto',
-                  WebkitOverflowScrolling: 'touch',
-                  scrollSnapType: 'x proximity',
-                  scrollbarWidth: 'none',
-                  msOverflowStyle: 'none'
-                }}
+            {/* BARRA DE ABAS NO DESKTOP (>1024px) */}
+            <div className="flex items-center gap-1.5 min-w-0">
+              <button
+                type="button"
+                onClick={() => setActiveMode('chat')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 shrink-0 cursor-pointer ${
+                  activeMode === 'chat'
+                    ? 'bg-indigo-600 text-white shadow-xs'
+                    : 'bg-slate-800/80 text-slate-300 hover:bg-slate-800 hover:text-white'
+                }`}
               >
-                <button
-                  type="button"
-                  onClick={() => setActiveMode('chat')}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 shrink-0 snap-start cursor-pointer ${
-                    activeMode === 'chat'
-                      ? 'bg-indigo-600 text-white shadow-xs'
-                      : 'bg-slate-800/80 text-slate-300 hover:bg-slate-800 hover:text-white'
-                  }`}
-                  style={{ flexShrink: 0, scrollSnapAlign: 'start' }}
-                >
-                  <MessageSquare className="w-3.5 h-3.5 shrink-0" />
-                  <span className="whitespace-nowrap">Chat PGC</span>
-                </button>
+                <MessageSquare className="w-3.5 h-3.5 shrink-0" />
+                <span className="whitespace-nowrap">Chat PGC</span>
+              </button>
 
-                <button
-                  type="button"
-                  onClick={() => setActiveMode('document')}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 shrink-0 snap-start cursor-pointer ${
-                    activeMode === 'document'
-                      ? 'bg-indigo-600 text-white shadow-xs'
-                      : 'bg-slate-800/80 text-slate-300 hover:bg-slate-800 hover:text-white'
-                  }`}
-                  style={{ flexShrink: 0, scrollSnapAlign: 'start' }}
-                >
-                  <FileText className="w-3.5 h-3.5 shrink-0" />
-                  <span className="whitespace-nowrap">Word</span>
-                </button>
+              <button
+                type="button"
+                onClick={() => setActiveMode('document')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 shrink-0 cursor-pointer ${
+                  activeMode === 'document'
+                    ? 'bg-indigo-600 text-white shadow-xs'
+                    : 'bg-slate-800/80 text-slate-300 hover:bg-slate-800 hover:text-white'
+                }`}
+              >
+                <FileText className="w-3.5 h-3.5 shrink-0" />
+                <span className="whitespace-nowrap">Word</span>
+              </button>
 
-                <button
-                  type="button"
-                  onClick={() => setActiveMode('spreadsheet')}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 shrink-0 snap-start cursor-pointer ${
-                    activeMode === 'spreadsheet'
-                      ? 'bg-indigo-600 text-white shadow-xs'
-                      : 'bg-slate-800/80 text-slate-300 hover:bg-slate-800 hover:text-white'
-                  }`}
-                  style={{ flexShrink: 0, scrollSnapAlign: 'start' }}
-                >
-                  <Grid className="w-3.5 h-3.5 shrink-0" />
-                  <span className="whitespace-nowrap">Excel</span>
-                </button>
+              <button
+                type="button"
+                onClick={() => setActiveMode('spreadsheet')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 shrink-0 cursor-pointer ${
+                  activeMode === 'spreadsheet'
+                    ? 'bg-indigo-600 text-white shadow-xs'
+                    : 'bg-slate-800/80 text-slate-300 hover:bg-slate-800 hover:text-white'
+                }`}
+              >
+                <Grid className="w-3.5 h-3.5 shrink-0" />
+                <span className="whitespace-nowrap">Excel</span>
+              </button>
 
-                <button
-                  type="button"
-                  onClick={() => setActiveMode('presentation')}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 shrink-0 snap-start cursor-pointer ${
-                    activeMode === 'presentation'
-                      ? 'bg-indigo-600 text-white shadow-xs'
-                      : 'bg-slate-800/80 text-slate-300 hover:bg-slate-800 hover:text-white'
-                  }`}
-                  style={{ flexShrink: 0, scrollSnapAlign: 'start' }}
-                >
-                  <Presentation className="w-3.5 h-3.5 shrink-0" />
-                  <span className="whitespace-nowrap">Slides</span>
-                </button>
+              <button
+                type="button"
+                onClick={() => setActiveMode('presentation')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 shrink-0 cursor-pointer ${
+                  activeMode === 'presentation'
+                    ? 'bg-indigo-600 text-white shadow-xs'
+                    : 'bg-slate-800/80 text-slate-300 hover:bg-slate-800 hover:text-white'
+                }`}
+              >
+                <Presentation className="w-3.5 h-3.5 shrink-0" />
+                <span className="whitespace-nowrap">Slides</span>
+              </button>
 
-                <button
-                  type="button"
-                  onClick={() => setActiveMode('visualization')}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 shrink-0 snap-start cursor-pointer ${
-                    activeMode === 'visualization'
-                      ? 'bg-indigo-600 text-white shadow-xs'
-                      : 'bg-slate-800/80 text-slate-300 hover:bg-slate-800 hover:text-white'
-                  }`}
-                  style={{ flexShrink: 0, scrollSnapAlign: 'start' }}
-                >
-                  <BarChart3 className="w-3.5 h-3.5 shrink-0" />
-                  <span className="whitespace-nowrap">Diagramas</span>
-                </button>
+              <button
+                type="button"
+                onClick={() => setActiveMode('visualization')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 shrink-0 cursor-pointer ${
+                  activeMode === 'visualization'
+                    ? 'bg-indigo-600 text-white shadow-xs'
+                    : 'bg-slate-800/80 text-slate-300 hover:bg-slate-800 hover:text-white'
+                }`}
+              >
+                <BarChart3 className="w-3.5 h-3.5 shrink-0" />
+                <span className="whitespace-nowrap">Diagramas</span>
+              </button>
 
-                <button
-                  type="button"
-                  onClick={() => setActiveMode('tax-review')}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 shrink-0 snap-start cursor-pointer ${
-                    activeMode === 'tax-review'
-                      ? 'bg-indigo-600 text-white shadow-xs'
-                      : 'bg-slate-800/80 text-slate-300 hover:bg-slate-800 hover:text-white'
-                  }`}
-                  style={{ flexShrink: 0, scrollSnapAlign: 'start' }}
-                >
-                  <ShieldCheck className="w-3.5 h-3.5 shrink-0" />
-                  <span className="whitespace-nowrap">Auditoria</span>
-                </button>
+              <button
+                type="button"
+                onClick={() => setActiveMode('tax-review')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 shrink-0 cursor-pointer ${
+                  activeMode === 'tax-review'
+                    ? 'bg-indigo-600 text-white shadow-xs'
+                    : 'bg-slate-800/80 text-slate-300 hover:bg-slate-800 hover:text-white'
+                }`}
+              >
+                <ShieldCheck className="w-3.5 h-3.5 shrink-0" />
+                <span className="whitespace-nowrap">Auditoria</span>
+              </button>
 
-                {/* QUICK TOOLS MODAL TRIGGER */}
-                <button
-                  type="button"
-                  onClick={() => setShowGlossaryModal(true)}
-                  className="px-2.5 py-1.5 rounded-lg text-xs font-bold bg-slate-800/90 hover:bg-slate-750 text-indigo-300 hover:text-indigo-200 border border-slate-700 transition-all flex items-center gap-1 cursor-pointer shrink-0 snap-start"
-                  style={{ flexShrink: 0, scrollSnapAlign: 'start' }}
-                  title="Pesquisar contas, regras e glossário do PGC"
-                >
-                  <BookOpen className="w-3.5 h-3.5 shrink-0" />
-                  <span className="whitespace-nowrap">Glossário & Contas PGC</span>
-                </button>
-
-                {/* Spacer 24px no fim da lista para nunca cortar o último item */}
-                <div className="w-6 shrink-0" style={{ flexShrink: 0, width: 24 }} aria-hidden="true" />
-              </div>
-
-              {/* Fade sutil de 24px na borda direita */}
-              <div 
-                className="absolute right-0 top-0 bottom-0 w-6 pointer-events-none z-10 bg-gradient-to-l from-slate-950 via-slate-950/80 to-transparent dark:from-slate-950" 
-                aria-hidden="true" 
-              />
+              <button
+                type="button"
+                onClick={() => setShowGlossaryModal(true)}
+                className="px-2.5 py-1.5 rounded-lg text-xs font-bold bg-slate-800/90 hover:bg-slate-750 text-indigo-300 hover:text-indigo-200 border border-slate-700 transition-all flex items-center gap-1 cursor-pointer shrink-0"
+                title="Pesquisar contas, regras e glossário do PGC"
+              >
+                <BookOpen className="w-3.5 h-3.5 shrink-0" />
+                <span className="whitespace-nowrap">Glossário & Contas PGC</span>
+              </button>
             </div>
           </div>
         </header>
 
         {/* WORKSPACE CONTENT */}
-        <main className="flex-1 min-h-0 overflow-hidden relative flex flex-col">
+        <main 
+          className="flex-1 min-h-0 overflow-hidden relative flex flex-col"
+          style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}
+        >
           {/* TAB 1: CHAT */}
           {activeMode === 'chat' && (
-            <div className="ai-chat-area flex-1 flex flex-col min-h-0 overflow-hidden">
+            <div 
+              className="ai-chat-area flex-1 flex flex-col min-h-0 overflow-hidden"
+              style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}
+            >
               {/* TWO-PHASE GENERATION PROGRESS BANNER */}
               {docProgress && (
                 <div className="w-full bg-indigo-950/90 border-b border-indigo-500/30 py-2.5 shrink-0 z-10 shadow-md">
@@ -1553,191 +2141,505 @@ function hashString(str: string): string {
                 </div>
               )}
 
-              {/* MESSAGES VIRTUALIZED / SCROLL LIST */}
-              <VirtualizedChatMessagesList
-                messages={messages.map(m => ({
-                  id: m.id,
-                  role: m.role,
-                  content: m.content,
-                  timestamp: m.timestamp,
-                  rating: (m as any).feedback || undefined,
-                  edited: m.edited,
-                  editedAt: m.editedAt,
-                  attachedFile: m.attachedFile
-                }))}
-                isGenerating={isLoading}
-                copiedId={copiedId}
-                speakingMsgId={speakingMessageId}
-                onCopy={handleCopy}
-                onSpeak={(text, id) => handleToggleSpeech(id, text)}
-                onFeedback={handleFeedback}
-                onEditMessage={handleEditMessage}
-                onDeleteMessage={handleDeleteMessage}
-                onQuickSearchInsert={(term) => {
-                  setInputMessage(prev => prev ? `${prev} ${term}` : term);
-                }}
-                onContinueMessage={() => {
-                  handleSendMessage(undefined, 'Continua exactamente de onde paraste, sem repetir o que já foi dito.');
-                }}
-              />
-
-              {/* PROMPT TEMPLATES QUICK CHIPS */}
-              <div className="w-full bg-slate-950/60 border-t border-slate-800/60 shrink-0 py-2">
-                <div className="chat-messages relative min-w-0">
-                  <div 
-                    className="flex items-center gap-2 overflow-x-auto snap-x snap-proximity [scrollbar-width:none] [&::-webkit-scrollbar]:hidden py-0.5"
-                    style={{
-                      display: 'flex',
-                      flexWrap: 'nowrap',
-                      overflowX: 'auto',
-                      WebkitOverflowScrolling: 'touch',
-                      scrollSnapType: 'x proximity',
-                      scrollbarWidth: 'none',
-                      msOverflowStyle: 'none'
-                    }}
-                  >
-                    <span 
-                      className="text-[10px] uppercase tracking-wider font-extrabold text-slate-500 shrink-0 snap-start select-none"
-                      style={{ flexShrink: 0, scrollSnapAlign: 'start' }}
-                    >
-                      Modelos:
-                    </span>
-                    {PROMPT_TEMPLATES.slice(0, 5).map((t, idx) => (
-                      <button
-                        key={idx}
-                        type="button"
-                        onClick={() => handleSendMessage(undefined, t.prompt)}
-                        className="px-2.5 py-1 rounded-lg bg-slate-800/80 hover:bg-slate-750 text-slate-300 hover:text-white border border-slate-700/80 text-[11px] font-medium shrink-0 snap-start transition-all flex items-center gap-1.5 cursor-pointer active:scale-95"
-                        style={{ flexShrink: 0, scrollSnapAlign: 'start' }}
-                      >
-                        <span className="shrink-0">{t.icon}</span>
-                        <span className="whitespace-nowrap">{t.title}</span>
-                      </button>
-                    ))}
-                    <button
-                      type="button"
-                      onClick={() => setShowTemplatesModal(true)}
-                      className="px-2.5 py-1 rounded-lg bg-indigo-950/50 hover:bg-indigo-900/60 text-indigo-300 border border-indigo-500/30 text-[11px] font-bold shrink-0 snap-start transition-all flex items-center gap-1 cursor-pointer"
-                      style={{ flexShrink: 0, scrollSnapAlign: 'start' }}
-                    >
-                      <Sparkles className="w-3 h-3 shrink-0" />
-                      <span className="whitespace-nowrap">Ver Todos</span>
-                    </button>
-
-                    {/* Spacer 24px no fim da lista para nunca cortar o último item */}
-                    <div className="w-6 shrink-0" style={{ flexShrink: 0, width: 24 }} aria-hidden="true" />
+              {/* SELEÇÃO DE ESTADO: VAZIO CENTRADO (SEM MENSAGENS) VS VISTA DE CONVERSA */}
+              {!hasUserMessages ? (
+                /* 1. ESTADO VAZIO (<1024px E DESKTOP): ECRÃ CENTRADO VERTICALMENTE ESTILO CLAUDE */
+                <div className="flex-1 flex flex-col items-center justify-center px-4 py-8 text-center max-w-2xl mx-auto w-full my-auto overflow-y-auto">
+                  {/* Logo/Ícone do Yohan com Glow */}
+                  <div className="relative mb-3.5">
+                    <SparklingAiAura isActive={true} label="Yohan AI pronto para responder" />
+                    <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-2xl flex items-center justify-center bg-slate-950 border border-indigo-500/50 p-2 shadow-xl shadow-indigo-500/20 relative z-10">
+                      <YohanLogo size={40} showGlow={true} />
+                    </div>
                   </div>
 
-                  {/* Fade sutil de 24px na borda direita */}
-                  <div 
-                    className="absolute right-0 top-0 bottom-0 w-6 pointer-events-none z-10 bg-gradient-to-l from-slate-950 via-slate-950/80 to-transparent dark:from-slate-950" 
-                    aria-hidden="true" 
-                  />
-                </div>
-              </div>
+                  {/* Saudação Curta Oficial */}
+                  <h2 className="text-lg sm:text-2xl font-black text-white tracking-tight mb-1.5">
+                    Como posso ajudar com a contabilidade hoje?
+                  </h2>
+                  <p className="text-xs sm:text-sm text-slate-400 max-w-md mx-auto mb-6 leading-relaxed">
+                    Especialista no PGC Angola (Decreto n.º 82/01), IVA 14%, Imposto Industrial, fecho de contas e conformidade AGT.
+                  </p>
 
-              {/* INPUT CONTAINER */}
-              <div className="ai-input-container w-full bg-slate-950 border-t border-slate-800 shrink-0 py-3 sm:py-4">
-                <div className="chat-messages flex flex-col gap-2">
-                  {/* ATTACHED FILE PREVIEW */}
-                  {attachedFile && (
-                    <div className="w-full mb-1 flex items-center justify-between px-3 py-1.5 bg-indigo-950/70 border border-indigo-500/40 rounded-xl text-xs text-indigo-200">
-                      <div className="flex items-center gap-2">
-                        <Paperclip className="w-3.5 h-3.5 text-indigo-400" />
-                        <span className="font-semibold">{attachedFile.name}</span>
-                        {attachedFile.size && (
-                          <span className="text-[10px] text-indigo-400">({Math.round(attachedFile.size / 1024)} KB)</span>
-                        )}
+                  {/* Barra de Input Estilo Claude Integrada no Centro */}
+                  <div className="w-full max-w-xl text-left mb-6">
+                    {/* Campo de Input Arredondado */}
+                    <div className="bg-slate-900 border border-slate-700/80 hover:border-slate-650 focus-within:border-indigo-500/80 focus-within:ring-2 focus-within:ring-indigo-500/20 rounded-2xl sm:rounded-3xl p-2.5 sm:p-3.5 shadow-xl shadow-black/30 transition-all">
+                      {/* Topo do Input: Pill de Modo e Seletor Rápido/Detalhado */}
+                      <div className="flex items-center justify-between gap-2 px-1 pb-2 border-b border-slate-800/80 mb-2">
+                        {/* Botão indicador de modo / gatilho de ferramentas */}
+                        <button
+                          type="button"
+                          onClick={() => setShowToolsModal(true)}
+                          className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-indigo-950/70 hover:bg-indigo-900/90 text-indigo-300 border border-indigo-500/40 text-[11px] font-bold transition-all cursor-pointer select-none"
+                          title="Alterar ferramenta ou modo de trabalho"
+                        >
+                          <Wrench className="w-3.5 h-3.5 text-indigo-400" />
+                          <span>{getActiveModeLabel(activeMode)}</span>
+                          <ChevronUp className="w-3 h-3 text-indigo-400" />
+                        </button>
+
+                        {/* Seletor Rápido/Detalhado como pill pequena anexada ao input */}
+                        <div className="relative">
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setShowQualityMenu(prev => !prev);
+                            }}
+                            className="flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-lg bg-slate-800 hover:bg-slate-750 text-slate-300 border border-slate-700 transition-all cursor-pointer select-none"
+                            title="Modo de resposta: Rápido vs Detalhado (Raciocínio PGC profundo)"
+                          >
+                            <Sparkles className="w-3 h-3 text-amber-400" />
+                            <span className="text-slate-400 font-normal hidden xs:inline">Modo:</span>
+                            <span className={qualityMode === 'detailed' ? 'text-indigo-300 font-bold' : 'text-emerald-400 font-bold'}>
+                              {qualityMode === 'detailed' ? 'Detalhado' : 'Rápido'}
+                            </span>
+                            <ChevronUp className={`w-3 h-3 text-slate-400 transition-transform duration-200 ${showQualityMenu ? 'rotate-180' : ''}`} />
+                          </button>
+
+                          {showQualityMenu && (
+                            <div
+                              onClick={(e) => e.stopPropagation()}
+                              className="absolute right-0 bottom-full mb-1.5 w-48 bg-slate-900 border border-slate-700/90 rounded-xl shadow-2xl p-1.5 z-50 flex flex-col gap-1 backdrop-blur-md text-left"
+                            >
+                              <div className="px-2 py-1 text-[10px] uppercase tracking-wider font-extrabold text-slate-500 border-b border-slate-800">
+                                Qualidade de Resposta
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => handleSetQualityMode('fast')}
+                                className={`w-full text-left px-2.5 py-1.5 rounded-lg text-xs flex items-center justify-between transition-colors cursor-pointer ${
+                                  qualityMode === 'fast' ? 'bg-indigo-600/25 text-indigo-300 font-bold border border-indigo-500/30' : 'text-slate-300 hover:bg-slate-800'
+                                }`}
+                              >
+                                <div>
+                                  <div className="font-semibold">Rápido</div>
+                                  <div className="text-[10px] text-slate-400 font-normal">Respostas imediatas</div>
+                                </div>
+                                {qualityMode === 'fast' && <Check className="w-3.5 h-3.5 text-indigo-400" />}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleSetQualityMode('detailed')}
+                                className={`w-full text-left px-2.5 py-1.5 rounded-lg text-xs flex items-center justify-between transition-colors cursor-pointer ${
+                                  qualityMode === 'detailed' ? 'bg-indigo-600/25 text-indigo-300 font-bold border border-indigo-500/30' : 'text-slate-300 hover:bg-slate-800'
+                                }`}
+                              >
+                                <div>
+                                  <div className="font-semibold">Detalhado</div>
+                                  <div className="text-[10px] text-slate-400 font-normal">Raciocínio profundo PGC</div>
+                                </div>
+                                {qualityMode === 'detailed' && <Check className="w-3.5 h-3.5 text-indigo-400" />}
+                              </button>
+                            </div>
+                          )}
+                        </div>
                       </div>
-                      <button
-                        type="button"
-                        onClick={() => setAttachedFile(null)}
-                        className="p-1 hover:text-white text-indigo-400 cursor-pointer"
-                      >
-                        <X className="w-3.5 h-3.5" />
-                      </button>
+
+                      {/* Attached file preview */}
+                      {attachedFile && (
+                        <div className="w-full mb-2 flex items-center justify-between px-3 py-1.5 bg-indigo-950/70 border border-indigo-500/40 rounded-xl text-xs text-indigo-200">
+                          <div className="flex items-center gap-2 truncate">
+                            <Paperclip className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
+                            <span className="font-semibold truncate">{attachedFile.name}</span>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => setAttachedFile(null)}
+                            className="p-1 hover:text-white text-indigo-400 cursor-pointer"
+                          >
+                            <X className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      )}
+
+                      {/* Main Textarea */}
+                      <form onSubmit={handleSendMessage} className="w-full flex flex-col gap-2">
+                        <textarea
+                          rows={2}
+                          value={inputMessage}
+                          onChange={(e) => setInputMessage(e.target.value)}
+                          onKeyDown={(e) => {
+                            const isSendShortcut = e.key === 'Enter' && (e.ctrlKey || e.metaKey);
+                            if (isSendShortcut) {
+                              e.preventDefault();
+                              handleSendMessage();
+                            }
+                          }}
+                          placeholder="Coloque a sua dúvida sobre lançamentos, PGC Angola, IVA, balancetes..."
+                          className="w-full bg-transparent border-0 px-2 py-1 text-sm text-white placeholder:text-slate-400 focus:outline-none focus:ring-0 resize-none min-h-[50px] max-h-36 font-sans leading-relaxed"
+                          disabled={isLoading}
+                        />
+
+                        {/* Barra Inferior com Botão +, Ferramentas e Enviar */}
+                        <div className="flex items-center justify-between gap-2 pt-1 border-t border-slate-800/40">
+                          <div className="flex items-center gap-1.5">
+                            {/* Input Oculto de Ficheiro */}
+                            <input
+                              type="file"
+                              ref={fileInputRef}
+                              onChange={(e) => {
+                                if (e.target.files && e.target.files.length > 0) {
+                                  handleFileUpload(e.target.files[0]);
+                                }
+                              }}
+                              className="hidden"
+                              accept=".pdf,.doc,.docx,.xls,.xlsx,.csv,.txt,.json"
+                            />
+
+                            {/* Botão "+" (Anexar) à esquerda */}
+                            <button
+                              type="button"
+                              onClick={() => fileInputRef.current?.click()}
+                              className="p-2 rounded-xl bg-slate-800 hover:bg-slate-750 text-slate-300 hover:text-white border border-slate-700/80 transition-all cursor-pointer flex items-center justify-center shrink-0 min-w-[36px] min-h-[36px]"
+                              title="Anexar documento (PDF, Word, Excel, TXT)"
+                              aria-label="Anexar documento"
+                            >
+                              <Plus className="w-4 h-4 text-indigo-400" />
+                            </button>
+
+                            {/* Botão "Ferramentas" */}
+                            <button
+                              type="button"
+                              onClick={() => setShowToolsModal(true)}
+                              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-750 text-slate-300 hover:text-white border border-slate-700/80 transition-all cursor-pointer text-xs font-semibold shrink-0"
+                              title="Menu de Ferramentas e Modos PGC"
+                              aria-label="Abrir menu de ferramentas"
+                            >
+                              <Wrench className="w-3.5 h-3.5 text-indigo-400" />
+                              <span className="hidden xs:inline">Ferramentas</span>
+                            </button>
+
+                            {/* Gravação de Voz */}
+                            <button
+                              type="button"
+                              onClick={handleToggleVoiceInput}
+                              className={`p-2 rounded-xl border transition-all cursor-pointer shrink-0 min-w-[36px] min-h-[36px] flex items-center justify-center ${
+                                isRecordingVoice
+                                  ? 'bg-rose-600 text-white border-rose-500 animate-pulse'
+                                  : 'bg-slate-800 hover:bg-slate-750 text-slate-300 hover:text-white border-slate-700/80'
+                              }`}
+                              title={isRecordingVoice ? 'Parar gravação' : 'Falar por voz'}
+                              aria-label={isRecordingVoice ? 'Parar gravação' : 'Falar por voz'}
+                            >
+                              {isRecordingVoice ? <MicOff className="w-4 h-4" /> : <Mic className="w-4 h-4" />}
+                            </button>
+                          </div>
+
+                          {/* Botão Enviar à direita */}
+                          <button
+                            type="submit"
+                            disabled={isLoading || (!inputMessage.trim() && !attachedFile)}
+                            className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 text-white font-bold rounded-xl text-xs flex items-center gap-1.5 transition-all shadow-md shadow-indigo-600/30 cursor-pointer shrink-0"
+                            aria-label="Enviar mensagem"
+                          >
+                            <Send className="w-3.5 h-3.5" />
+                            <span className="hidden sm:inline">Enviar</span>
+                          </button>
+                        </div>
+                      </form>
                     </div>
-                  )}
+                  </div>
 
-                  <form onSubmit={handleSendMessage} className="w-full flex items-center gap-2">
-                    {/* File Upload Button */}
-                    <input
-                      type="file"
-                      ref={fileInputRef}
-                      onChange={(e) => {
-                        if (e.target.files && e.target.files.length > 0) {
-                          handleFileUpload(e.target.files[0]);
-                        }
-                      }}
-                      className="hidden"
-                      accept=".pdf,.doc,.docx,.xls,.xlsx,.csv,.txt,.json"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => fileInputRef.current?.click()}
-                      className="p-2.5 rounded-xl bg-slate-800/90 hover:bg-slate-750 text-slate-300 hover:text-white border border-slate-700 transition-all cursor-pointer shrink-0"
-                      title="Anexar documento (PDF, Word, Excel, TXT)"
-                    >
-                      <Paperclip className="w-4 h-4" />
-                    </button>
+                  {/* Sugestões Rápidas */}
+                  <div className="w-full max-w-xl text-left">
+                    <p className="text-[10px] sm:text-[11px] font-bold uppercase tracking-wider text-slate-500 mb-2.5 text-center">
+                      Sugestões Rápidas PGC
+                    </p>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-left">
+                      {PROMPT_TEMPLATES.slice(0, 4).map((t, idx) => (
+                        <button
+                          key={idx}
+                          type="button"
+                          onClick={() => handleSendMessage(undefined, t.prompt)}
+                          className="p-2.5 rounded-xl bg-slate-850 hover:bg-slate-800 text-slate-300 hover:text-white border border-slate-700/60 hover:border-indigo-500/40 text-xs font-medium transition-all flex items-start gap-2.5 cursor-pointer active:scale-98 text-left group"
+                        >
+                          <span className="text-base shrink-0 group-hover:scale-110 transition-transform">{t.icon}</span>
+                          <div className="min-w-0">
+                            <span className="font-semibold block text-slate-200 truncate">{t.title}</span>
+                            <span className="text-[10px] text-slate-400 block truncate">{t.prompt}</span>
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                /* 2. VISTA DE CONVERSA COM MENSAGENS ACTIVAS */
+                <>
+                  {/* MESSAGES VIRTUALIZED / SCROLL LIST */}
+                  <VirtualizedChatMessagesList
+                    messages={messages.map(m => ({
+                      id: m.id,
+                      role: m.role,
+                      content: m.content,
+                      timestamp: m.timestamp,
+                      rating: (m as any).feedback || undefined,
+                      edited: m.edited,
+                      editedAt: m.editedAt,
+                      attachedFile: m.attachedFile
+                    }))}
+                    isGenerating={isLoading}
+                    copiedId={copiedId}
+                    speakingMsgId={speakingMessageId}
+                    regeneratingMsgId={regeneratingMsgId}
+                    onCopy={handleCopy}
+                    onSpeak={(text, id) => handleToggleSpeech(id, text)}
+                    onFeedback={handleFeedback}
+                    onRegenerate={handleRegenerateMessage}
+                    onEditMessage={handleEditMessage}
+                    onDeleteMessage={handleDeleteMessage}
+                    onQuickSearchInsert={(term) => {
+                      setInputMessage(prev => prev ? `${prev} ${term}` : term);
+                    }}
+                    onContinueMessage={() => {
+                      handleSendMessage(undefined, 'Continua exactamente de onde paraste, sem repetir o que já foi dito.');
+                    }}
+                  />
 
-                    {/* Microphone Voice Input */}
-                    <button
-                      type="button"
-                      onClick={handleToggleVoiceInput}
-                      className={`p-2.5 rounded-xl border transition-all cursor-pointer shrink-0 ${
-                        isRecordingVoice
-                          ? 'bg-rose-600 text-white border-rose-500 animate-pulse'
-                          : 'bg-slate-800/90 hover:bg-slate-750 text-slate-300 hover:text-white border-slate-700'
-                      }`}
-                      title={isRecordingVoice ? 'Parar gravação' : 'Falar por voz'}
-                    >
-                      {isRecordingVoice ? <MicOff className="w-4 h-4" /> : <Mic className="w-4 h-4" />}
-                    </button>
-
-                    {/* Main text input textarea (Enter for newline, Ctrl+Enter / Cmd+Enter to send) */}
-                    <div className="flex-1 flex flex-col">
-                      <textarea
-                        rows={1}
-                        value={inputMessage}
-                        onChange={(e) => setInputMessage(e.target.value)}
-                        onKeyDown={(e) => {
-                          const isSendShortcut = e.key === 'Enter' && (e.ctrlKey || e.metaKey);
-                          if (isSendShortcut) {
-                            e.preventDefault();
-                            handleSendMessage();
-                          }
-                          // Enter alone creates a new line normally
+                  {/* PROMPT TEMPLATES QUICK CHIPS (FILA MODELOS: SCROLL HORIZONTAL, ZERO CORTE A 360PX) */}
+                  <div 
+                    className="w-full bg-slate-950/80 border-t border-slate-800/60 shrink-0 py-2 select-none"
+                    style={{ flexShrink: 0 }}
+                  >
+                    <div className="chat-messages relative min-w-0 max-w-full">
+                      <div 
+                        className="flex items-center gap-2 overflow-x-auto snap-x snap-proximity py-0.5 w-full max-w-full min-w-0 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden [&::-webkit-scrollbar]:[display:none]"
+                        style={{
+                          display: 'flex',
+                          flexWrap: 'nowrap',
+                          overflowX: 'auto',
+                          WebkitOverflowScrolling: 'touch',
+                          scrollSnapType: 'x proximity',
+                          gap: '8px',
+                          maxWidth: '100%',
+                          scrollbarWidth: 'none',
+                          msOverflowStyle: 'none'
                         }}
-                        placeholder="Coloque a sua dúvida sobre lançamentos, PGC Angola, IVA, balancetes..."
-                        className="w-full bg-slate-800/90 border border-slate-700/80 rounded-xl px-4 py-2.5 text-sm text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all resize-none min-h-[42px] max-h-32 font-sans leading-relaxed"
-                        disabled={isLoading}
+                      >
+                        <span 
+                          className="text-[10px] uppercase tracking-wider font-extrabold text-slate-500 shrink-0 snap-start select-none"
+                          style={{ flexShrink: 0, scrollSnapAlign: 'start' }}
+                        >
+                          Modelos:
+                        </span>
+                        {PROMPT_TEMPLATES.map((t, idx) => (
+                          <button
+                            key={idx}
+                            type="button"
+                            onClick={() => handleSendMessage(undefined, t.prompt)}
+                            className="px-2.5 py-1 rounded-lg bg-slate-800/80 hover:bg-slate-750 text-slate-300 hover:text-white border border-slate-700/80 text-[11px] font-medium shrink-0 snap-start transition-all flex items-center gap-1.5 cursor-pointer active:scale-95"
+                            style={{ flexShrink: 0, scrollSnapAlign: 'start' }}
+                          >
+                            <span className="shrink-0">{t.icon}</span>
+                            <span className="whitespace-nowrap">{t.title}</span>
+                          </button>
+                        ))}
+                        <button
+                          type="button"
+                          onClick={() => setShowTemplatesModal(true)}
+                          className="px-2.5 py-1 rounded-lg bg-indigo-950/50 hover:bg-indigo-900/60 text-indigo-300 border border-indigo-500/30 text-[11px] font-bold shrink-0 snap-start transition-all flex items-center gap-1 cursor-pointer"
+                          style={{ flexShrink: 0, scrollSnapAlign: 'start' }}
+                        >
+                          <Sparkles className="w-3 h-3 shrink-0" />
+                          <span className="whitespace-nowrap">Ver Todos</span>
+                        </button>
+
+                        <div className="w-6 shrink-0 pr-6" style={{ flexShrink: 0, width: 24, paddingRight: 24 }} aria-hidden="true" />
+                      </div>
+
+                      {/* Fade na borda direita */}
+                      <div 
+                        className="absolute right-0 top-0 bottom-0 w-6 pointer-events-none z-10 bg-gradient-to-l from-slate-950 via-slate-950/80 to-transparent" 
+                        aria-hidden="true" 
                       />
                     </div>
+                  </div>
 
-                    {/* Send button */}
-                    <button
-                      type="submit"
-                      disabled={isLoading || (!inputMessage.trim() && !attachedFile)}
-                      className="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white font-bold rounded-xl text-xs flex items-center gap-1.5 transition-all shadow-md cursor-pointer shrink-0 self-end mb-0.5"
-                    >
-                      <Send className="w-3.5 h-3.5" />
-                      <span className="hidden sm:inline">Enviar</span>
-                    </button>
-                  </form>
+                  {/* BARRA DE INPUT ESTILO CLAUDE NO FUNDO */}
+                  <div 
+                    className="ai-input-container w-full bg-slate-950 border-t border-slate-800 shrink-0 py-2.5 sm:py-3.5"
+                    style={{ flexShrink: 0 }}
+                  >
+                    <div className="chat-messages">
+                      {/* Campo Arredondado Estilo Claude */}
+                      <div className="bg-slate-900 border border-slate-700/80 hover:border-slate-650 focus-within:border-indigo-500/80 focus-within:ring-2 focus-within:ring-indigo-500/20 rounded-2xl sm:rounded-3xl p-2.5 sm:p-3 shadow-lg shadow-black/25 transition-all">
+                        {/* Topo do Input: Pill de Modo e Seletor Rápido/Detalhado */}
+                        <div className="flex items-center justify-between gap-2 px-1 pb-1.5 border-b border-slate-800/80 mb-2">
+                          {/* Botão indicador de modo / ferramentas */}
+                          <button
+                            type="button"
+                            onClick={() => setShowToolsModal(true)}
+                            className="flex items-center gap-1.5 px-2 py-0.5 rounded-lg bg-indigo-950/70 hover:bg-indigo-900/90 text-indigo-300 border border-indigo-500/40 text-[11px] font-bold transition-all cursor-pointer select-none"
+                            title="Alterar ferramenta ou modo de trabalho"
+                          >
+                            <Wrench className="w-3 h-3 text-indigo-400" />
+                            <span className="truncate max-w-[120px] sm:max-w-none">{getActiveModeLabel(activeMode)}</span>
+                            <ChevronUp className="w-2.5 h-2.5 text-indigo-400" />
+                          </button>
 
-                  {/* Visual shortcut hint */}
-                  <p className="text-[10px] text-slate-500 text-center mt-1 font-medium select-none">
-                    <span className="font-semibold text-slate-400">Enter</span> para nova linha &middot; <span className="font-semibold text-slate-400">Ctrl+Enter</span> para enviar
-                  </p>
-                </div>
-              </div>
+                          {/* Seletor Rápido/Detalhado como pill pequena anexada ao input */}
+                          <div className="relative">
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setShowQualityMenu(prev => !prev);
+                              }}
+                              className="flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-lg bg-slate-800 hover:bg-slate-750 text-slate-300 border border-slate-700 transition-all cursor-pointer select-none"
+                              title="Modo de resposta: Rápido vs Detalhado"
+                            >
+                              <Sparkles className="w-3 h-3 text-amber-400" />
+                              <span className="text-slate-400 font-normal hidden xs:inline">Modo:</span>
+                              <span className={qualityMode === 'detailed' ? 'text-indigo-300 font-bold' : 'text-emerald-400 font-bold'}>
+                                {qualityMode === 'detailed' ? 'Detalhado' : 'Rápido'}
+                              </span>
+                              <ChevronUp className={`w-3 h-3 text-slate-400 transition-transform duration-200 ${showQualityMenu ? 'rotate-180' : ''}`} />
+                            </button>
+
+                            {showQualityMenu && (
+                              <div
+                                onClick={(e) => e.stopPropagation()}
+                                className="absolute right-0 bottom-full mb-1.5 w-48 bg-slate-900 border border-slate-700/90 rounded-xl shadow-2xl p-1.5 z-50 flex flex-col gap-1 backdrop-blur-md text-left"
+                              >
+                                <div className="px-2 py-1 text-[10px] uppercase tracking-wider font-extrabold text-slate-500 border-b border-slate-800">
+                                  Qualidade de Resposta
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => handleSetQualityMode('fast')}
+                                  className={`w-full text-left px-2.5 py-1.5 rounded-lg text-xs flex items-center justify-between transition-colors cursor-pointer ${
+                                    qualityMode === 'fast' ? 'bg-indigo-600/25 text-indigo-300 font-bold border border-indigo-500/30' : 'text-slate-300 hover:bg-slate-800'
+                                  }`}
+                                >
+                                  <div>
+                                    <div className="font-semibold">Rápido</div>
+                                    <div className="text-[10px] text-slate-400 font-normal">Respostas imediatas</div>
+                                  </div>
+                                  {qualityMode === 'fast' && <Check className="w-3.5 h-3.5 text-indigo-400" />}
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleSetQualityMode('detailed')}
+                                  className={`w-full text-left px-2.5 py-1.5 rounded-lg text-xs flex items-center justify-between transition-colors cursor-pointer ${
+                                    qualityMode === 'detailed' ? 'bg-indigo-600/25 text-indigo-300 font-bold border border-indigo-500/30' : 'text-slate-300 hover:bg-slate-800'
+                                  }`}
+                                >
+                                  <div>
+                                    <div className="font-semibold">Detalhado</div>
+                                    <div className="text-[10px] text-slate-400 font-normal">Raciocínio profundo PGC</div>
+                                  </div>
+                                  {qualityMode === 'detailed' && <Check className="w-3.5 h-3.5 text-indigo-400" />}
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Attached file preview */}
+                        {attachedFile && (
+                          <div className="w-full mb-2 flex items-center justify-between px-3 py-1.5 bg-indigo-950/70 border border-indigo-500/40 rounded-xl text-xs text-indigo-200">
+                            <div className="flex items-center gap-2 truncate">
+                              <Paperclip className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
+                              <span className="font-semibold truncate">{attachedFile.name}</span>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => setAttachedFile(null)}
+                              className="p-1 hover:text-white text-indigo-400 cursor-pointer"
+                            >
+                              <X className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        )}
+
+                        {/* Main Textarea */}
+                        <form onSubmit={handleSendMessage} className="w-full flex flex-col gap-2">
+                          <textarea
+                            rows={1}
+                            value={inputMessage}
+                            onChange={(e) => setInputMessage(e.target.value)}
+                            onKeyDown={(e) => {
+                              const isSendShortcut = e.key === 'Enter' && (e.ctrlKey || e.metaKey);
+                              if (isSendShortcut) {
+                                e.preventDefault();
+                                handleSendMessage();
+                              }
+                            }}
+                            placeholder="Coloque a sua dúvida sobre lançamentos, PGC Angola, IVA, balancetes..."
+                            className="w-full bg-transparent border-0 px-2 py-1 text-sm text-white placeholder:text-slate-400 focus:outline-none focus:ring-0 resize-none min-h-[44px] max-h-36 font-sans leading-relaxed"
+                            disabled={isLoading}
+                          />
+
+                          {/* Barra Inferior com Botão +, Ferramentas e Enviar */}
+                          <div className="flex items-center justify-between gap-2 pt-1 border-t border-slate-800/40">
+                            <div className="flex items-center gap-1.5">
+                              {/* Botão "+" (Anexar) à esquerda */}
+                              <button
+                                type="button"
+                                onClick={() => fileInputRef.current?.click()}
+                                className="p-2 rounded-xl bg-slate-800 hover:bg-slate-750 text-slate-300 hover:text-white border border-slate-700/80 transition-all cursor-pointer flex items-center justify-center shrink-0 min-w-[36px] min-h-[36px]"
+                                title="Anexar documento (PDF, Word, Excel, TXT)"
+                                aria-label="Anexar documento"
+                              >
+                                <Plus className="w-4 h-4 text-indigo-400" />
+                              </button>
+
+                              {/* Botão "Ferramentas" */}
+                              <button
+                                type="button"
+                                onClick={() => setShowToolsModal(true)}
+                                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-750 text-slate-300 hover:text-white border border-slate-700/80 transition-all cursor-pointer text-xs font-semibold shrink-0"
+                                title="Menu de Ferramentas e Modos PGC"
+                                aria-label="Abrir menu de ferramentas"
+                              >
+                                <Wrench className="w-3.5 h-3.5 text-indigo-400" />
+                                <span className="hidden xs:inline">Ferramentas</span>
+                              </button>
+
+                              {/* Gravação de Voz */}
+                              <button
+                                type="button"
+                                onClick={handleToggleVoiceInput}
+                                className={`p-2 rounded-xl border transition-all cursor-pointer shrink-0 min-w-[36px] min-h-[36px] flex items-center justify-center ${
+                                  isRecordingVoice
+                                    ? 'bg-rose-600 text-white border-rose-500 animate-pulse'
+                                    : 'bg-slate-800 hover:bg-slate-750 text-slate-300 hover:text-white border-slate-700/80'
+                                }`}
+                                title={isRecordingVoice ? 'Parar gravação' : 'Falar por voz'}
+                                aria-label={isRecordingVoice ? 'Parar gravação' : 'Falar por voz'}
+                              >
+                                {isRecordingVoice ? <MicOff className="w-4 h-4" /> : <Mic className="w-4 h-4" />}
+                              </button>
+                            </div>
+
+                            {/* Botão Enviar à direita */}
+                            <button
+                              type="submit"
+                              disabled={isLoading || (!inputMessage.trim() && !attachedFile)}
+                              className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 text-white font-bold rounded-xl text-xs flex items-center gap-1.5 transition-all shadow-md shadow-indigo-600/30 cursor-pointer shrink-0"
+                              aria-label="Enviar mensagem"
+                            >
+                              <Send className="w-3.5 h-3.5" />
+                              <span className="hidden sm:inline">Enviar</span>
+                            </button>
+                          </div>
+                        </form>
+                      </div>
+                    </div>
+                  </div>
+                </>
+              )}
             </div>
           )}
 
           {/* TAB 2: DOCUMENT GENERATOR (WORD .DOCX) */}
           {activeMode === 'document' && (
-            <div className="flex-1 overflow-y-auto py-4 sm:py-6 space-y-6 chat-messages">
+            <div 
+              className="flex-1 min-h-0 overflow-y-auto py-4 sm:py-6 space-y-6 chat-messages"
+              style={{ flex: 1, minHeight: 0 }}
+            >
               <div className="bg-slate-800/80 border border-slate-700 rounded-2xl p-5 space-y-4">
                 <div>
                   <h2 className="text-sm font-bold text-white flex items-center gap-2">
@@ -1827,7 +2729,10 @@ function hashString(str: string): string {
 
           {/* TAB 3: SPREADSHEET GENERATOR (EXCEL .XLSX) */}
           {activeMode === 'spreadsheet' && (
-            <div className="flex-1 overflow-y-auto py-4 sm:py-6 space-y-6 chat-messages">
+            <div 
+              className="flex-1 min-h-0 overflow-y-auto py-4 sm:py-6 space-y-6 chat-messages"
+              style={{ flex: 1, minHeight: 0 }}
+            >
               <div className="bg-slate-800/80 border border-slate-700 rounded-2xl p-5 space-y-4">
                 <div>
                   <h2 className="text-sm font-bold text-white flex items-center gap-2">
@@ -1908,7 +2813,10 @@ function hashString(str: string): string {
 
           {/* TAB 4: PRESENTATION GENERATOR (POWERPOINT .PPTX) */}
           {activeMode === 'presentation' && (
-            <div className="flex-1 overflow-y-auto py-4 sm:py-6 space-y-6 chat-messages">
+            <div 
+              className="flex-1 min-h-0 overflow-y-auto py-4 sm:py-6 space-y-6 chat-messages"
+              style={{ flex: 1, minHeight: 0 }}
+            >
               <div className="bg-slate-800/80 border border-slate-700 rounded-2xl p-5 space-y-4">
                 <div>
                   <h2 className="text-sm font-bold text-white flex items-center gap-2">
@@ -2017,7 +2925,10 @@ function hashString(str: string): string {
 
           {/* TAB 5: VISUALIZATION / DIAGRAM GENERATOR (SVG) */}
           {activeMode === 'visualization' && (
-            <div className="flex-1 overflow-y-auto py-4 sm:py-6 space-y-6 chat-messages">
+            <div 
+              className="flex-1 min-h-0 overflow-y-auto py-4 sm:py-6 space-y-6 chat-messages"
+              style={{ flex: 1, minHeight: 0 }}
+            >
               <div className="bg-slate-800/80 border border-slate-700 rounded-2xl p-5 space-y-4">
                 <div>
                   <h2 className="text-sm font-bold text-white flex items-center gap-2">
@@ -2086,7 +2997,10 @@ function hashString(str: string): string {
 
           {/* TAB 6: TAX REVIEW & AUDITING */}
           {activeMode === 'tax-review' && (
-            <div className="flex-1 overflow-y-auto py-4 sm:py-6 space-y-6 chat-messages">
+            <div 
+              className="flex-1 min-h-0 overflow-y-auto py-4 sm:py-6 space-y-6 chat-messages"
+              style={{ flex: 1, minHeight: 0 }}
+            >
               <div className="bg-slate-800/80 border border-slate-700 rounded-2xl p-5 space-y-4">
                 <div>
                   <h2 className="text-sm font-bold text-white flex items-center gap-2">
@@ -2524,6 +3438,251 @@ function hashString(str: string): string {
                     </div>
                   </div>
                 ))}
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+      {/* MODAL / BOTTOM-SHEET: FERRAMENTAS E MODOS PGC (<1024px E BOTÃO FERRAMENTAS) */}
+      <AnimatePresence>
+        {showToolsModal && (
+          <div 
+            className="fixed inset-0 z-50 bg-black/75 backdrop-blur-xs flex items-end sm:items-center justify-center p-0 sm:p-4 select-none"
+            onClick={() => setShowToolsModal(false)}
+          >
+            <motion.div
+              initial={{ y: '100%', opacity: 0 }}
+              animate={{ y: 0, opacity: 1 }}
+              exit={{ y: '100%', opacity: 0 }}
+              transition={{ type: 'spring', damping: 25, stiffness: 280 }}
+              onClick={(e) => e.stopPropagation()}
+              className="w-full sm:max-w-md bg-slate-900 border border-slate-800 rounded-t-3xl sm:rounded-2xl p-5 shadow-2xl flex flex-col gap-4 max-h-[85vh] overflow-hidden"
+            >
+              {/* Header do Menu */}
+              <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+                <div className="flex items-center gap-2.5">
+                  <div className="p-2 rounded-xl bg-indigo-600/20 text-indigo-400 border border-indigo-500/30">
+                    <Wrench className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-bold text-white">Ferramentas & Modos PGC</h3>
+                    <p className="text-[11px] text-slate-400">Selecione o ambiente de trabalho contabilístico</p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowToolsModal(false)}
+                  className="p-1.5 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition-colors cursor-pointer"
+                  aria-label="Fechar menu de ferramentas"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              {/* Lista das 7 Opções / Modos */}
+              <div className="flex flex-col gap-2 overflow-y-auto max-h-[60vh] pr-0.5">
+                {/* 1. Chat PGC */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActiveMode('chat');
+                    setShowToolsModal(false);
+                  }}
+                  className={`w-full flex items-center justify-between p-3 rounded-xl border text-left transition-all cursor-pointer ${
+                    activeMode === 'chat'
+                      ? 'bg-indigo-600/20 border-indigo-500/60 text-white shadow-xs'
+                      : 'bg-slate-950/70 border-slate-800 text-slate-300 hover:bg-slate-800 hover:text-white'
+                  }`}
+                >
+                  <div className="flex items-center gap-3">
+                    <div className={`p-2 rounded-lg ${activeMode === 'chat' ? 'bg-indigo-600 text-white' : 'bg-slate-800 text-indigo-400'}`}>
+                      <MessageSquare className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <div className="text-xs font-bold text-white flex items-center gap-2">
+                        Chat PGC
+                        {activeMode === 'chat' && (
+                          <span className="px-1.5 py-0.2 bg-indigo-500/30 text-indigo-300 rounded text-[9px] font-extrabold uppercase">Ativo</span>
+                        )}
+                      </div>
+                      <div className="text-[11px] text-slate-400">Consultoria contabilística, lançamentos e regras AGT</div>
+                    </div>
+                  </div>
+                  {activeMode === 'chat' && <Check className="w-4 h-4 text-indigo-400 shrink-0" />}
+                </button>
+
+                {/* 2. Word */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActiveMode('document');
+                    setShowToolsModal(false);
+                  }}
+                  className={`w-full flex items-center justify-between p-3 rounded-xl border text-left transition-all cursor-pointer ${
+                    activeMode === 'document'
+                      ? 'bg-indigo-600/20 border-indigo-500/60 text-white shadow-xs'
+                      : 'bg-slate-950/70 border-slate-800 text-slate-300 hover:bg-slate-800 hover:text-white'
+                  }`}
+                >
+                  <div className="flex items-center gap-3">
+                    <div className={`p-2 rounded-lg ${activeMode === 'document' ? 'bg-indigo-600 text-white' : 'bg-slate-800 text-indigo-400'}`}>
+                      <FileText className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <div className="text-xs font-bold text-white flex items-center gap-2">
+                        Word
+                        {activeMode === 'document' && (
+                          <span className="px-1.5 py-0.2 bg-indigo-500/30 text-indigo-300 rounded text-[9px] font-extrabold uppercase">Ativo</span>
+                        )}
+                      </div>
+                      <div className="text-[11px] text-slate-400">Relatórios, pareceres técnicos e notas às contas</div>
+                    </div>
+                  </div>
+                  {activeMode === 'document' && <Check className="w-4 h-4 text-indigo-400 shrink-0" />}
+                </button>
+
+                {/* 3. Excel */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActiveMode('spreadsheet');
+                    setShowToolsModal(false);
+                  }}
+                  className={`w-full flex items-center justify-between p-3 rounded-xl border text-left transition-all cursor-pointer ${
+                    activeMode === 'spreadsheet'
+                      ? 'bg-indigo-600/20 border-indigo-500/60 text-white shadow-xs'
+                      : 'bg-slate-950/70 border-slate-800 text-slate-300 hover:bg-slate-800 hover:text-white'
+                  }`}
+                >
+                  <div className="flex items-center gap-3">
+                    <div className={`p-2 rounded-lg ${activeMode === 'spreadsheet' ? 'bg-indigo-600 text-white' : 'bg-slate-800 text-indigo-400'}`}>
+                      <Grid className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <div className="text-xs font-bold text-white flex items-center gap-2">
+                        Excel
+                        {activeMode === 'spreadsheet' && (
+                          <span className="px-1.5 py-0.2 bg-indigo-500/30 text-indigo-300 rounded text-[9px] font-extrabold uppercase">Ativo</span>
+                        )}
+                      </div>
+                      <div className="text-[11px] text-slate-400">Folhas de cálculo, balancetes e mapas fiscais</div>
+                    </div>
+                  </div>
+                  {activeMode === 'spreadsheet' && <Check className="w-4 h-4 text-indigo-400 shrink-0" />}
+                </button>
+
+                {/* 4. Slides */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActiveMode('presentation');
+                    setShowToolsModal(false);
+                  }}
+                  className={`w-full flex items-center justify-between p-3 rounded-xl border text-left transition-all cursor-pointer ${
+                    activeMode === 'presentation'
+                      ? 'bg-indigo-600/20 border-indigo-500/60 text-white shadow-xs'
+                      : 'bg-slate-950/70 border-slate-800 text-slate-300 hover:bg-slate-800 hover:text-white'
+                  }`}
+                >
+                  <div className="flex items-center gap-3">
+                    <div className={`p-2 rounded-lg ${activeMode === 'presentation' ? 'bg-indigo-600 text-white' : 'bg-slate-800 text-indigo-400'}`}>
+                      <Presentation className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <div className="text-xs font-bold text-white flex items-center gap-2">
+                        Slides
+                        {activeMode === 'presentation' && (
+                          <span className="px-1.5 py-0.2 bg-indigo-500/30 text-indigo-300 rounded text-[9px] font-extrabold uppercase">Ativo</span>
+                        )}
+                      </div>
+                      <div className="text-[11px] text-slate-400">Apresentações para a administração e conselho fiscal</div>
+                    </div>
+                  </div>
+                  {activeMode === 'presentation' && <Check className="w-4 h-4 text-indigo-400 shrink-0" />}
+                </button>
+
+                {/* 5. Diagramas */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActiveMode('visualization');
+                    setShowToolsModal(false);
+                  }}
+                  className={`w-full flex items-center justify-between p-3 rounded-xl border text-left transition-all cursor-pointer ${
+                    activeMode === 'visualization'
+                      ? 'bg-indigo-600/20 border-indigo-500/60 text-white shadow-xs'
+                      : 'bg-slate-950/70 border-slate-800 text-slate-300 hover:bg-slate-800 hover:text-white'
+                  }`}
+                >
+                  <div className="flex items-center gap-3">
+                    <div className={`p-2 rounded-lg ${activeMode === 'visualization' ? 'bg-indigo-600 text-white' : 'bg-slate-800 text-indigo-400'}`}>
+                      <BarChart3 className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <div className="text-xs font-bold text-white flex items-center gap-2">
+                        Diagramas
+                        {activeMode === 'visualization' && (
+                          <span className="px-1.5 py-0.2 bg-indigo-500/30 text-indigo-300 rounded text-[9px] font-extrabold uppercase">Ativo</span>
+                        )}
+                      </div>
+                      <div className="text-[11px] text-slate-400">Fluxogramas de processos, esquemas e gráficos</div>
+                    </div>
+                  </div>
+                  {activeMode === 'visualization' && <Check className="w-4 h-4 text-indigo-400 shrink-0" />}
+                </button>
+
+                {/* 6. Auditoria */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActiveMode('tax-review');
+                    setShowToolsModal(false);
+                  }}
+                  className={`w-full flex items-center justify-between p-3 rounded-xl border text-left transition-all cursor-pointer ${
+                    activeMode === 'tax-review'
+                      ? 'bg-indigo-600/20 border-indigo-500/60 text-white shadow-xs'
+                      : 'bg-slate-950/70 border-slate-800 text-slate-300 hover:bg-slate-800 hover:text-white'
+                  }`}
+                >
+                  <div className="flex items-center gap-3">
+                    <div className={`p-2 rounded-lg ${activeMode === 'tax-review' ? 'bg-indigo-600 text-white' : 'bg-slate-800 text-indigo-400'}`}>
+                      <ShieldCheck className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <div className="text-xs font-bold text-white flex items-center gap-2">
+                        Auditoria
+                        {activeMode === 'tax-review' && (
+                          <span className="px-1.5 py-0.2 bg-indigo-500/30 text-indigo-300 rounded text-[9px] font-extrabold uppercase">Ativo</span>
+                        )}
+                      </div>
+                      <div className="text-[11px] text-slate-400">Verificação de conformidade fiscal e validação PGC</div>
+                    </div>
+                  </div>
+                  {activeMode === 'tax-review' && <Check className="w-4 h-4 text-indigo-400 shrink-0" />}
+                </button>
+
+                {/* 7. Glossário */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowToolsModal(false);
+                    setShowGlossaryModal(true);
+                  }}
+                  className="w-full flex items-center justify-between p-3 rounded-xl border text-left transition-all cursor-pointer bg-slate-950/70 border-slate-800 text-slate-300 hover:bg-slate-800 hover:text-white"
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="p-2 rounded-lg bg-slate-800 text-indigo-400">
+                      <BookOpen className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <div className="text-xs font-bold text-white flex items-center gap-2">
+                        Glossário & Contas PGC
+                      </div>
+                      <div className="text-[11px] text-slate-400">Plano oficial de contas (Decreto n.º 82/01) e termos</div>
+                    </div>
+                  </div>
+                  <ChevronRight className="w-4 h-4 text-slate-500 shrink-0" />
+                </button>
               </div>
             </motion.div>
           </div>

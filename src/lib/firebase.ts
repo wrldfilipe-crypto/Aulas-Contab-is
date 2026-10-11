@@ -59,6 +59,34 @@ try {
   storage.maxOperationRetryTime = 6000;
 } catch (_) {}
 
+// ── SANITIZAÇÃO DE DADOS PARA FIRESTORE (PREVINE ERRO: UNDEFINED FIELD) ─────────
+export function sanitizeFirestoreData<T>(data: T): T {
+  if (data === null || data === undefined) {
+    return data;
+  }
+  if (Array.isArray(data)) {
+    return data.map(item => sanitizeFirestoreData(item)) as unknown as T;
+  }
+  if (typeof data === 'object' && !(data instanceof Date)) {
+    const cleaned: Record<string, any> = {};
+    for (const [key, val] of Object.entries(data)) {
+      if (val !== undefined) {
+        cleaned[key] = sanitizeFirestoreData(val);
+      }
+    }
+    return cleaned as T;
+  }
+  return data;
+}
+
+let loggedPermissionNotice = false;
+export function logLocalModeNoticeOnce(context: string = 'App') {
+  if (!loggedPermissionNotice) {
+    loggedPermissionNotice = true;
+    console.info(`[Firestore] Utilizador sem sessão ativa no Firebase Auth — ${context} a operar em modo local (IndexedDB).`);
+  }
+}
+
 // ── VERIFICAÇÃO E MONITORIZAÇÃO DO ESTADO DO FIRESTORE ──────────────────────────
 let lastHealthCheckTime = 0;
 let lastHealthCheckResult = true;
@@ -453,9 +481,10 @@ export async function registerDeviceSession(userId: string) {
 }
 
 export function subscribeUserSessions(userId: string, callback: (sessions: DeviceSession[]) => void) {
+  const realUid = auth?.currentUser?.uid || (userId && userId !== 'guest' && userId !== 'default_user' && !userId.startsWith('user_') ? userId : null);
+  if (!realUid) return () => {};
   try {
-    if (!userId) return () => {};
-    const colRef = collection(db, 'users', userId, 'sessions');
+    const colRef = collection(db, 'users', realUid, 'sessions');
     return onSnapshot(
       colRef,
       (snapshot) => {
@@ -463,31 +492,45 @@ export function subscribeUserSessions(userId: string, callback: (sessions: Devic
         callback(list);
       },
       (err) => {
-        console.warn(`[Sessions Listener] Erro nas sessões do utilizador ${userId}:`, err?.message || err);
+        if (err?.code === 'permission-denied') {
+          logLocalModeNoticeOnce('Sessões');
+          return;
+        }
+        console.warn(`[Sessions Listener] Erro nas sessões do utilizador ${realUid}:`, err?.message || err);
       }
     );
   } catch (err: any) {
-    console.warn(`[Sessions Listener] Exceção para utilizador ${userId}:`, err?.message || err);
+    if (err?.code === 'permission-denied') {
+      logLocalModeNoticeOnce('Sessões');
+      return () => {};
+    }
+    console.warn(`[Sessions Listener] Exceção para utilizador ${realUid}:`, err?.message || err);
     return () => {};
   }
 }
 
 export async function terminateUserSession(userId: string, sessionId: string) {
+  const realUid = auth?.currentUser?.uid || (userId && userId !== 'guest' && userId !== 'default_user' && !userId.startsWith('user_') ? userId : null);
+  if (!realUid || !sessionId) return;
   try {
-    if (!userId || !sessionId) return;
-    const sessionRef = doc(db, 'users', userId, 'sessions', sessionId);
+    const sessionRef = doc(db, 'users', realUid, 'sessions', sessionId);
     await setDoc(sessionRef, { active: false, terminatedAt: new Date().toISOString() }, { merge: true });
     console.log(`[Sessions] Sessão ${sessionId} terminada com sucesso.`);
   } catch (err: any) {
+    if (err?.code === 'permission-denied') {
+      logLocalModeNoticeOnce('Sessões');
+      return;
+    }
     console.warn(`[Sessions] Erro ao terminar sessão ${sessionId}:`, err?.message || err);
   }
 }
 
 export async function terminateAllOtherUserSessions(userId: string) {
+  const realUid = auth?.currentUser?.uid || (userId && userId !== 'guest' && userId !== 'default_user' && !userId.startsWith('user_') ? userId : null);
+  if (!realUid) return;
   try {
-    if (!userId) return;
     const currentDeviceId = getDeviceId();
-    const colRef = collection(db, 'users', userId, 'sessions');
+    const colRef = collection(db, 'users', realUid, 'sessions');
     const snap = await getDocs(colRef);
     const batch = writeBatch(db);
     snap.docs.forEach(d => {
@@ -496,16 +539,21 @@ export async function terminateAllOtherUserSessions(userId: string) {
       }
     });
     await batch.commit();
-    console.log(`[Sessions] Todas as outras sessões foram encerradas para ${userId}`);
+    console.log(`[Sessions] Todas as outras sessões foram encerradas para ${realUid}`);
   } catch (err: any) {
+    if (err?.code === 'permission-denied') {
+      logLocalModeNoticeOnce('Sessões');
+      return;
+    }
     console.warn('[Sessions] Erro ao encerrar outras sessões:', err?.message || err);
   }
 }
 
 export function subscribeUserPreferences(userId: string, callback: (data: any) => void) {
+  const realUid = auth?.currentUser?.uid || (userId && userId !== 'guest' && userId !== 'default_user' && !userId.startsWith('user_') ? userId : null);
+  if (!realUid) return () => {};
   try {
-    if (!userId) return () => {};
-    const userRef = doc(db, 'users', userId);
+    const userRef = doc(db, 'users', realUid);
     return onSnapshot(
       userRef,
       (snapshot) => {
@@ -514,11 +562,19 @@ export function subscribeUserPreferences(userId: string, callback: (data: any) =
         }
       },
       (err) => {
-        console.warn(`[User Sync Listener] Erro ao escutar dados do utilizador ${userId}:`, err?.message || err);
+        if (err?.code === 'permission-denied') {
+          logLocalModeNoticeOnce('Preferências');
+          return;
+        }
+        console.warn(`[User Sync Listener] Erro ao escutar dados do utilizador ${realUid}:`, err?.message || err);
       }
     );
   } catch (err: any) {
-    console.warn(`[User Sync Listener] Exceção para utilizador ${userId}:`, err?.message || err);
+    if (err?.code === 'permission-denied') {
+      logLocalModeNoticeOnce('Preferências');
+      return () => {};
+    }
+    console.warn(`[User Sync Listener] Exceção para utilizador ${realUid}:`, err?.message || err);
     return () => {};
   }
 }
@@ -1404,12 +1460,13 @@ export function ouvirNotasDoFirestore(
   onNotasAtualizadas: (notas: any[]) => void,
   onError?: (err: any) => void
 ): () => void {
-  if (!uid || uid === 'guest') {
+  const realUid = auth?.currentUser?.uid || (uid && uid !== 'guest' && uid !== 'default_user' && !uid.startsWith('user_') ? uid : null);
+  if (!realUid) {
     return () => {};
   }
 
   try {
-    const notasCollRef = collection(db, 'users', uid, 'notas');
+    const notasCollRef = collection(db, 'users', realUid, 'notas');
     return onSnapshot(
       notasCollRef,
       (snapshot) => {
@@ -1426,11 +1483,19 @@ export function ouvirNotasDoFirestore(
         onNotasAtualizadas(lista);
       },
       (error) => {
+        if (error?.code === 'permission-denied') {
+          logLocalModeNoticeOnce('Notas');
+          return;
+        }
         console.warn('[Firestore Notas] Erro ou modo offline no listener:', error?.message || error);
         if (onError) onError(error);
       }
     );
-  } catch (err) {
+  } catch (err: any) {
+    if (err?.code === 'permission-denied') {
+      logLocalModeNoticeOnce('Notas');
+      return () => {};
+    }
     console.warn('[Firestore Notas] Falha ao registar listener:', err);
     if (onError) onError(err);
     return () => {};
@@ -1440,22 +1505,34 @@ export function ouvirNotasDoFirestore(
 // ── SINCRONIZAÇÃO DE CONVERSAS IA NO FIRESTORE (users/{UID}/ai_conversations/{ID}) ──
 /**
  * Salva ou atualiza uma conversa de IA no Firestore na subcoleção do utilizador.
+ * Sanitiza recursivamente valores undefined para prevenir erros do SDK.
  */
 export async function salvarConversaNoFirestore(uid: string, conversa: Record<string, any>): Promise<void> {
-  if (!uid || uid === 'guest' || !conversa || !conversa.id) return;
+  const realUid = auth?.currentUser?.uid || (uid && uid !== 'guest' && uid !== 'default_user' && !uid.startsWith('user_') ? uid : null);
+  if (!realUid || !conversa || !conversa.id) {
+    // Utilizador sem sessão no Firebase Auth: persistência fica exclusivamente no IndexedDB
+    return;
+  }
   try {
-    const convRef = doc(db, 'users', uid, 'ai_conversations', String(conversa.id));
-    const payload = {
+    const convRef = doc(db, 'users', realUid, 'ai_conversations', String(conversa.id));
+    const rawPayload = {
       ...conversa,
+      id: String(conversa.id),
+      uid: realUid,
+      pinned: conversa.pinned !== undefined ? Boolean(conversa.pinned) : false,
+      synced: true,
       updatedAt: conversa.updatedAt || Date.now(),
-      atualizadaEm: conversa.updatedAt || Date.now(),
-      uid
+      atualizadaEm: conversa.updatedAt || Date.now()
     };
+    const payload = sanitizeFirestoreData(rawPayload);
     await setDoc(convRef, payload, { merge: true });
-    console.log(`[Firestore AI Chat] Conversa ${conversa.id} salva com sucesso para o utilizador ${uid}`);
+    console.log(`[Firestore AI Chat] Conversa ${conversa.id} salva com sucesso para o utilizador ${realUid}`);
   } catch (err: any) {
+    if (err?.code === 'permission-denied') {
+      logLocalModeNoticeOnce('AI Chat');
+      return;
+    }
     console.warn(`[Firestore AI Chat] Erro ao gravar conversa ${conversa.id}:`, err?.message || err);
-    throw err;
   }
 }
 
@@ -1463,14 +1540,18 @@ export async function salvarConversaNoFirestore(uid: string, conversa: Record<st
  * Remove uma conversa de IA do Firestore.
  */
 export async function apagarConversaNoFirestore(uid: string, idConversa: string): Promise<void> {
-  if (!uid || uid === 'guest' || !idConversa) return;
+  const realUid = auth?.currentUser?.uid || (uid && uid !== 'guest' && uid !== 'default_user' && !uid.startsWith('user_') ? uid : null);
+  if (!realUid || !idConversa) return;
   try {
-    const convRef = doc(db, 'users', uid, 'ai_conversations', String(idConversa));
+    const convRef = doc(db, 'users', realUid, 'ai_conversations', String(idConversa));
     await deleteDoc(convRef);
-    console.log(`[Firestore AI Chat] Conversa ${idConversa} apagada para o utilizador ${uid}`);
+    console.log(`[Firestore AI Chat] Conversa ${idConversa} apagada para o utilizador ${realUid}`);
   } catch (err: any) {
+    if (err?.code === 'permission-denied') {
+      logLocalModeNoticeOnce('AI Chat');
+      return;
+    }
     console.warn(`[Firestore AI Chat] Erro ao apagar conversa ${idConversa}:`, err?.message || err);
-    throw err;
   }
 }
 
@@ -1478,9 +1559,10 @@ export async function apagarConversaNoFirestore(uid: string, idConversa: string)
  * Carrega todas as conversas do utilizador a partir do Firestore.
  */
 export async function carregarConversasDoFirestore(uid: string): Promise<any[]> {
-  if (!uid || uid === 'guest') return [];
+  const realUid = auth?.currentUser?.uid || (uid && uid !== 'guest' && uid !== 'default_user' && !uid.startsWith('user_') ? uid : null);
+  if (!realUid) return [];
   try {
-    const convCollRef = collection(db, 'users', uid, 'ai_conversations');
+    const convCollRef = collection(db, 'users', realUid, 'ai_conversations');
     const q = query(convCollRef, orderBy('updatedAt', 'desc'));
     const snapshot = await getDocs(q);
     const lista: any[] = [];
@@ -1495,6 +1577,10 @@ export async function carregarConversasDoFirestore(uid: string): Promise<any[]> 
     });
     return lista;
   } catch (err: any) {
+    if (err?.code === 'permission-denied') {
+      logLocalModeNoticeOnce('AI Chat');
+      return [];
+    }
     console.warn('[Firestore AI Chat] Falha ao carregar conversas:', err?.message || err);
     return [];
   }
@@ -1508,12 +1594,13 @@ export function ouvirConversasDoFirestore(
   onConversasAtualizadas: (conversas: any[]) => void,
   onError?: (err: any) => void
 ): () => void {
-  if (!uid || uid === 'guest') {
+  const realUid = auth?.currentUser?.uid || (uid && uid !== 'guest' && uid !== 'default_user' && !uid.startsWith('user_') ? uid : null);
+  if (!realUid) {
     return () => {};
   }
 
   try {
-    const convCollRef = collection(db, 'users', uid, 'ai_conversations');
+    const convCollRef = collection(db, 'users', realUid, 'ai_conversations');
     return onSnapshot(
       convCollRef,
       (snapshot) => {
@@ -1532,11 +1619,19 @@ export function ouvirConversasDoFirestore(
         onConversasAtualizadas(lista);
       },
       (error) => {
+        if (error?.code === 'permission-denied') {
+          logLocalModeNoticeOnce('AI Chat');
+          return;
+        }
         console.warn('[Firestore AI Chat] Erro ou modo offline no listener:', error?.message || error);
         if (onError) onError(error);
       }
     );
-  } catch (err) {
+  } catch (err: any) {
+    if (err?.code === 'permission-denied') {
+      logLocalModeNoticeOnce('AI Chat');
+      return () => {};
+    }
     console.warn('[Firestore AI Chat] Falha ao registar listener de conversas:', err);
     if (onError) onError(err);
     return () => {};

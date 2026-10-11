@@ -37,7 +37,7 @@ export const PROFILE_CONFIGS: Record<UserProfileRole, UserProfileConfig> = {
     description: 'Acesso a todas as ferramentas com percursos didáticos, simulados e assistente especializado.',
     badgeLabel: 'Académico / Estudante',
     primaryFocus: 'Módulos Didáticos & Exercícios',
-    allowedTabs: ['dashboard', 'assistant', 'accounting', 'learning', 'quizzes', 'notes', 'profile']
+    allowedTabs: ['dashboard', 'assistant', 'learning', 'quizzes', 'notes', 'profile']
   },
   accountant: {
     role: 'accountant',
@@ -45,7 +45,7 @@ export const PROFILE_CONFIGS: Record<UserProfileRole, UserProfileConfig> = {
     description: 'Acesso total a contabilidade PGC Angola, balancetes, lançamentos, demonstrações e auditoria.',
     badgeLabel: 'Contabilista Certificado',
     primaryFocus: 'Produtividade, Lançamentos & Auditoria',
-    allowedTabs: ['dashboard', 'assistant', 'accounting', 'learning', 'quizzes', 'notes', 'profile']
+    allowedTabs: ['dashboard', 'assistant', 'learning', 'quizzes', 'notes', 'profile']
   },
   manager: {
     role: 'manager',
@@ -53,7 +53,7 @@ export const PROFILE_CONFIGS: Record<UserProfileRole, UserProfileConfig> = {
     description: 'Visão executiva de desempenho financeiro, balancetes e relatórios para tomada de decisão.',
     badgeLabel: 'Direção Financeira',
     primaryFocus: 'Consolidação & Relatórios Executivos',
-    allowedTabs: ['dashboard', 'assistant', 'accounting', 'learning', 'quizzes', 'notes', 'profile']
+    allowedTabs: ['dashboard', 'assistant', 'learning', 'quizzes', 'notes', 'profile']
   },
   company: {
     role: 'company',
@@ -61,7 +61,7 @@ export const PROFILE_CONFIGS: Record<UserProfileRole, UserProfileConfig> = {
     description: 'Gestão institucional multi-entidade, compliance regulatório e colaboração de equipa.',
     badgeLabel: 'Entidade Corporativa',
     primaryFocus: 'Governança & Gestão Institucional',
-    allowedTabs: ['dashboard', 'assistant', 'accounting', 'learning', 'quizzes', 'notes', 'profile']
+    allowedTabs: ['dashboard', 'assistant', 'learning', 'quizzes', 'notes', 'profile']
   },
   other: {
     role: 'other',
@@ -69,7 +69,7 @@ export const PROFILE_CONFIGS: Record<UserProfileRole, UserProfileConfig> = {
     description: 'Acesso equilibrado a todas as ferramentas e conteúdos da plataforma.',
     badgeLabel: 'Consultor Geral',
     primaryFocus: 'Acesso Geral',
-    allowedTabs: ['dashboard', 'assistant', 'accounting', 'learning', 'quizzes', 'notes', 'profile']
+    allowedTabs: ['dashboard', 'assistant', 'learning', 'quizzes', 'notes', 'profile']
   }
 };
 

@@ -40,40 +40,98 @@ export interface DocumentOutlineResult {
   secoes: DocumentSectionOutline[];
 }
 
+export interface YohanAttachment {
+  name: string;
+  type: 'image' | 'pdf' | 'docx' | 'excel' | 'text' | string;
+  mimeType?: string;
+  size?: number;
+  base64Data?: string; // Para imagens: enviado como inlineData
+  extractedText?: string; // Para PDF/Docx/Excel/Text: inserido no prompt
+}
+
 /**
- * Envia uma pergunta ao Yohan AI com streaming em tempo real.
+ * Envia uma pergunta ao Yohan AI com streaming em tempo real e suporte a anexos (estilo Claude).
+ * Suporta imagens como inlineData (Vision) e documentos com texto estruturado.
  * Utiliza o modelo gemini-3.8-flash com thinkingConfig: { thinkingBudget: 0 } e maxOutputTokens: 8192.
- * Trata o erro "Incomplete JSON segment" garantindo que respostas truncadas parciais
- * (>200 caracteres) sejam preservadas com nota discreta para continuação.
  */
 export async function perguntarYohanStreaming(
   prompt: string,
   historico: HistoryItem[] = [],
-  onChunk: (parcial: string) => void
+  onChunk: (parcial: string) => void,
+  options?: { 
+    thinkingBudget?: number;
+    attachments?: YohanAttachment[];
+  }
 ): Promise<string> {
   const apiKey = getGeminiApiKey();
+  const thinkingBudget = options?.thinkingBudget !== undefined ? options.thinkingBudget : 0;
+  const attachments = options?.attachments || [];
 
   // Defesa extra de idioma: assegura instrução reforçada de português de Angola
   const PORTUGUESE_TAG = '\n\n[Responde exclusivamente em português (Angola).]';
-  const promptComDefesa = prompt.includes('[Responde exclusivamente em português (Angola).]')
+  let promptComDefesa = prompt.includes('[Responde exclusivamente em português (Angola).]')
     ? prompt
     : `${prompt}${PORTUGUESE_TAG}`;
+
+  // 1. Integrar conteúdo extraído de documentos de texto/PDF/Excel/Word com etiquetas claras
+  const docAttachments = attachments.filter(a => a.extractedText && a.extractedText.trim().length > 0);
+  if (docAttachments.length > 0) {
+    const docsHeader = docAttachments.map(d => 
+      `=== CONTEÚDO DO ANEXO ${d.name} (${(d.type || 'DOCUMENTO').toUpperCase()}) ===\n${d.extractedText}\n=== FIM DO ANEXO ${d.name} ===`
+    ).join('\n\n');
+    promptComDefesa = `${docsHeader}\n\n${promptComDefesa}`;
+  }
+
+  // 2. Extrair imagens em base64 para inlineData do Gemini Vision
+  const imageAttachments = attachments.filter(a => a.type === 'image' && a.base64Data);
+  const imageParts = imageAttachments.map(img => ({
+    inlineData: {
+      data: img.base64Data!,
+      mimeType: img.mimeType || 'image/png'
+    }
+  }));
+
+  const userParts: any[] = [...imageParts, { text: promptComDefesa }];
+
+  // Formata o histórico de mensagens garantindo conformidade multi-turn com o Gemini (alternância estrita user/model, iniciando sempre em 'user')
+  const validHistoryTurns: Array<{ role: 'user' | 'model'; parts: any[] }> = [];
+  const rawHistorySlice = (historico || []).slice(-10);
+
+  for (const h of rawHistorySlice) {
+    const text = (h.content || '').trim();
+    if (!text) continue;
+    const role: 'user' | 'model' = h.role === 'assistant' ? 'model' : 'user';
+
+    if (validHistoryTurns.length === 0) {
+      if (role === 'model') continue; // O primeiro item tem de ser sempre 'user'
+      validHistoryTurns.push({ role: 'user', parts: [{ text }] });
+    } else {
+      const prevTurn = validHistoryTurns[validHistoryTurns.length - 1];
+      if (prevTurn.role === role) {
+        prevTurn.parts[0].text += `\n\n${text}`;
+      } else {
+        validHistoryTurns.push({ role, parts: [{ text }] });
+      }
+    }
+  }
+
+  // Se a última mensagem do histórico foi 'user', garante que a actual não colide adicionando model intermediário
+  if (validHistoryTurns.length > 0 && validHistoryTurns[validHistoryTurns.length - 1].role === 'user') {
+    validHistoryTurns.push({ role: 'model', parts: [{ text: 'Entendido. Como posso ajudar com os próximos passos?' }] });
+  }
+
+  const contents = [
+    ...validHistoryTurns,
+    {
+      role: 'user' as const,
+      parts: userParts
+    }
+  ];
 
   // Se tivermos a chave configurada no frontend, chamamos o SDK @google/genai diretamente com streaming
   if (apiKey) {
     try {
       const ai = new GoogleGenAI({ apiKey });
-      const contents = [
-        ...historico.slice(-8).map(h => ({
-          role: h.role === 'assistant' ? 'model' : 'user',
-          parts: [{ text: h.content }]
-        })),
-        {
-          role: 'user',
-          parts: [{ text: promptComDefesa }]
-        }
-      ];
-
       const stream = await ai.models.generateContentStream({
         model: 'gemini-3.8-flash',
         contents,
@@ -81,7 +139,7 @@ export async function perguntarYohanStreaming(
           systemInstruction: SYSTEM_INSTRUCTION_YOHAN,
           maxOutputTokens: 8192,
           thinkingConfig: {
-            thinkingBudget: 0
+            thinkingBudget
           }
         }
       });
@@ -139,6 +197,8 @@ export async function perguntarYohanStreaming(
       history: historico.slice(-8),
       stream: true,
       language: 'pt-AO',
+      thinkingBudget,
+      imageParts,
       systemInstruction: SYSTEM_INSTRUCTION_YOHAN,
       systemContext: SYSTEM_INSTRUCTION_YOHAN
     })

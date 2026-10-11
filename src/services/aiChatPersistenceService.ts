@@ -9,14 +9,22 @@ import {
   salvarConversaNoFirestore, 
   apagarConversaNoFirestore, 
   carregarConversasDoFirestore, 
-  ouvirConversasDoFirestore 
+  ouvirConversasDoFirestore,
+  sanitizeFirestoreData
 } from '../lib/firebase';
+import { auth } from '../firebase';
 
 export interface ChatMessage {
   id: string;
-  sender: 'user' | 'assistant';
-  text: string;
+  sender?: 'user' | 'assistant';
+  role?: 'user' | 'assistant';
+  text?: string;
+  content?: string;
   timestamp: string;
+  feedback?: 'up' | 'down' | null;
+  edited?: boolean;
+  editedAt?: string;
+  attachedFile?: { name: string; size?: number };
   sources?: string[];
   isVisual?: boolean;
   diagramSvg?: string;
@@ -34,18 +42,20 @@ export interface ChatConversation {
   id: string;
   uid: string;
   title: string;
-  date: string;
-  timestamp: string;
-  standard: string;
-  tag: string;
-  messages: ChatMessage[];
+  date?: string;
+  timestamp?: string;
+  standard?: string;
+  tag?: string;
+  messages: any[];
   updatedAt: number;
+  pinned?: boolean;
   synced?: boolean;
 }
 
 const CHAT_STORE = 'ai_conversations';
+const PREFS_STORE = 'userPrefs';
 const IDB_NAME = 'GestaoAngolaOfflineDB';
-const IDB_VERSION = 2; // Upgraded version to include ai_conversations
+const IDB_VERSION = 3; // Upgraded version to include userPrefs store
 
 let cachedChatDB: IDBDatabase | null = null;
 let idbChatPromise: Promise<IDBDatabase> | null = null;
@@ -88,6 +98,10 @@ export function openChatIDB(): Promise<IDBDatabase> {
           const store = db.createObjectStore(CHAT_STORE, { keyPath: 'id' });
           store.createIndex('uid', 'uid', { unique: false });
           store.createIndex('updatedAt', 'updatedAt', { unique: false });
+        }
+        // User preferences store
+        if (!db.objectStoreNames.contains(PREFS_STORE)) {
+          db.createObjectStore(PREFS_STORE, { keyPath: 'key' });
         }
       };
 
@@ -171,9 +185,16 @@ export async function saveConversation(uid: string, conversation: ChatConversati
   if (!uid || !conversation.id) return;
 
   const item: ChatConversation = {
-    ...conversation,
-    uid,
+    id: String(conversation.id),
+    uid: String(uid),
+    title: conversation.title || 'Consulta PGC',
+    date: conversation.date || new Date().toLocaleDateString(),
+    timestamp: conversation.timestamp || 'Hoje',
+    standard: conversation.standard || 'PGC Angola',
+    tag: conversation.tag || '#Contabilidade',
+    messages: (conversation.messages || []).map(m => sanitizeFirestoreData(m)),
     updatedAt: conversation.updatedAt || Date.now(),
+    pinned: Boolean(conversation.pinned),
     synced: false
   };
 
@@ -201,10 +222,11 @@ export async function saveConversation(uid: string, conversation: ChatConversati
     localStorage.setItem(`ga_ai_accountant_history_${uid}`, JSON.stringify(updated.slice(0, 50)));
   } catch (_) {}
 
-  // 3. If online, sync to Firestore
-  if (navigator.onLine && uid !== 'guest') {
+  // 3. If online and authenticated in Firebase Auth, sync to Firestore using real UID
+  const realAuthedUid = auth?.currentUser?.uid;
+  if (navigator.onLine && realAuthedUid && uid !== 'guest' && uid !== 'default_user') {
     try {
-      await salvarConversaNoFirestore(uid, item);
+      await salvarConversaNoFirestore(realAuthedUid, item);
       // Mark as synced in IndexedDB
       try {
         const db = await openChatIDB();
@@ -248,10 +270,11 @@ export async function deleteConversation(uid: string, conversationId: string): P
     }
   } catch (_) {}
 
-  // 3. Delete from Firestore if online
-  if (navigator.onLine && uid !== 'guest') {
+  // 3. Delete from Firestore if online and authenticated
+  const realAuthedUid = auth?.currentUser?.uid;
+  if (navigator.onLine && realAuthedUid && uid !== 'guest' && uid !== 'default_user') {
     try {
-      await apagarConversaNoFirestore(uid, conversationId);
+      await apagarConversaNoFirestore(realAuthedUid, conversationId);
     } catch (e) {
       console.warn('[AI Chat Sync] Error deleting from Firestore:', e);
     }
@@ -265,21 +288,22 @@ export async function syncConversationsWithFirestore(
   uid: string, 
   onUpdated?: (conversations: ChatConversation[]) => void
 ): Promise<ChatConversation[]> {
-  if (!uid || uid === 'guest' || !navigator.onLine) {
+  const realAuthedUid = auth?.currentUser?.uid;
+  if (!realAuthedUid || uid === 'guest' || uid === 'default_user' || !navigator.onLine) {
     const local = await getLocalConversations(uid);
     if (onUpdated) onUpdated(local);
     return local;
   }
 
   try {
-    console.log(`[AI Chat Sync] Starting synchronization for user ${uid}...`);
+    console.log(`[AI Chat Sync] Starting synchronization for user ${realAuthedUid}...`);
     // 1. Get local items
     const localItems = await getLocalConversations(uid);
     const localMap = new Map<string, ChatConversation>();
     localItems.forEach(item => localMap.set(item.id, item));
 
-    // 2. Fetch remote items from Firestore
-    const remoteDocs = await carregarConversasDoFirestore(uid);
+    // 2. Fetch remote items from Firestore using real UID
+    const remoteDocs = await carregarConversasDoFirestore(realAuthedUid);
     console.log(`[AI Chat Sync] Retrieved ${remoteDocs.length} conversations from Firestore`);
 
     // 3. Merge strategies:
@@ -295,8 +319,9 @@ export async function syncConversationsWithFirestore(
         timestamp: rem.timestamp || 'Hoje',
         standard: rem.standard || 'PGC Angola',
         tag: rem.tag || '#Contabilidade',
-        messages: rem.messages || [],
+        messages: (rem.messages || []).map(m => sanitizeFirestoreData(m)),
         updatedAt: rem.updatedAt || Date.now(),
+        pinned: rem.pinned !== undefined ? Boolean(rem.pinned) : false,
         synced: true
       };
       mergedMap.set(conv.id, conv);
@@ -309,7 +334,7 @@ export async function syncConversationsWithFirestore(
         mergedMap.set(loc.id, loc);
         // Upload newer local to Firestore
         try {
-          await salvarConversaNoFirestore(uid, loc);
+          await salvarConversaNoFirestore(realAuthedUid, loc);
         } catch (_) {}
       }
     }
@@ -360,11 +385,12 @@ export function setupChatSyncListener(
 
   window.addEventListener('online', handleOnline);
 
-  // Also setup real-time listener from Firestore if available
+  // Also setup real-time listener from Firestore ONLY if user is authenticated in Firebase Auth
   let unsubscribeFirestore: (() => void) | null = null;
-  if (uid !== 'guest') {
+  const realAuthedUid = auth?.currentUser?.uid;
+  if (realAuthedUid && uid !== 'guest' && uid !== 'default_user') {
     try {
-      unsubscribeFirestore = ouvirConversasDoFirestore(uid, (remoteList) => {
+      unsubscribeFirestore = ouvirConversasDoFirestore(realAuthedUid, (remoteList) => {
         if (remoteList && remoteList.length > 0) {
           syncConversationsWithFirestore(uid, onUpdated);
         }
@@ -377,3 +403,119 @@ export function setupChatSyncListener(
     if (unsubscribeFirestore) unsubscribeFirestore();
   };
 }
+
+/**
+  * Obter preferência de chat do utilizador guardada em IndexedDB (com fallback em localStorage).
+  */
+export async function getUserChatPref<T>(uid: string, key: string, defaultValue: T): Promise<T> {
+  const fullKey = `ga_chat_pref_${uid || 'guest'}_${key}`;
+  try {
+    const db = await openChatIDB();
+    if (db.objectStoreNames.contains(PREFS_STORE)) {
+      const tx = db.transaction(PREFS_STORE, 'readonly');
+      const store = tx.objectStore(PREFS_STORE);
+      const req = store.get(fullKey);
+      return await new Promise<T>((resolve) => {
+        req.onsuccess = () => {
+          if (req.result && req.result.value !== undefined) {
+            resolve(req.result.value as T);
+          } else {
+            try {
+              const raw = localStorage.getItem(fullKey);
+              resolve(raw !== null ? JSON.parse(raw) : defaultValue);
+            } catch (_) {
+              resolve(defaultValue);
+            }
+          }
+        };
+        req.onerror = () => {
+          try {
+            const raw = localStorage.getItem(fullKey);
+            resolve(raw !== null ? JSON.parse(raw) : defaultValue);
+          } catch (_) {
+            resolve(defaultValue);
+          }
+        };
+      });
+    }
+  } catch (_) {}
+
+  try {
+    const raw = localStorage.getItem(fullKey);
+    return raw !== null ? JSON.parse(raw) : defaultValue;
+  } catch (_) {
+    return defaultValue;
+  }
+}
+
+/**
+  * Guardar preferência de chat do utilizador em IndexedDB e localStorage.
+  */
+export async function setUserChatPref<T>(uid: string, key: string, value: T): Promise<void> {
+  const fullKey = `ga_chat_pref_${uid || 'guest'}_${key}`;
+  try {
+    localStorage.setItem(fullKey, JSON.stringify(value));
+  } catch (_) {}
+
+  try {
+    const db = await openChatIDB();
+    if (db.objectStoreNames.contains(PREFS_STORE)) {
+      const tx = db.transaction(PREFS_STORE, 'readwrite');
+      const store = tx.objectStore(PREFS_STORE);
+      store.put({ key: fullKey, value, updatedAt: Date.now() });
+    }
+  } catch (err) {
+    console.warn('[AI Chat Prefs] Erro ao gravar preferência no IndexedDB:', err);
+  }
+}
+
+/**
+  * Fixar ou desafixar uma conversa com persistência imediata em IndexedDB e Firestore.
+  */
+export async function togglePinConversation(
+  uid: string,
+  conversationId: string,
+  pinned: boolean
+): Promise<ChatConversation | null> {
+  if (!uid || !conversationId) return null;
+
+  const conversations = await getLocalConversations(uid);
+  const target = conversations.find(c => c.id === conversationId);
+  if (!target) return null;
+
+  const updated: ChatConversation = {
+    ...target,
+    pinned,
+    updatedAt: Date.now(),
+    synced: false
+  };
+
+  await saveConversation(uid, updated);
+  return updated;
+}
+
+/**
+  * Renomear uma conversa com persistência imediata em IndexedDB e Firestore.
+  */
+export async function renameConversation(
+  uid: string,
+  conversationId: string,
+  newTitle: string
+): Promise<ChatConversation | null> {
+  if (!uid || !conversationId) return null;
+
+  const conversations = await getLocalConversations(uid);
+  const target = conversations.find(c => c.id === conversationId);
+  if (!target) return null;
+
+  const updated: ChatConversation = {
+    ...target,
+    title: newTitle.trim(),
+    updatedAt: Date.now(),
+    synced: false
+  };
+
+  await saveConversation(uid, updated);
+  return updated;
+}
+

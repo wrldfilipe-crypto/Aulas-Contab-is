@@ -15,7 +15,7 @@ export interface OfflineSyncAction {
 
 // ── INDEXEDDB OFFLINE QUEUE & MODULE STORAGE ──────────────────
 const IDB_NAME = "GestaoAngolaOfflineDB";
-const IDB_VERSION = 1;
+const IDB_VERSION = 3; // Aligned with aiChatPersistenceService IDB_VERSION (v3) to prevent downgrade errors
 const QUEUE_STORE = "offlineQueue";
 const MODULES_STORE = "learningModules";
 
@@ -53,6 +53,14 @@ export function openIDB(): Promise<IDBDatabase> {
         }
         if (!db.objectStoreNames.contains(MODULES_STORE)) {
           db.createObjectStore(MODULES_STORE, { keyPath: "id" });
+        }
+        if (!db.objectStoreNames.contains('ai_conversations')) {
+          const store = db.createObjectStore('ai_conversations', { keyPath: 'id' });
+          store.createIndex('uid', 'uid', { unique: false });
+          store.createIndex('updatedAt', 'updatedAt', { unique: false });
+        }
+        if (!db.objectStoreNames.contains('userPrefs')) {
+          db.createObjectStore('userPrefs', { keyPath: 'key' });
         }
       };
       request.onsuccess = () => {

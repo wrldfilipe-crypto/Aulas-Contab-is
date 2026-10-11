@@ -548,12 +548,23 @@ const HighlightAccountingTerms: React.FC<{ text: string }> = ({ text }) => {
   );
 };
 
+import { SectionHeader } from './SectionHeader';
+
 export const LearningWorkspace: React.FC<{
   currentLanguage?: string;
   onNavigateTab?: (tab: string) => void;
-}> = ({ currentLanguage = 'pt', onNavigateTab }) => {
+  onOpenNav?: () => void;
+}> = ({ currentLanguage = 'pt', onNavigateTab, onOpenNav }) => {
   const currentUser = getCurrentUser();
   const userId = currentUser?.userId || 'guest';
+
+  const handleOpenNav = () => {
+    if (onOpenNav) {
+      onOpenNav();
+    } else if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('ga-open-mobile-nav'));
+    }
+  };
 
   // State management
   const [activeSubTab, setActiveSubTab] = useState<'upload' | 'library' | 'flashcards'>('library');

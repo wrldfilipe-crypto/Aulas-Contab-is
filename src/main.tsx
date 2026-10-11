@@ -26,11 +26,13 @@ try {
     const root = createRoot(rootElement);
     root.render(
       <ErrorBoundary>
-        <PGCProvider>
-          <AppGuard>
-            {({ uid, usuario }) => <App firebaseUser={usuario} firebaseUid={uid} />}
-          </AppGuard>
-        </PGCProvider>
+        <AppGuard>
+          {({ uid, usuario }) => (
+            <PGCProvider>
+              <App firebaseUser={usuario} firebaseUid={uid} />
+            </PGCProvider>
+          )}
+        </AppGuard>
       </ErrorBoundary>,
     );
 

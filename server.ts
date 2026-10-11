@@ -102,8 +102,8 @@ async function startServer() {
     for (const modelName of candidateModels) {
       try {
         const currentConfig = { ...config };
-        // If model is not gemini-3.1-pro-preview, remove thinkingConfig to avoid parameter incompatibility
-        if (modelName !== 'gemini-3.1-pro-preview' && currentConfig.thinkingConfig) {
+        // If model is not gemini-3.1-pro-preview, remove thinkingLevel to avoid parameter incompatibility
+        if (modelName !== 'gemini-3.1-pro-preview' && currentConfig.thinkingConfig?.thinkingLevel) {
           delete currentConfig.thinkingConfig;
         }
 
@@ -155,7 +155,7 @@ async function startServer() {
 
       try {
         const currentConfig = { ...baseConfig };
-        if (modelName !== 'gemini-3.1-pro-preview' && currentConfig.thinkingConfig) {
+        if (modelName !== 'gemini-3.1-pro-preview' && currentConfig.thinkingConfig?.thinkingLevel) {
           delete currentConfig.thinkingConfig;
         }
 
@@ -479,9 +479,15 @@ async function startServer() {
           }))
         : [];
       
+      const userParts: any[] = [];
+      if (req.body?.imageParts && Array.isArray(req.body.imageParts)) {
+        userParts.push(...req.body.imageParts);
+      }
+      userParts.push({ text: message });
+
       contents.push({
         role: 'user',
-        parts: [{ text: message }]
+        parts: userParts
       });
 
       const userLanguageInstruction: Record<string, string> = {
@@ -506,6 +512,16 @@ async function startServer() {
       const defaultAccountingPrompt = `És o YOHAN AI, um consultor e auditor contabilístico sénior humano, altamente experiente, especializado no Plano Geral de Contabilidade de Angola (PGC - Decreto n.º 82/01) e na legislação fiscal da AGT (Código do IVA - DP 180/19, Regime do IRT, Código do Imposto Industrial e RITI).
 
 IDIOMA — REGRA ABSOLUTA: Responde SEMPRE e APENAS em português (variante de Angola). Isto aplica-se a TODAS as respostas, títulos, listas, tabelas, cabeçalhos e fórmulas — mesmo quando o utilizador usa termos técnicos em inglês (VAT, deductible, ledger, etc.) ou quando o documento anexado estiver em inglês. NUNCA inicies a resposta em inglês. Única excepção: manter entre parênteses, quando útil, o termo técnico original inglês entre parênteses, ex.: 'IVA suportado (input VAT)'.
+
+## ESTILO DE COMUNICAÇÃO
+1. FALA COMO UM COLEGA, NÃO COMO UM MANUAL: escreve em parágrafos naturais quando a pergunta o permitir. NÃO uses listas como formato padrão de resposta.
+2. EXCEPÇÃO — QUANDO LISTAS SÃO OBRIGATÓRIAS: passos sequenciais reais (apuramento de IVA, conciliação, fecho de exercício), lançamentos contabilísticos (débito/crédito), checklists de verificação e comparações lado-a-lado permanecem em lista ou tabela — nestes casos a lista É a resposta correcta, não um hábito robótico.
+3. RESPOSTA PRIMEIRO, CONTEXTO DEPOIS: começa por responder directamente à pergunta central nas primeiras 1-3 frases. Definições, base legal, exemplos e implicações vêm SÓ DEPOIS da resposta, se acrescentarem valor.
+4. REFERÊNCIAS NORMATIVAS COM MODERAÇÃO: não cites "PGC Angola (Decreto n.º 82/01)" ou "Decreto Presidencial n.º 180/19" em todas as respostas. Cita apenas quando a norma for essencial à justificação da resposta ou quando o utilizador perguntar pela norma/base legal.
+5. VARIAR A ABERTURA: nunca comeces duas respostas seguidas da mesma forma. Não abras sempre com o número da conta ou o termo técnico — varia entre responder directamente, reconhecer a situação do utilizador, ou partir de um exemplo prático, conforme a pergunta.
+6. RECONHECE O CONTEXTO DO UTILIZADOR: quando ele traz um lançamento, um valor ou uma dúvida concreta, reage brevemente ao que ele trouxe (ex.: "Isso está certo, porque o IVA de veículos de passageiros não é dedutível...") antes de desenvolver. Não despejes teoria genérica sobre um caso concreto.
+7. FECHAMENTO NATURAL E VARIADO: termina com uma frase curta e natural, conectada ao conteúdo (ex.: uma implicação prática, um alerta relevante ou uma oferta de ajuda específica ao caso). PROIBIDO repetir fórmulas fixas como "Sempre que surgirem outras dúvidas, estou à disposição" — se já usaste essa estrutura na conversa, usa outra ou fecha sem oferta.
+8. LIMITE DE TOM: nunca percas rigor técnico nem inventes valores de contas ou normas para "soar natural". Naturalidade na FORMA, precisão no FUNDO.
 
 IDENTIDADE, PERSONALIDADE E VOZ:
 - Falas e pensas como um profissional humano experiente, paciente, caloroso e didático que está conversando pessoalmente com o utilizador.
@@ -568,6 +584,8 @@ ${targetedPGCKnowledge ? `BASE DE CONHECIMENTO PGC RELEVANTE:\n${targetedPGCKnow
 
       if (thinkingMode && modelToUse === 'gemini-3.1-pro-preview') {
         config.thinkingConfig = { thinkingLevel: ThinkingLevel.HIGH };
+      } else if (req.body.thinkingBudget !== undefined && !isNaN(Number(req.body.thinkingBudget))) {
+        config.thinkingConfig = { thinkingBudget: Number(req.body.thinkingBudget) };
       }
 
       // Handle Streaming if requested by client (ReadableStream / SSE)
@@ -1591,8 +1609,9 @@ Responda em JSON:
 
   // YOHAN AI - DOCUMENT EXTRACTION & OCR ENDPOINT (PDF, Excel, Word, Images)
   app.post('/api/yohan/extract-doc', async (req, res) => {
+    res.setHeader('Content-Type', 'application/json');
     try {
-      const { fileBase64, fileName, mimeType, language } = req.body;
+      const { fileBase64, fileName, mimeType, language } = req.body || {};
       if (!fileBase64) {
         return res.status(400).json({ error: 'Ficheiro base64 é obrigatório.' });
       }
@@ -1690,7 +1709,7 @@ Format response strictly as a JSON object matching this schema:
 }
 Respond ONLY with raw JSON without markdown formatting.`;
 
-      const { response } = await generateContentWithFallback('gemini-3.7-flash', {
+      const { response } = await generateContentWithFallback('gemini-3.8-flash', {
         parts: [
           {
             inlineData: {

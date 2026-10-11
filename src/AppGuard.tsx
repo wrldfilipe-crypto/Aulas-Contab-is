@@ -111,7 +111,8 @@ export function AppGuard({ children }: AppGuardProps) {
           animate={{ opacity: 1, scale: 1 }}
           exit={{ opacity: 0 }}
           transition={{ duration: 0.35, ease: "easeOut" }}
-          className="min-h-screen w-full"
+          className="h-[100dvh] w-full overflow-hidden flex flex-col min-h-0"
+          style={{ height: '100dvh', overflow: 'hidden' }}
         >
           {typeof children === "function" ? children({ uid: estado.uid, usuario: estado.usuario }) : children}
         </motion.div>

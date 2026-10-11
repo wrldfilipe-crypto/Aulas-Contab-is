@@ -6,27 +6,24 @@
 
 type RouteKey = 
   | 'dashboard' 
-  | 'ai_accountant' 
+  | 'assistant'
   | 'learning' 
-  | 'quizzes' 
-  | 'erp_accounting';
+  | 'quizzes';
 
 // Prediction matrix for next probable routes
 const NEXT_ROUTES_PREDICTION: Record<RouteKey, RouteKey[]> = {
-  dashboard: ['ai_accountant', 'learning'],
-  ai_accountant: ['learning', 'quizzes'],
-  learning: ['quizzes', 'ai_accountant'],
-  quizzes: ['learning', 'dashboard'],
-  erp_accounting: ['dashboard', 'ai_accountant']
+  dashboard: ['learning', 'assistant'],
+  assistant: ['dashboard', 'learning'],
+  learning: ['quizzes', 'assistant'],
+  quizzes: ['learning', 'dashboard']
 };
 
 // Map of route keys to their dynamic import functions
 const COMPONENT_IMPORTS: Record<RouteKey, () => Promise<any>> = {
   dashboard: () => Promise.resolve(),
-  ai_accountant: () => import('../components/YohanAI'),
+  assistant: () => import('../components/YohanAI'),
   learning: () => import('../components/LearningWorkspace'),
-  quizzes: () => import('../components/QuizWorkspace'),
-  erp_accounting: () => import('../components/ErpAccountingWorkspace')
+  quizzes: () => import('../components/QuizWorkspace')
 };
 
 const preloadedRoutes = new Set<RouteKey>();

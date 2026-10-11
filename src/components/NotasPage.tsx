@@ -110,9 +110,12 @@ export interface NoteItem {
   updatedAt: number;
 }
 
+import { SectionHeader } from './SectionHeader';
+
 interface NotasPageProps {
   currentUserId?: string;
   onNavigateTab?: (tab: string) => void;
+  onOpenNav?: () => void;
 }
 
 const CATEGORY_COLORS: Record<NoteCategory, { bg: string; text: string; border: string; badge: string }> = {
@@ -205,8 +208,16 @@ function loadNotesMultiStore(uid: string): NoteItem[] | null {
   return null;
 }
 
-export default function NotasPage({ currentUserId, onNavigateTab }: NotasPageProps) {
+export default function NotasPage({ currentUserId, onNavigateTab, onOpenNav }: NotasPageProps) {
   const effectiveUid = currentUserId || 'guest';
+
+  const handleOpenNav = () => {
+    if (onOpenNav) {
+      onOpenNav();
+    } else if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('ga-open-mobile-nav'));
+    }
+  };
 
   // Core Notes State with Multi-Store initial cache
   const [notes, setNotes] = useState<NoteItem[]>(() => {
@@ -1008,6 +1019,12 @@ export default function NotasPage({ currentUserId, onNavigateTab }: NotasPagePro
 
   return (
     <div className="w-full space-y-6 animate-in fade-in duration-300 pb-16" id="notas-workspace-container">
+      {/* Mobile/Tablet Section Header */}
+      <SectionHeader 
+        title="Notas & Caderno"
+        subtitle="Anotações e resumos PGC"
+        onOpenNav={handleOpenNav}
+      />
       
       {/* TOAST NOTIFICATION */}
       <AnimatePresence>

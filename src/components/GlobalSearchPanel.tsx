@@ -208,37 +208,7 @@ export default function GlobalSearchPanel({
       console.warn('Global search failed reading transactions:', e);
     }
 
-    // 3. Search in HISTÓRICO DO YOHAN AI (LocalStorage)
-    try {
-      const storedHistory = localStorage.getItem(`ga_yohan_ai_history_${currentUserId}`) || localStorage.getItem(`ga_ai_accountant_history_${currentUserId}`);
-      if (storedHistory) {
-        const aiHistory: any[] = JSON.parse(storedHistory);
-        aiHistory
-          .filter(h => 
-            h.title?.toLowerCase().includes(searchQuery) ||
-            h.tag?.toLowerCase().includes(searchQuery) ||
-            h.messages?.some((m: any) => m.text?.toLowerCase().includes(searchQuery))
-          )
-          .forEach(h => {
-            listResults.push({
-              id: 'aichat_' + h.id,
-              type: 'ai_chat',
-              categoryLabel: '🤖 Yohan AI (Histórico)',
-              icon: MessageSquare,
-              title: h.title || 'Conversa com Yohan AI',
-              subtitle: `Etiqueta: ${h.tag || '#Geral'} • ${h.messages?.length || 0} mensagens`,
-              action: () => {
-                onNavigateTab('assistant');
-                onClose();
-              }
-            });
-          });
-      }
-    } catch (e) {
-      console.warn('Global search failed reading AI history:', e);
-    }
-
-    // 4. Search in documents DO utilizador (DB)
+    // 3. Search in documents DO utilizador (DB)
     const docs = DB.list('documents');
     docs.filter((d: any) => 
       d.title?.toLowerCase().includes(searchQuery) || 
@@ -250,21 +220,20 @@ export default function GlobalSearchPanel({
         categoryLabel: '📄 Documentos & Ficheiros',
         icon: FileText,
         title: d.title || 'Untitled Document',
-        subtitle: 'Documento / AI Document',
+        subtitle: 'Documento / Arquivo',
         action: () => {
-          onNavigateTab('assistant');
+          onNavigateTab('learning');
           onClose();
         }
       });
     });
 
-    // 5. Search in pages e ações
+    // 4. Search in pages e ações
     const pages = [
       { label: 'Consola de Painel / Dashboard', route: 'dashboard', keywords: 'home inicio dashboard console transacoes' },
-      { label: 'Yohan AI / Assistente PGC', route: 'assistant', keywords: 'yohan ia chat assistente documentos pgciva contabilidade auditoria' },
+      { label: 'Yohan AI — Consultor & Auditor PGC', route: 'assistant', keywords: 'yohan assistente ia consultoria auditoria fiscalidade iva lancamentos' },
       { label: 'Aprendizados / Materiais de Estudo & IA', route: 'learning', keywords: 'aprendizados estudo pdf word excel materias ia explicacoes exercicios' },
       { label: 'Exercícios & Quizzes / Quizzes', route: 'quizzes', keywords: 'quizzes questoes testes simulados exercicios contabilidade' },
-      { label: 'Contabilidade & Diário / Journal', route: 'erp_accounting', keywords: 'contabilidade diario lancamentos balancete razao' },
       { label: 'Perfil de Conta / Account Settings', route: 'profile', keywords: 'perfil seguranca preferencias conta 2fa tema foco noturno' },
     ];
 
@@ -472,7 +441,7 @@ export default function GlobalSearchPanel({
                   <button
                     onClick={() => {
                       if (onOpenNewDocModal) onOpenNewDocModal();
-                      else onNavigateTab('assistant');
+                      else onNavigateTab('learning');
                       onClose();
                     }}
                     className="w-full flex items-center justify-between p-3 bg-slate-50 hover:bg-slate-100/80 rounded-lg text-left transition-all"

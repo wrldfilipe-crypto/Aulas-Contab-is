@@ -41,19 +41,13 @@ html, body, #root {
 }
 
 @media (max-width: 1023px) {
-  .topbar,
-  #header-panel {
-    display: none !important;
-  }
   .sidebar,
   #sidebar-panel-desktop {
     display: none !important;
   }
   .page-content {
-    width: 100vw;
-    height: 100dvh;
-    padding-top: env(safe-area-inset-top);
-    padding-bottom: calc(64px + env(safe-area-inset-bottom));
+    width: 100%;
+    height: 100%;
     overflow-y: auto;
   }
 }
@@ -97,6 +91,14 @@ html, body, #root {
   overflow: hidden;
   padding: 0;
   margin: 0;
+}
+
+#workspace-scroll-area[data-tab="assistant"] {
+  padding: 0 !important;
+  margin: 0 !important;
+  overflow: hidden !important;
+  height: 100% !important;
+  max-height: 100% !important;
 }
 
 .ai-chat-area {

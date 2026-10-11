@@ -42,7 +42,7 @@ const PGC_FUNDAMENTALS_STEPS: TourStep[] = [
   },
   {
     id: 'pgc-partidas-dobradas',
-    targetId: 'nav-btn-accounting',
+    targetId: 'nav-btn-assistant',
     title: '2. O Método das Partidas Dobradas & Regra Débito/Crédito',
     subtitle: 'Princípio da Equivalência Financeira Universal',
     description: 'Em cada lançamento contabilístico, o Total a Débito deve ser rigorosamente igual ao Total a Crédito (∑ Débitos = ∑ Créditos).',
@@ -56,7 +56,7 @@ const PGC_FUNDAMENTALS_STEPS: TourStep[] = [
       explicacao: 'Recebimento de fatura de cliente por transferência bancária.'
     },
     badge: 'MÉTODO CONTABILÍSTICO',
-    tabToActivate: 'accounting',
+    tabToActivate: 'assistant',
     placement: 'right'
   },
   {
@@ -89,23 +89,9 @@ const PGC_FUNDAMENTALS_STEPS: TourStep[] = [
     placement: 'right'
   },
   {
-    id: 'pgc-ai-validator',
-    targetId: 'nav-btn-assistant',
-    title: '5. Validador Inteligente & Assistente IA PGC',
-    subtitle: 'Verificação em Tempo Real de Conformidade Angolana',
-    description: 'O ContaGlobal integra um motor de IA especializado que audita lançamentos, detecta discrepâncias no plano de contas e explica o cálculo de retenções fiscais instantaneamente.',
-    conceptPoints: [
-      { label: 'Auditoria de Lançamentos', detail: 'Garante que os códigos de subcontas (ex: 31.1, 43.1, 62.2) respeitam o PGC Angola.', badge: 'Auto-Correção' },
-      { label: 'Memória Orgânica Contínua', detail: 'Aprende com o histórico dos seus estudos e sugere exercícios direcionados para as suas dúvidas.', badge: 'IA Adaptativa' }
-    ],
-    badge: 'CONSULTOR IA',
-    tabToActivate: 'assistant',
-    placement: 'right'
-  },
-  {
     id: 'pgc-offline-resilience',
     targetId: 'd3-offline-queue-gauge-container',
-    title: '6. Fila Offline & Sincronização em Tempo Real',
+    title: '5. Fila Offline & Sincronização em Tempo Real',
     subtitle: 'Disponibilidade Sem Interrupções Mesmo Sem Internet',
     description: 'Trabalhe livremente sem conexão. Todos os lançamentos, notas e testes são enfileirados localmente no IndexedDB e sincronizados automaticamente com o servidor central.',
     conceptPoints: [
@@ -134,15 +120,6 @@ const PLATFORM_STEPS: TourStep[] = [
     description: 'A barra de topo fixa apresenta o seu enquadramento em tempo real: a norma contabilística activa, o tópico em estudo e alertas regressivos para prazos da AGT.',
     badge: 'CONTEXTO GLOBAL',
     placement: 'bottom'
-  },
-  {
-    id: 'platform-assistant',
-    targetId: 'nav-btn-assistant',
-    title: 'Consultor IA Contabilístico & Fiscal',
-    description: 'Esclareça dúvidas complexas sobre IRT, IVA, IRC e lançamentos contabilísticos com a IA Generativa dotada de Memória Orgânica Contínua.',
-    badge: 'CONSULTOR IA',
-    tabToActivate: 'assistant',
-    placement: 'right'
   },
   {
     id: 'platform-learnings',
@@ -278,7 +255,7 @@ export const OnboardingTour: React.FC<OnboardingTourProps> = ({
         bottom: '16px',
         left: '12px',
         right: '12px',
-        maxHeight: '85vh',
+        maxHeight: 'calc(100dvh - 32px)',
         overflowY: 'auto',
         zIndex: 9999,
       };
@@ -288,6 +265,8 @@ export const OnboardingTour: React.FC<OnboardingTourProps> = ({
         left: `${targetRect.right + padding}px`,
         maxWidth: '460px',
         width: '460px',
+        maxHeight: 'calc(100dvh - 32px)',
+        overflowY: 'auto',
         zIndex: 9999,
       };
     } else if (step.placement === 'left') {
@@ -296,6 +275,8 @@ export const OnboardingTour: React.FC<OnboardingTourProps> = ({
         left: `${Math.max(16, targetRect.left - 480)}px`,
         maxWidth: '460px',
         width: '460px',
+        maxHeight: 'calc(100dvh - 32px)',
+        overflowY: 'auto',
         zIndex: 9999,
       };
     } else if (step.placement === 'bottom') {
@@ -304,6 +285,8 @@ export const OnboardingTour: React.FC<OnboardingTourProps> = ({
         left: Math.max(20, Math.min(window.innerWidth - 480, targetRect.left - 40)),
         maxWidth: '460px',
         width: '460px',
+        maxHeight: 'calc(100dvh - 32px)',
+        overflowY: 'auto',
         zIndex: 9999,
       };
     } else if (step.placement === 'top') {
@@ -312,6 +295,8 @@ export const OnboardingTour: React.FC<OnboardingTourProps> = ({
         left: Math.max(20, Math.min(window.innerWidth - 480, targetRect.left - 40)),
         maxWidth: '460px',
         width: '460px',
+        maxHeight: 'calc(100dvh - 32px)',
+        overflowY: 'auto',
         zIndex: 9999,
       };
     }
@@ -323,7 +308,7 @@ export const OnboardingTour: React.FC<OnboardingTourProps> = ({
       transform: 'translate(-50%, -50%)',
       maxWidth: '480px',
       width: '92%',
-      maxHeight: '90vh',
+      maxHeight: 'calc(100dvh - 40px)',
       overflowY: 'auto',
       zIndex: 9999,
     };

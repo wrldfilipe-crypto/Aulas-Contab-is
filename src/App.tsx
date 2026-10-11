@@ -11,14 +11,10 @@ import { ErrorBoundary } from './components/ErrorBoundary';
 import { ComponentErrorBoundary } from './components/ComponentErrorBoundary';
 import { preloadNextLikelyRoutes } from './services/preloadService';
 import { cancelPendingRequests } from './services/appCacheService';
-import YohanAI from './components/YohanAI';
-import { YohanLogo } from './components/YohanLogo';
-import { AccountingLogo } from './components/AccountingLogo';
 import { getPendingOfflineActions, syncOfflineDataWithServer, clearStaleCache, getQuizProgress, notifyDataChanged } from './services/dashboardCache';
 import { processOfflineQueue } from './services/offlineQueue';
 import LanguageSelector from './components/LanguageSelector';
 import ThemeSelector from './components/ThemeSelector';
-import ThemeCustomizerFloatingButton from './components/ThemeCustomizerFloatingButton';
 import { loadAppearance, applyAppearanceToDOM } from './lib/themeAppearance';
 import SyncBanner from './components/SyncBanner';
 import OfflineStatusBanner from './components/OfflineStatusBanner';
@@ -27,7 +23,6 @@ import { OnboardingTour } from './components/OnboardingTour';
 import { KeyboardShortcutsModal } from './components/KeyboardShortcutsModal';
 import { FirestoreStatusModal } from './components/FirestoreStatusModal';
 import OfflineSyncManagerModal from './components/OfflineSyncManagerModal';
-import { MobileBottomNavigation } from './components/MobileBottomNavigation';
 import { SmartSuggestionsWidget } from './components/SmartSuggestionsWidget';
 import { 
   trackUserPresence 
@@ -66,12 +61,11 @@ import { LoginPage } from './pages/Login/LoginPage';
 import SupabaseSyncManagerModal from './components/SupabaseSyncManagerModal';
 import LearningWorkspace from './components/LearningWorkspace';
 import { QuizWorkspace } from './components/QuizWorkspace';
-import AdminDashboard from './components/AdminDashboard';
-import ErpAccountingWorkspace from './components/ErpAccountingWorkspace';
 import NotasPage from './components/NotasPage';
 import { StudentDashboardView } from './components/StudentDashboardView';
 import UserProfilePanel from './components/UserProfilePanel';
 import GlobalSearchPanel from './components/GlobalSearchPanel';
+import YohanAI from './components/YohanAI';
 
 import { 
   LayoutDashboard, 
@@ -111,6 +105,8 @@ import {
   LogOut,
   Newspaper,
   Menu,
+  PanelLeftClose,
+  PanelLeft,
   Pin,
   PinOff,
   ChevronLeft,
@@ -126,13 +122,11 @@ import {
 // Strict allowlist for application tabs
 export type AppTab = 
   | 'dashboard' 
-  | 'assistant' 
+  | 'assistant'
   | 'learning' 
   | 'quizzes' 
-  | 'profile' 
-  | 'admin' 
-  | 'accounting' 
   | 'notes' 
+  | 'profile' 
   | 'find-users';
 
 export const ACTIVE_TABS = new Set<string>([
@@ -140,10 +134,8 @@ export const ACTIVE_TABS = new Set<string>([
   'assistant',
   'learning',
   'quizzes',
-  'profile',
-  'admin',
-  'accounting',
   'notes',
+  'profile',
   'find-users'
 ]);
 
@@ -232,12 +224,24 @@ export default function App({ firebaseUser, firebaseUid }: { firebaseUser?: any;
   const [isSupabaseModalOpen, setIsSupabaseModalOpen] = useState(false);
   const [hasOnboarded, setHasOnboarded] = useState<boolean>(true);
 
-  // Retractable & Responsive Sidebar State
-  const [isSidebarPinned, setIsSidebarPinned] = useState<boolean>(() => {
-    return localStorage.getItem('ga_sidebar_pinned') === 'true';
+  // Claude-Style Retractable Sidebar State (expanded by default on desktop, persisted)
+  const [isSidebarExpanded, setIsSidebarExpanded] = useState<boolean>(() => {
+    const saved = localStorage.getItem('ga_sidebar_expanded');
+    if (saved !== null) return saved === 'true';
+    const legacyPinned = localStorage.getItem('ga_sidebar_pinned');
+    if (legacyPinned !== null) return legacyPinned === 'true';
+    return true;
   });
-  const [isSidebarHovered, setIsSidebarHovered] = useState<boolean>(false);
   const [isMobileOpen, setIsMobileOpen] = useState<boolean>(false);
+
+  const toggleSidebar = () => {
+    setIsSidebarExpanded(prev => {
+      const next = !prev;
+      localStorage.setItem('ga_sidebar_expanded', String(next));
+      localStorage.setItem('ga_sidebar_pinned', String(next));
+      return next;
+    });
+  };
 
   // Supabase Realtime Presence & Device registration
   useEffect(() => {
@@ -287,11 +291,6 @@ export default function App({ firebaseUser, firebaseUid }: { firebaseUser?: any;
     }
     setActiveTab(tabId);
     setIsMobileOpen(false);
-    // Auto-collapse if on tablet screen size (768px - 1024px)
-    if (window.innerWidth >= 768 && window.innerWidth <= 1024) {
-      setIsSidebarPinned(false);
-      localStorage.setItem('ga_sidebar_pinned', 'false');
-    }
   };
 
   const handleSidebarResizeStart = (e: React.MouseEvent) => {
@@ -405,15 +404,7 @@ export default function App({ firebaseUser, firebaseUid }: { firebaseUser?: any;
     }
   };
 
-  const toggleSidebarPin = () => {
-    setIsSidebarPinned(prev => {
-      const next = !prev;
-      localStorage.setItem('ga_sidebar_pinned', String(next));
-      return next;
-    });
-  };
-
-  const isSidebarExpanded = isSidebarPinned || isSidebarHovered;
+  const toggleSidebarPin = toggleSidebar;
 
   // Verify user and workspace on mount & sync with Firebase Auth / Firestore
   const lastSyncedUserRef = useRef<string>('');
@@ -564,7 +555,6 @@ export default function App({ firebaseUser, firebaseUid }: { firebaseUser?: any;
   const [logoutMessage, setLogoutMessage] = useState<string | null>(null);
   const [isLogoutModalOpen, setIsLogoutModalOpen] = useState(false);
   const [isMoreOptionsOpen, setIsMoreOptionsOpen] = useState(false);
-  const [isMobileDrawerOpen, setIsMobileDrawerOpen] = useState(false);
   const [isStatsCollapsed, setIsStatsCollapsed] = useState(true);
 
   const handleTrocarConta = async () => {
@@ -907,20 +897,23 @@ export default function App({ firebaseUser, firebaseUid }: { firebaseUser?: any;
         setIsShortcutsHelpOpen(false);
       }
 
-      // Alt + 1..9, Alt+A, Alt+N tab navigation shortcuts
+      // Alt + 1..9, Alt+A, Alt+N tab navigation shortcuts & Alt+B sidebar toggle
       if (e.altKey && !e.ctrlKey && !e.metaKey) {
         const key = e.key.toLowerCase();
+        if (key === 'b') {
+          e.preventDefault();
+          toggleSidebar();
+          return;
+        }
         const navMap: Record<string, string> = {
           '1': 'dashboard',
           '2': 'assistant',
+          'y': 'assistant',
           '3': 'learning',
           '4': 'quizzes',
-          '5': 'accounting',
-          'a': 'accounting',
-          '6': 'notes',
+          '5': 'notes',
           'n': 'notes',
-          '7': 'rh',
-          '8': 'exchange_rates'
+          '6': 'profile'
         };
         if (navMap[key]) {
           e.preventDefault();
@@ -976,7 +969,7 @@ export default function App({ firebaseUser, firebaseUid }: { firebaseUser?: any;
     if (typeof window !== 'undefined') {
       const path = window.location.pathname.toLowerCase();
       const hash = window.location.hash.toLowerCase();
-      if (path.includes('assistente') || path.includes('assistant') || path.includes('ai_accountant') || hash.includes('assistant') || hash.includes('contador-ia')) {
+      if (path.includes('yohan') || path.includes('assistant') || hash.includes('assistant') || hash.includes('yohan')) {
         return 'assistant';
       }
       if (path.includes('estudos') || path.includes('learning') || hash.includes('learning') || hash.includes('estudos')) {
@@ -984,9 +977,6 @@ export default function App({ firebaseUser, firebaseUid }: { firebaseUser?: any;
       }
       if (path.includes('quizzes') || hash.includes('quizzes')) {
         return 'quizzes';
-      }
-      if (path.includes('contabilidade') || path.includes('accounting') || hash.includes('accounting') || hash.includes('contabilidade')) {
-        return 'accounting';
       }
       if (path.includes('notas') || path.includes('notes') || hash.includes('notes') || hash.includes('notas')) {
         return 'notes';
@@ -997,9 +987,6 @@ export default function App({ firebaseUser, firebaseUid }: { firebaseUser?: any;
       if (path.includes('perfil') || path.includes('profile') || hash.includes('profile')) {
         return 'profile';
       }
-      if (path.includes('admin') || hash.includes('admin')) {
-        return 'admin';
-      }
     }
     return 'dashboard';
   });
@@ -1007,8 +994,7 @@ export default function App({ firebaseUser, firebaseUid }: { firebaseUser?: any;
     const initial = typeof window !== 'undefined' ? (
       window.location.pathname.toLowerCase().includes('estudos') ? 'learning' :
       window.location.pathname.toLowerCase().includes('quizzes') ? 'quizzes' :
-      window.location.pathname.toLowerCase().includes('contabilidade') ? 'accounting' :
-      window.location.pathname.toLowerCase().includes('assistente') ? 'assistant' : 'dashboard'
+      window.location.pathname.toLowerCase().includes('yohan') ? 'assistant' : 'dashboard'
     ) : 'dashboard';
     return new Set([initial, 'dashboard']);
   });
@@ -1035,20 +1021,16 @@ export default function App({ firebaseUser, firebaseUid }: { firebaseUser?: any;
       const hash = window.location.hash.toLowerCase();
       if (hash === '#/find-users' || hash === '#find-users') {
         setActiveTab('find-users');
-      } else if (path.includes('assistente') || path.includes('assistant') || path.includes('ai_accountant') || hash === '#/assistant' || hash === '#assistant' || hash.includes('contador-ia')) {
+      } else if (path.includes('yohan') || path.includes('assistant') || hash === '#/assistant' || hash === '#assistant' || hash.includes('yohan')) {
         setActiveTab('assistant');
       } else if (path.includes('estudos') || path.includes('learning') || hash === '#/learning' || hash === '#learning' || hash.includes('estudos')) {
         setActiveTab('learning');
       } else if (path.includes('quizzes') || hash === '#/quizzes' || hash === '#quizzes') {
         setActiveTab('quizzes');
-      } else if (path.includes('contabilidade') || path.includes('accounting') || hash === '#/accounting' || hash === '#accounting') {
-        setActiveTab('accounting');
       } else if (path.includes('notas') || path.includes('notes') || hash === '#/notes' || hash === '#notes' || hash.includes('notas')) {
         setActiveTab('notes');
       } else if (path.includes('perfil') || path.includes('profile') || hash.includes('profile')) {
         setActiveTab('profile');
-      } else if (path.includes('admin') || hash.includes('admin')) {
-        setActiveTab('admin');
       }
     };
     handleLocationChange();
@@ -1620,12 +1602,6 @@ export default function App({ firebaseUser, firebaseUid }: { firebaseUser?: any;
         }}
         aria-hidden="true"
       />
-      
-      {/* Edge Hover Sensor for Desktop (Left 20px edge) */}
-      <div 
-        className="hidden md:block fixed left-0 top-0 bottom-0 w-5 z-30" 
-        onMouseEnter={() => setIsSidebarHovered(true)}
-      />
 
       {/* MOBILE DRAWER BACKDROP OVERLAY */}
       {isMobileOpen && (
@@ -1635,9 +1611,9 @@ export default function App({ firebaseUser, firebaseUid }: { firebaseUser?: any;
         />
       )}
 
-      {/* MOBILE OFF-CANVAS SIDEBAR (<768px) */}
+      {/* MOBILE OFF-CANVAS SIDEBAR (<768px) - DRAWER ESTILO CLAUDE 85% */}
       <aside 
-        className={`mobile-menu-drawer md:hidden fixed inset-y-0 left-0 z-[1051] w-72 bg-slate-900 dark:bg-[var(--bg-sidebar)] flex flex-col text-slate-300 shadow-2xl transition-transform duration-300 ease-in-out ${
+        className={`mobile-menu-drawer md:hidden fixed inset-y-0 left-0 z-[1051] w-[85%] max-w-[320px] bg-slate-950 text-slate-200 flex flex-col border-r border-slate-800 shadow-2xl transition-transform duration-300 ease-in-out ${
           isMobileOpen ? 'translate-x-0' : '-translate-x-full'
         }`}
         id="sidebar-panel-mobile"
@@ -1645,97 +1621,184 @@ export default function App({ firebaseUser, firebaseUid }: { firebaseUser?: any;
         <div className="p-4 flex items-center justify-between border-b border-slate-800 h-16 shrink-0">
           <AppLogo isExpanded={true} />
           <button
+            type="button"
             onClick={() => setIsMobileOpen(false)}
-            className="p-2 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition-colors cursor-pointer shrink-0 ml-2 min-w-[44px] min-h-[44px] flex items-center justify-center"
+            className="p-2 text-slate-400 hover:text-white rounded-xl hover:bg-slate-800 transition-colors cursor-pointer shrink-0 min-w-[44px] min-h-[44px] flex items-center justify-center"
             aria-label="Fechar Menu"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
-        <nav className="flex-1 px-4 py-6 space-y-1 overflow-y-auto">
+        <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
+          {/* Painel */}
           <button 
+            type="button"
             onClick={() => { setActiveTab('dashboard'); setIsMobileOpen(false); }}
-            className={`w-full flex items-center px-4 py-3.5 text-sm font-medium rounded-xl transition-all ${
-              activeTab === 'dashboard' ? 'bg-blue-600 text-white shadow-md' : 'text-slate-400 hover:bg-slate-800 hover:text-white'
+            className={`w-full flex items-center px-3.5 py-3 text-sm font-medium rounded-xl transition-all ${
+              activeTab === 'dashboard' 
+                ? 'bg-blue-600 text-white shadow-md font-bold' 
+                : 'text-slate-300 hover:bg-slate-900 hover:text-white'
             }`}
           >
-            <LayoutDashboard className="mr-3 w-5 h-5 shrink-0" />
-            {i18n.t('nav.dashboard')}
+            <LayoutDashboard className="mr-3 w-5 h-5 shrink-0 text-slate-300 group-hover:text-white" />
+            <span>Painel</span>
+            <span className="ml-auto text-[10px] font-mono bg-slate-800/80 px-1.5 py-0.5 rounded text-slate-400">Alt+1</span>
           </button>
 
+          {/* Yohan AI */}
           <button 
-            onClick={() => { setActiveTab('notes'); setIsMobileOpen(false); }}
-            className={`w-full flex items-center px-4 py-3.5 text-sm font-medium rounded-xl transition-all ${
-              activeTab === 'notes' ? 'bg-blue-600 text-white shadow-md' : 'text-slate-400 hover:bg-slate-800 hover:text-white'
-            }`}
-          >
-            <StickyNote className="mr-3 w-5 h-5 shrink-0" />
-            Notas
-            <span className="ml-auto bg-blue-500/20 text-blue-400 text-[10px] uppercase font-bold px-2 py-0.5 rounded">
-              LOCAL
-            </span>
-          </button>
-
-          <button 
+            type="button"
             onClick={() => { setActiveTab('assistant'); setIsMobileOpen(false); }}
-            className={`w-full flex items-center px-4 py-3.5 text-sm font-medium rounded-xl transition-all ${
-              activeTab === 'assistant' ? 'bg-blue-600 text-white shadow-md' : 'text-slate-400 hover:bg-slate-800 hover:text-white'
+            className={`w-full flex items-center px-3.5 py-3 text-sm font-medium rounded-xl transition-all ${
+              activeTab === 'assistant' 
+                ? 'bg-indigo-600 text-white shadow-md font-bold' 
+                : 'text-slate-300 hover:bg-slate-900 hover:text-white'
             }`}
           >
-            <Bot className="mr-3 w-5 h-5 shrink-0" />
-            {i18n.t('nav.aiAccountant')}
-            <span className="ml-auto bg-blue-500/20 text-blue-400 text-[10px] uppercase font-bold px-2 py-0.5 rounded">
-              {i18n.t('extra.active')}
-            </span>
+            <Sparkles className="mr-3 w-5 h-5 shrink-0 text-indigo-400 group-hover:text-white" />
+            <span>Yohan AI</span>
+            <span className="ml-auto text-[10px] font-mono bg-indigo-500/20 text-indigo-300 px-1.5 py-0.5 rounded border border-indigo-500/30">Alt+2</span>
           </button>
 
+          {/* Aprendizados */}
           <button 
-            onClick={() => { setActiveTab('accounting'); setIsMobileOpen(false); }}
-            className={`w-full flex items-center px-4 py-3.5 text-sm font-medium rounded-xl transition-all ${
-              activeTab === 'accounting' ? 'bg-blue-600 text-white shadow-md' : 'text-slate-400 hover:bg-slate-800 hover:text-white'
-            }`}
-          >
-            <div className="mr-3 w-5 h-5 shrink-0 flex items-center justify-center">
-              <AccountingLogo size={20} showGlow={activeTab === 'accounting'} />
-            </div>
-            Contabilidade
-            <span className="ml-auto bg-blue-500/20 text-blue-400 text-[10px] uppercase font-bold px-2 py-0.5 rounded">
-              PGC
-            </span>
-          </button>
-
-          <button 
+            type="button"
             onClick={() => { setActiveTab('learning'); setIsMobileOpen(false); }}
-            className={`w-full flex items-center px-4 py-3.5 text-sm font-medium rounded-xl transition-all ${
-              activeTab === 'learning' ? 'bg-blue-600 text-white shadow-md' : 'text-slate-400 hover:bg-slate-800 hover:text-white'
+            className={`w-full flex items-center px-3.5 py-3 text-sm font-medium rounded-xl transition-all ${
+              activeTab === 'learning' 
+                ? 'bg-blue-600 text-white shadow-md font-bold' 
+                : 'text-slate-300 hover:bg-slate-900 hover:text-white'
             }`}
           >
-            <BookOpen className="mr-3 w-5 h-5 shrink-0" />
-            Aprendizados
-            <span className="ml-auto bg-blue-500/15 text-blue-400 text-[10px] uppercase font-bold px-2 py-0.5 rounded">
-              IA
-            </span>
+            <BookOpen className="mr-3 w-5 h-5 shrink-0 text-slate-300" />
+            <span>Aprendizados</span>
+            <span className="ml-auto text-[10px] font-mono bg-slate-800/80 px-1.5 py-0.5 rounded text-slate-400">Alt+3</span>
           </button>
 
+          {/* Quizzes */}
           <button 
+            type="button"
             onClick={() => { setActiveTab('quizzes'); setIsMobileOpen(false); }}
-            className={`w-full flex items-center px-4 py-3.5 text-sm font-medium rounded-xl transition-all ${
-              activeTab === 'quizzes' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-400 hover:bg-slate-800 hover:text-white'
+            className={`w-full flex items-center px-3.5 py-3 text-sm font-medium rounded-xl transition-all ${
+              activeTab === 'quizzes' 
+                ? 'bg-amber-600 text-white shadow-md font-bold' 
+                : 'text-slate-300 hover:bg-slate-900 hover:text-white'
             }`}
           >
             <GraduationCap className="mr-3 w-5 h-5 shrink-0 text-amber-400" />
-            Quizzes & Avaliações
-            <span className="ml-auto bg-amber-500/20 text-amber-300 text-[10px] uppercase font-bold px-2 py-0.5 rounded">
-              NOVO
+            <span>Quizzes</span>
+            <span className="ml-auto bg-amber-500/25 text-amber-300 text-[10px] uppercase font-bold px-1.5 py-0.5 rounded border border-amber-400/30">
+              Alt+4
             </span>
           </button>
+
+          {/* Notas */}
+          <button 
+            type="button"
+            onClick={() => { setActiveTab('notes'); setIsMobileOpen(false); }}
+            className={`w-full flex items-center px-3.5 py-3 text-sm font-medium rounded-xl transition-all ${
+              activeTab === 'notes' 
+                ? 'bg-blue-600 text-white shadow-md font-bold' 
+                : 'text-slate-300 hover:bg-slate-900 hover:text-white'
+            }`}
+          >
+            <StickyNote className="mr-3 w-5 h-5 shrink-0 text-slate-300" />
+            <span>Notas</span>
+            <span className="ml-auto text-[10px] font-mono bg-slate-800/80 px-1.5 py-0.5 rounded text-slate-400">Alt+5</span>
+          </button>
+
+          {/* O Meu Perfil */}
+          <button 
+            type="button"
+            onClick={() => { setActiveTab('profile'); setIsMobileOpen(false); }}
+            className={`w-full flex items-center px-3.5 py-3 text-sm font-medium rounded-xl transition-all ${
+              activeTab === 'profile' 
+                ? 'bg-blue-600 text-white shadow-md font-bold' 
+                : 'text-slate-300 hover:bg-slate-900 hover:text-white'
+            }`}
+          >
+            <User className="mr-3 w-5 h-5 shrink-0 text-slate-300" />
+            <span>O Meu Perfil</span>
+            <span className="ml-auto text-[10px] font-mono bg-slate-800/80 px-1.5 py-0.5 rounded text-slate-400">Alt+6</span>
+          </button>
+
+          {/* Configurações & Preferências no Menu Mobile */}
+          <div className="pt-3 mt-3 border-t border-slate-800 space-y-3">
+            <div className="px-2">
+              <span className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Preferências</span>
+            </div>
+
+            {/* Tema Visual */}
+            <div className="px-2">
+              <div className="flex items-center justify-between mb-1.5">
+                <span className="text-xs text-slate-300 font-medium">Tema Visual</span>
+              </div>
+              <ThemeSelector />
+            </div>
+
+            {/* Idioma */}
+            <div className="px-2">
+              <div className="flex items-center justify-between mb-1.5">
+                <span className="text-xs text-slate-300 font-medium">Idioma</span>
+              </div>
+              <LanguageSelector isTopbar={false} />
+            </div>
+
+            {/* Estado de Sincronização */}
+            <div className="px-2 pt-1">
+              <SyncBanner onOpenModal={() => {
+                setIsOfflineModalOpen(true);
+                setIsMobileOpen(false);
+              }} />
+            </div>
+
+            {/* Tutorial PGC Angola */}
+            <button
+              type="button"
+              onClick={() => {
+                setIsTourOpen(true);
+                setIsMobileOpen(false);
+              }}
+              className="w-full flex items-center px-3.5 py-2.5 text-xs font-semibold text-amber-300 hover:bg-slate-900 rounded-xl transition-all cursor-pointer"
+            >
+              <Sparkles className="mr-3 w-4 h-4 text-amber-400 shrink-0" />
+              <span>Tutorial PGC Angola</span>
+            </button>
+
+            {/* Supabase Cloud */}
+            <button
+              type="button"
+              onClick={() => {
+                setIsSupabaseModalOpen(true);
+                setIsMobileOpen(false);
+              }}
+              className="w-full flex items-center px-3.5 py-2.5 text-xs font-semibold text-emerald-300 hover:bg-slate-900 rounded-xl transition-all cursor-pointer"
+            >
+              <Database className="mr-3 w-4 h-4 text-emerald-400 shrink-0" />
+              <span>Supabase Cloud & Dispositivos</span>
+            </button>
+          </div>
         </nav>
 
-        <div className="p-4 border-t border-slate-800 shrink-0">
+        {/* Mobile Drawer Footer */}
+        <div className="p-3 border-t border-slate-800 shrink-0 space-y-2">
           <button
+            type="button"
+            onClick={() => {
+              setIsMobileOpen(false);
+              handleTrocarConta();
+            }}
+            className="w-full flex items-center gap-2.5 py-2.5 px-3 bg-indigo-950/40 hover:bg-indigo-900/60 text-indigo-300 text-xs font-bold rounded-xl border border-indigo-500/30 transition-all cursor-pointer"
+          >
+            <Users className="w-4 h-4 text-indigo-400" />
+            <span>Trocar de Conta Google</span>
+          </button>
+
+          <button
+            type="button"
             onClick={() => { setIsLogoutModalOpen(true); setIsMobileOpen(false); }}
-            className="w-full flex items-center justify-center gap-2 py-3 px-3 bg-red-500/10 hover:bg-red-500/20 text-red-400 text-sm font-bold rounded-xl border border-red-500/20 transition-all cursor-pointer"
+            className="w-full flex items-center justify-center gap-2 py-2.5 px-3 bg-red-500/10 hover:bg-red-500/20 text-red-400 text-xs font-bold rounded-xl border border-red-500/20 transition-all cursor-pointer"
           >
             <LogOut className="w-4 h-4" />
             <span>Terminar Sessão</span>
@@ -1743,484 +1806,313 @@ export default function App({ firebaseUser, firebaseUid }: { firebaseUser?: any;
         </div>
       </aside>
 
-      {/* DESKTOP & TABLET RETRACTABLE SIDEBAR (>=768px) */}
+      {/* DESKTOP SIDEBAR ESTILO CLAUDE (>=768px) */}
       <aside 
         id="sidebar-panel-desktop"
         tabIndex={0}
         aria-label="Painel de Navegação Lateral"
-        onMouseEnter={() => setIsSidebarHovered(true)}
-        onMouseLeave={() => setIsSidebarHovered(false)}
         data-expanded={isSidebarExpanded}
-        className={`hidden md:flex bg-slate-900/95 dark:bg-[var(--bg-sidebar)] backdrop-blur-md rounded-r-2xl flex-col shrink-0 text-slate-300 ${
-          isResizingSidebar ? 'transition-none select-none cursor-col-resize' : 'transition-all duration-300 ease-in-out'
-        } relative z-40 border-r border-slate-800/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-900 hover:scale-[1.02] focus-within:scale-[1.02] hover:[filter:brightness(1.05)] focus-within:[filter:brightness(1.05)] origin-left ${
-          isSidebarPulse ? 'ring-2 ring-blue-500/80 shadow-[0_0_20px_rgba(59,130,246,0.6)] animate-pulse' : ''
-        } ${
-          isSidebarExpanded ? '' : 'w-16'
+        className={`hidden md:flex bg-slate-950 dark:bg-slate-950 flex-col shrink-0 text-slate-300 transition-all duration-300 ease-in-out relative z-40 border-r border-slate-800 ${
+          isSidebarExpanded ? 'w-60' : 'w-16'
         }`}
-        style={{
-          width: isSidebarExpanded ? `${sidebarWidth}px` : undefined,
-          backdropFilter: `blur(${Math.round(8 + scrollRatio * 16)}px) saturate(${Math.round(140 + scrollRatio * 60)}%)`,
-          WebkitBackdropFilter: `blur(${Math.round(8 + scrollRatio * 16)}px) saturate(${Math.round(140 + scrollRatio * 60)}%)`,
-        }}
       >
-        {/* Hidden Resizable Drag Handle & Live Width Indicator */}
-        {isSidebarExpanded && (
-          <div
-            onMouseDown={handleSidebarResizeStart}
-            className={`absolute top-0 right-0 w-2.5 h-full cursor-col-resize z-50 group/resize transition-colors ${
-              isResizingSidebar ? 'bg-blue-500/80 shadow-[0_0_10px_rgba(59,130,246,0.8)]' : 'hover:bg-blue-500/50'
-            }`}
-            title="Arrastar para redimensionar largura da barra lateral (guardado no browser)"
-            aria-label="Redimensionar largura da barra lateral"
-          >
-            <div className="absolute right-0.5 top-1/2 -translate-y-1/2 h-10 w-1 bg-slate-600/60 group-hover/resize:bg-blue-300 rounded-full opacity-0 group-hover/resize:opacity-100 transition-opacity"></div>
-            {/* Live Width Indicator during dragging */}
-            {isResizingSidebar && (
-              <div className="absolute left-full top-1/2 -translate-y-1/2 ml-3 px-3 py-1.5 bg-blue-600 text-white text-xs font-mono font-bold rounded-xl shadow-2xl z-50 pointer-events-none flex items-center gap-1.5 border border-blue-400 animate-in fade-in">
-                <span>Largura:</span>
-                <span className="text-amber-300 font-extrabold">{sidebarWidth}px</span>
+        {/* Header da Sidebar com botão de recolher/expandir no topo (estilo Claude) */}
+        <div className="p-3 flex items-center justify-between border-b border-slate-800 h-16 shrink-0 overflow-hidden">
+          {isSidebarExpanded ? (
+            <>
+              <div className="flex items-center min-w-0 flex-1 pl-1">
+                <AppLogo isExpanded={true} />
               </div>
-            )}
-          </div>
-        )}
-
-        {/* App Branding & Pin Button */}
-        <div className="p-3 flex items-center justify-between border-b border-slate-800 h-16 shrink-0 overflow-hidden min-h-[64px]">
-          <div 
-            onClick={toggleSidebarPin}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' || e.key === ' ' || e.key === 'Spacebar') {
-                e.preventDefault();
-                toggleSidebarPin();
-              }
-            }}
-            tabIndex={0}
-            role="button"
-            aria-label="Alternar fixação da barra lateral"
-            title="Clique no logotipo para alternar expansão da barra lateral"
-            className="flex items-center min-w-0 flex-1 cursor-pointer group/logo hover:opacity-90 active:scale-98 transition-all p-1 -ml-1 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/40"
-          >
-            <AppLogo isExpanded={isSidebarExpanded} />
-          </div>
-          {isSidebarExpanded && (
-            <div className="relative group/pin shrink-0 ml-1 flex items-center justify-center my-auto">
               <button
-                id="sidebar-pin-btn"
-                onClick={toggleSidebarPin}
-                data-pinned={isSidebarPinned}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' || e.key === ' ' || e.key === 'Spacebar') {
-                    e.preventDefault();
-                    toggleSidebarPin();
-                  }
-                }}
-                className="min-w-[44px] min-h-[44px] flex items-center justify-center p-2.5 text-slate-300 hover:text-white hover:bg-slate-800/90 rounded-xl transition-all duration-200 ease-out cursor-pointer shrink-0 focus:outline-none focus:ring-2 focus:ring-blue-500/50"
-                title={isSidebarPinned ? "Desafixar barra lateral (auto-retrair ao afastar o cursor)" : "Fixar barra lateral sempre expandida (mantém o painel visível)"}
-                aria-label={isSidebarPinned ? "Desafixar barra lateral (auto-retrair)" : "Fixar barra lateral (sempre visível)"}
+                id="btn-sidebar-toggle-desktop"
+                type="button"
+                onClick={toggleSidebar}
+                className="p-2 text-slate-400 hover:text-white hover:bg-slate-800/90 rounded-xl transition-all cursor-pointer shrink-0 ml-1 focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+                title="Recolher barra lateral (Alt+B)"
+                aria-label="Recolher barra lateral"
               >
-                {isSidebarPinned ? (
-                  <PinOff className="w-4.5 h-4.5 text-blue-400" />
-                ) : (
-                  <Pin className="w-4.5 h-4.5 text-slate-300" />
-                )}
+                <PanelLeftClose className="w-5 h-5 text-slate-400 hover:text-white" />
               </button>
-              {/* Tooltip explaining functionality on hover */}
-              <div className="absolute right-0 top-full mt-1.5 hidden group-hover/pin:flex items-center gap-1.5 bg-slate-900 border border-slate-700/90 text-slate-100 text-[11px] font-medium py-1.5 px-2.5 rounded-lg shadow-xl whitespace-nowrap z-50 pointer-events-none transition-all">
-                <span>{isSidebarPinned ? "Desafixar barra lateral (auto-retrair)" : "Fixar barra lateral (sempre visível)"}</span>
-              </div>
+            </>
+          ) : (
+            <div className="w-full flex items-center justify-center">
+              <button
+                id="btn-sidebar-toggle-desktop"
+                type="button"
+                onClick={toggleSidebar}
+                className="p-2 text-slate-400 hover:text-white hover:bg-slate-800/90 rounded-xl transition-all cursor-pointer focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+                title="Expandir barra lateral (Alt+B)"
+                aria-label="Expandir barra lateral"
+              >
+                <PanelLeft className="w-5 h-5 text-indigo-400" />
+              </button>
             </div>
           )}
         </div>
 
         {/* Sidebar Navigation */}
         <nav 
-          className={`flex-1 px-2.5 py-6 space-y-1.5 ${isSidebarExpanded ? 'overflow-y-auto overflow-x-hidden' : 'overflow-visible'}`} 
+          className={`flex-1 px-2.5 py-4 space-y-1.5 ${isSidebarExpanded ? 'overflow-y-auto overflow-x-hidden' : 'overflow-visible'}`} 
           id="sidebar-nav"
-          data-entity-active={isSelectedEntityActive}
-          data-syncing={isSyncing || refreshCount % 2 === 1}
-          onKeyDown={handleSidebarKeyDown}
           tabIndex={0}
           role="navigation"
           aria-label="Navegação Principal"
         >
-          {/* Dashboard */}
-          <motion.div
-            initial={{ opacity: 0, scale: 0.95, x: -6 }}
-            animate={{ opacity: 1, scale: 1, x: 0 }}
-            transition={{ duration: 0.22, delay: 0.02, ease: [0.16, 1, 0.3, 1] }}
-            className="w-full relative group"
-          >
+          {/* 1. Painel */}
+          <div className="w-full relative group">
             <button 
               id="nav-btn-dashboard"
+              type="button"
               onClick={() => handleNavClick('dashboard')}
-              aria-label={i18n.t('nav.dashboard')}
+              aria-label="Painel Principal"
               data-active={activeTab === 'dashboard'}
-              className={`w-full flex items-center ${isSidebarExpanded ? 'px-3.5 py-2.5 justify-start' : 'p-2.5 justify-center relative'} text-sm font-medium rounded-xl transition-all duration-200 ease-out hover:translate-x-1 hover:shadow-md hover:shadow-black/20 ${
+              className={`w-full flex items-center ${isSidebarExpanded ? 'px-3 py-2.5 justify-start' : 'p-2.5 justify-center relative'} text-sm font-medium rounded-xl transition-all duration-200 cursor-pointer ${
                 activeTab === 'dashboard' 
-                  ? 'text-white shadow-md shadow-blue-600/20 active border-l-4 border-l-blue-300 scale-[1.01]' 
-                  : 'text-slate-300 hover:bg-slate-800/90 hover:text-white border-l-4 border-l-transparent'
+                  ? 'bg-blue-600 text-white shadow-md font-bold' 
+                  : 'text-slate-300 hover:bg-slate-900 hover:text-white'
               }`}
             >
-              <LayoutDashboard className={`w-4 h-4 shrink-0 text-slate-300 group-hover:text-blue-300 ${isSidebarExpanded ? 'mr-3' : ''}`} />
-              {isSidebarExpanded ? (
+              <LayoutDashboard className={`w-4 h-4 shrink-0 text-slate-300 ${isSidebarExpanded ? 'mr-3' : ''}`} />
+              {isSidebarExpanded && (
                 <div className="w-full flex items-center justify-between min-w-0">
-                  <span className="truncate text-slate-200 group-hover:text-white font-medium">{i18n.t('nav.dashboard')}</span>
-                  <div className="flex items-center gap-1.5 ml-auto shrink-0">
-                    <span className="text-[10px] font-mono text-slate-300 bg-slate-800/90 px-1.5 py-0.5 rounded border border-slate-700/80 font-semibold">
-                      Alt+1
-                    </span>
-                    {isSelectedEntityActive && (
-                      <span className="w-2 h-2 rounded-full bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.8)] shrink-0 ml-1" title="Entidade Ativa" />
-                    )}
-                  </div>
+                  <span className="truncate text-slate-200 font-medium">Painel</span>
+                  <span className="text-[10px] font-mono text-slate-400 bg-slate-900 px-1.5 py-0.5 rounded border border-slate-800 shrink-0 ml-auto">Alt+1</span>
                 </div>
-              ) : null}
+              )}
             </button>
             {!isSidebarExpanded && (
               <div 
                 role="tooltip"
-                className="sidebar-tooltip pointer-events-none absolute left-full ml-3.5 top-1/2 -translate-y-1/2 px-3 py-1.5 bg-slate-900 border border-slate-700/90 text-white text-xs font-semibold rounded-xl shadow-2xl shadow-black/80 whitespace-nowrap opacity-0 group-hover:opacity-100 -translate-x-1 group-hover:translate-x-0 transition-all duration-200 z-50 flex items-center gap-2"
+                className="sidebar-tooltip pointer-events-none absolute left-full ml-3 top-1/2 -translate-y-1/2 px-3 py-1.5 bg-slate-900 border border-slate-700 text-white text-xs font-semibold rounded-xl shadow-2xl whitespace-nowrap opacity-0 group-hover:opacity-100 transition-all z-50 flex items-center gap-2"
               >
-                <span>{i18n.t('nav.dashboard')}</span>
-                <span className="text-[10px] font-mono text-slate-200 bg-slate-800 px-1.5 py-0.5 rounded border border-slate-700">Alt+1</span>
-                {isSelectedEntityActive && (
-                  <span className="w-2 h-2 rounded-full bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.8)] shrink-0" title="Entidade Ativa" />
-                )}
-                <div className="absolute -left-1 top-1/2 -translate-y-1/2 w-2 h-2 bg-slate-900 border-l border-b border-slate-700/90 rotate-45"></div>
+                <span>Painel</span>
+                <span className="text-[10px] font-mono text-slate-400 bg-slate-800 px-1.5 py-0.5 rounded border border-slate-700">Alt+1</span>
               </div>
             )}
-          </motion.div>
+          </div>
 
-          {/* Yohan AI Suite */}
-          <motion.div
-            initial={{ opacity: 0, scale: 0.95, x: -6 }}
-            animate={{ opacity: 1, scale: 1, x: 0 }}
-            transition={{ duration: 0.22, delay: 0.05, ease: [0.16, 1, 0.3, 1] }}
-            className="w-full relative group"
-          >
+          {/* Yohan AI */}
+          <div className="w-full relative group">
             <button 
               id="nav-btn-assistant"
+              type="button"
               onClick={() => handleNavClick('assistant')}
-              aria-label={i18n.t('nav.aiAccountant')}
+              aria-label="Yohan AI"
               data-active={activeTab === 'assistant'}
-              className={`w-full flex items-center ${isSidebarExpanded ? 'px-3.5 py-2.5 justify-start' : 'p-2.5 justify-center relative'} text-sm font-medium rounded-xl transition-all duration-200 ease-out hover:translate-x-1 hover:shadow-md hover:shadow-black/20 ${
+              className={`w-full flex items-center ${isSidebarExpanded ? 'px-3 py-2.5 justify-start' : 'p-2.5 justify-center relative'} text-sm font-medium rounded-xl transition-all duration-200 cursor-pointer ${
                 activeTab === 'assistant' 
-                  ? 'text-white shadow-md shadow-indigo-600/20 active border-l-4 border-l-indigo-400 scale-[1.01]' 
-                  : 'text-slate-300 hover:bg-slate-800/90 hover:text-white border-l-4 border-l-transparent'
+                  ? 'bg-indigo-600 text-white shadow-md font-bold' 
+                  : 'text-slate-300 hover:bg-slate-900 hover:text-white'
               }`}
             >
-              <div className={`shrink-0 ${isSidebarExpanded ? 'mr-3' : ''}`}>
-                <YohanLogo size={18} showGlow={activeTab === 'assistant'} />
-              </div>
-              {isSidebarExpanded ? (
+              <Sparkles className={`w-4 h-4 shrink-0 text-indigo-400 ${isSidebarExpanded ? 'mr-3' : ''}`} />
+              {isSidebarExpanded && (
                 <div className="w-full flex items-center justify-between min-w-0">
-                  <span className="truncate text-slate-200 group-hover:text-white font-medium">{i18n.t('nav.aiAccountant')}</span>
+                  <span className="truncate text-slate-200 font-medium">Yohan AI</span>
                   <div className="flex items-center gap-1.5 ml-auto shrink-0">
-                    <span className="text-[10px] font-mono text-slate-300 bg-slate-800/90 px-1.5 py-0.5 rounded border border-slate-700/80 font-semibold">
-                      Alt+2
-                    </span>
-                    <span className="bg-blue-500/25 text-blue-300 text-[10px] uppercase font-bold px-1.5 py-0.5 rounded border border-blue-400/30">
-                      {i18n.t('extra.active')}
-                    </span>
-                    {isSelectedEntityActive && (
-                      <span className="w-2 h-2 rounded-full bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.8)] shrink-0 ml-1" title="Entidade Ativa" />
-                    )}
+                    <span className="text-[10px] font-mono text-slate-400 bg-slate-900 px-1.5 py-0.5 rounded border border-slate-800">Alt+2</span>
+                    <span className="bg-indigo-500/25 text-indigo-300 text-[10px] uppercase font-bold px-1.5 py-0.5 rounded border border-indigo-400/30">IA</span>
                   </div>
                 </div>
-              ) : null}
+              )}
             </button>
             {!isSidebarExpanded && (
               <div 
                 role="tooltip"
-                className="sidebar-tooltip pointer-events-none absolute left-full ml-3.5 top-1/2 -translate-y-1/2 px-3 py-1.5 bg-slate-900 border border-slate-700/90 text-white text-xs font-semibold rounded-xl shadow-2xl shadow-black/80 whitespace-nowrap opacity-0 group-hover:opacity-100 -translate-x-1 group-hover:translate-x-0 transition-all duration-200 z-50 flex items-center gap-2"
+                className="sidebar-tooltip pointer-events-none absolute left-full ml-3 top-1/2 -translate-y-1/2 px-3 py-1.5 bg-slate-900 border border-slate-700 text-white text-xs font-semibold rounded-xl shadow-2xl whitespace-nowrap opacity-0 group-hover:opacity-100 transition-all z-50 flex items-center gap-2"
               >
-                <span>{i18n.t('nav.aiAccountant')}</span>
-                <span className="text-[10px] font-mono text-slate-200 bg-slate-800 px-1.5 py-0.5 rounded border border-slate-700">Alt+2</span>
-                <span className="bg-blue-500/25 text-blue-300 text-[10px] uppercase font-bold px-1.5 py-0.5 rounded border border-blue-400/30">
-                  {i18n.t('extra.active')}
-                </span>
-                {isSelectedEntityActive && (
-                  <span className="w-2 h-2 rounded-full bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.8)] shrink-0" title="Entidade Ativa" />
-                )}
-                <div className="absolute -left-1 top-1/2 -translate-y-1/2 w-2 h-2 bg-slate-900 border-l border-b border-slate-700/90 rotate-45"></div>
+                <span>Yohan AI</span>
+                <span className="text-[10px] font-mono text-slate-400 bg-slate-800 px-1.5 py-0.5 rounded border border-slate-700">Alt+2</span>
               </div>
             )}
-          </motion.div>
+          </div>
 
-          {/* Contabilidade (PGC - Lançamentos & Balancete) */}
-          <motion.div
-            initial={{ opacity: 0, scale: 0.95, x: -6 }}
-            animate={{ opacity: 1, scale: 1, x: 0 }}
-            transition={{ duration: 0.22, delay: 0.065, ease: [0.16, 1, 0.3, 1] }}
-            className="w-full relative group"
-          >
-            <button 
-              id="nav-btn-accounting"
-              onClick={() => handleNavClick('accounting')}
-              aria-label="Contabilidade"
-              data-active={activeTab === 'accounting'}
-              className={`w-full flex items-center ${isSidebarExpanded ? 'px-3.5 py-2.5 justify-start' : 'p-2.5 justify-center relative'} text-sm font-medium rounded-xl transition-all duration-200 ease-out hover:translate-x-1 hover:shadow-md hover:shadow-black/20 ${
-                activeTab === 'accounting' 
-                  ? 'text-white shadow-md shadow-blue-600/20 active border-l-4 border-l-blue-300 scale-[1.01]' 
-                  : 'text-slate-300 hover:bg-slate-800/90 hover:text-white border-l-4 border-l-transparent'
-              }`}
-            >
-              <div className={`shrink-0 flex items-center justify-center ${isSidebarExpanded ? 'mr-3' : ''}`}>
-                <AccountingLogo size={18} showGlow={activeTab === 'accounting'} />
-              </div>
-              {isSidebarExpanded ? (
-                <div className="w-full flex items-center justify-between min-w-0">
-                  <span className="truncate text-slate-200 group-hover:text-white font-medium">Contabilidade</span>
-                  <div className="flex items-center gap-1.5 ml-auto shrink-0">
-                    <span className="text-[10px] font-mono text-slate-300 bg-slate-800/90 px-1.5 py-0.5 rounded border border-slate-700/80 font-semibold" title="Atalho: Alt+A ou Alt+5">
-                      Alt+A
-                    </span>
-                    <span className="bg-blue-500/25 text-blue-300 text-[10px] uppercase font-bold px-1.5 py-0.5 rounded border border-blue-400/30">
-                      PGC
-                    </span>
-                    {isSelectedEntityActive && (
-                      <span className="w-2 h-2 rounded-full bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.8)] shrink-0 ml-1" title="Entidade Ativa" />
-                    )}
-                  </div>
-                </div>
-              ) : null}
-            </button>
-            {!isSidebarExpanded && (
-              <div 
-                role="tooltip"
-                className="sidebar-tooltip pointer-events-none absolute left-full ml-3.5 top-1/2 -translate-y-1/2 px-3 py-1.5 bg-slate-900 border border-slate-700/90 text-white text-xs font-semibold rounded-xl shadow-2xl shadow-black/80 whitespace-nowrap opacity-0 group-hover:opacity-100 -translate-x-1 group-hover:translate-x-0 transition-all duration-200 z-50 flex items-center gap-2"
-              >
-                <span>Contabilidade</span>
-                <span className="text-[10px] font-mono text-slate-200 bg-slate-800 px-1.5 py-0.5 rounded border border-slate-700">Alt+A</span>
-                <span className="bg-blue-500/25 text-blue-300 text-[10px] uppercase font-bold px-1.5 py-0.5 rounded border border-blue-400/30">
-                  PGC
-                </span>
-                {isSelectedEntityActive && (
-                  <span className="w-2 h-2 rounded-full bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.8)] shrink-0" title="Entidade Ativa" />
-                )}
-                <div className="absolute -left-1 top-1/2 -translate-y-1/2 w-2 h-2 bg-slate-900 border-l border-b border-slate-700/90 rotate-45"></div>
-              </div>
-            )}
-          </motion.div>
-
-          {/* Aprendizados */}
-          <motion.div
-            initial={{ opacity: 0, scale: 0.95, x: -6 }}
-            animate={{ opacity: 1, scale: 1, x: 0 }}
-            transition={{ duration: 0.22, delay: 0.08, ease: [0.16, 1, 0.3, 1] }}
-            className="w-full relative group"
-          >
+          {/* 3. Aprendizados */}
+          <div className="w-full relative group">
             <button 
               id="nav-btn-learnings"
+              type="button"
               onClick={() => handleNavClick('learning')}
               aria-label="Aprendizados"
               data-active={activeTab === 'learning'}
-              className={`w-full flex items-center ${isSidebarExpanded ? 'px-3.5 py-2.5 justify-start' : 'p-2.5 justify-center relative'} text-sm font-medium rounded-xl transition-all duration-200 ease-out hover:translate-x-1 hover:shadow-md hover:shadow-black/20 ${
+              className={`w-full flex items-center ${isSidebarExpanded ? 'px-3 py-2.5 justify-start' : 'p-2.5 justify-center relative'} text-sm font-medium rounded-xl transition-all duration-200 cursor-pointer ${
                 activeTab === 'learning' 
-                  ? 'text-white shadow-md shadow-blue-600/20 active border-l-4 border-l-blue-300 scale-[1.01]' 
-                  : 'text-slate-300 hover:bg-slate-800/90 hover:text-white border-l-4 border-l-transparent'
+                  ? 'bg-blue-600 text-white shadow-md font-bold' 
+                  : 'text-slate-300 hover:bg-slate-900 hover:text-white'
               }`}
             >
-              <BookOpen className={`w-4 h-4 shrink-0 text-slate-300 group-hover:text-blue-300 ${isSidebarExpanded ? 'mr-3' : ''}`} />
-              {isSidebarExpanded ? (
+              <BookOpen className={`w-4 h-4 shrink-0 text-slate-300 ${isSidebarExpanded ? 'mr-3' : ''}`} />
+              {isSidebarExpanded && (
                 <div className="w-full flex items-center justify-between min-w-0">
-                  <span className="truncate text-slate-200 group-hover:text-white font-medium">Aprendizados</span>
-                  <div className="flex items-center gap-1.5 ml-auto shrink-0">
-                    <span className="text-[10px] font-mono text-slate-300 bg-slate-800/90 px-1.5 py-0.5 rounded border border-slate-700/80 font-semibold">
-                      Alt+3
-                    </span>
-                    <span className="bg-blue-500/25 text-blue-300 text-[10px] uppercase font-bold px-1.5 py-0.5 rounded border border-blue-400/30">
-                      IA
-                    </span>
-                    {isSelectedEntityActive && (
-                      <span className="w-2 h-2 rounded-full bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.8)] shrink-0 ml-1" title="Entidade Ativa" />
-                    )}
-                  </div>
+                  <span className="truncate text-slate-200 font-medium">Aprendizados</span>
+                  <span className="text-[10px] font-mono text-slate-400 bg-slate-900 px-1.5 py-0.5 rounded border border-slate-800 shrink-0 ml-auto">Alt+3</span>
                 </div>
-              ) : null}
+              )}
             </button>
             {!isSidebarExpanded && (
               <div 
                 role="tooltip"
-                className="sidebar-tooltip pointer-events-none absolute left-full ml-3.5 top-1/2 -translate-y-1/2 px-3 py-1.5 bg-slate-900 border border-slate-700/90 text-white text-xs font-semibold rounded-xl shadow-2xl shadow-black/80 whitespace-nowrap opacity-0 group-hover:opacity-100 -translate-x-1 group-hover:translate-x-0 transition-all duration-200 z-50 flex items-center gap-2"
+                className="sidebar-tooltip pointer-events-none absolute left-full ml-3 top-1/2 -translate-y-1/2 px-3 py-1.5 bg-slate-900 border border-slate-700 text-white text-xs font-semibold rounded-xl shadow-2xl whitespace-nowrap opacity-0 group-hover:opacity-100 transition-all z-50 flex items-center gap-2"
               >
                 <span>Aprendizados</span>
-                <span className="text-[10px] font-mono text-slate-200 bg-slate-800 px-1.5 py-0.5 rounded border border-slate-700">Alt+3</span>
-                <span className="bg-blue-500/25 text-blue-300 text-[10px] uppercase font-bold px-1.5 py-0.5 rounded border border-blue-400/30">
-                  IA
-                </span>
-                {isSelectedEntityActive && (
-                  <span className="w-2 h-2 rounded-full bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.8)] shrink-0" title="Entidade Ativa" />
-                )}
-                <div className="absolute -left-1 top-1/2 -translate-y-1/2 w-2 h-2 bg-slate-900 border-l border-b border-slate-700/90 rotate-45"></div>
+                <span className="text-[10px] font-mono text-slate-400 bg-slate-800 px-1.5 py-0.5 rounded border border-slate-700">Alt+3</span>
               </div>
             )}
-          </motion.div>
+          </div>
 
-          {/* Quizzes & Avaliações */}
-          <motion.div
-            initial={{ opacity: 0, scale: 0.95, x: -6 }}
-            animate={{ opacity: 1, scale: 1, x: 0 }}
-            transition={{ duration: 0.22, delay: 0.11, ease: [0.16, 1, 0.3, 1] }}
-            className="w-full relative group"
-          >
+          {/* 4. Quizzes & Avaliações */}
+          <div className="w-full relative group">
             <button 
               id="nav-btn-quizzes"
+              type="button"
               onClick={() => handleNavClick('quizzes')}
               aria-label="Quizzes & Avaliações"
               data-active={activeTab === 'quizzes'}
-              className={`w-full flex items-center ${isSidebarExpanded ? 'px-3.5 py-2.5 justify-start' : 'p-2.5 justify-center relative'} text-sm font-medium rounded-xl transition-all duration-200 ease-out hover:translate-x-1 hover:shadow-md hover:shadow-black/20 ${
+              className={`w-full flex items-center ${isSidebarExpanded ? 'px-3 py-2.5 justify-start' : 'p-2.5 justify-center relative'} text-sm font-medium rounded-xl transition-all duration-200 cursor-pointer ${
                 activeTab === 'quizzes' 
-                  ? 'text-white shadow-md shadow-indigo-600/20 active border-l-4 border-l-amber-400 scale-[1.01]' 
-                  : 'text-slate-300 hover:bg-slate-800/90 hover:text-white border-l-4 border-l-transparent'
+                  ? 'bg-amber-600 text-white shadow-md font-bold' 
+                  : 'text-slate-300 hover:bg-slate-900 hover:text-white'
               }`}
             >
               <GraduationCap className={`w-4 h-4 shrink-0 text-amber-400 ${isSidebarExpanded ? 'mr-3' : ''}`} />
-              {isSidebarExpanded ? (
+              {isSidebarExpanded && (
                 <div className="w-full flex items-center justify-between min-w-0">
-                  <span className="truncate text-slate-200 group-hover:text-white font-medium">Quizzes & Avaliações</span>
+                  <span className="truncate text-slate-200 font-medium">Quizzes</span>
                   <div className="flex items-center gap-1.5 ml-auto shrink-0">
-                    <span className="text-[10px] font-mono text-slate-300 bg-slate-800/90 px-1.5 py-0.5 rounded border border-slate-700/80 font-semibold">
-                      Alt+4
-                    </span>
-                    <span className="bg-amber-500/25 text-amber-300 text-[10px] uppercase font-bold px-1.5 py-0.5 rounded border border-amber-400/30">
-                      NOVO
-                    </span>
+                    <span className="text-[10px] font-mono text-slate-400 bg-slate-900 px-1.5 py-0.5 rounded border border-slate-800">Alt+4</span>
+                    <span className="bg-amber-500/25 text-amber-300 text-[10px] uppercase font-bold px-1.5 py-0.5 rounded border border-amber-400/30">NOVO</span>
                   </div>
                 </div>
-              ) : null}
+              )}
             </button>
             {!isSidebarExpanded && (
               <div 
                 role="tooltip"
-                className="sidebar-tooltip pointer-events-none absolute left-full ml-3.5 top-1/2 -translate-y-1/2 px-3 py-1.5 bg-slate-900 border border-slate-700/90 text-white text-xs font-semibold rounded-xl shadow-2xl shadow-black/80 whitespace-nowrap opacity-0 group-hover:opacity-100 -translate-x-1 group-hover:translate-x-0 transition-all duration-200 z-50 flex items-center gap-2"
+                className="sidebar-tooltip pointer-events-none absolute left-full ml-3 top-1/2 -translate-y-1/2 px-3 py-1.5 bg-slate-900 border border-slate-700 text-white text-xs font-semibold rounded-xl shadow-2xl whitespace-nowrap opacity-0 group-hover:opacity-100 transition-all z-50 flex items-center gap-2"
               >
                 <span>Quizzes & Avaliações</span>
-                <span className="text-[10px] font-mono text-slate-200 bg-slate-800 px-1.5 py-0.5 rounded border border-slate-700">Alt+4</span>
-                <span className="bg-amber-500/25 text-amber-300 text-[10px] uppercase font-bold px-1.5 py-0.5 rounded border border-amber-400/30">
-                  NOVO
-                </span>
-                <div className="absolute -left-1 top-1/2 -translate-y-1/2 w-2 h-2 bg-slate-900 border-l border-b border-slate-700/90 rotate-45"></div>
+                <span className="text-[10px] font-mono text-slate-400 bg-slate-800 px-1.5 py-0.5 rounded border border-slate-700">Alt+4</span>
               </div>
             )}
-          </motion.div>
+          </div>
 
-          {/* Notas & Caderno */}
-          <motion.div
-            initial={{ opacity: 0, scale: 0.95, x: -6 }}
-            animate={{ opacity: 1, scale: 1, x: 0 }}
-            transition={{ duration: 0.22, delay: 0.14, ease: [0.16, 1, 0.3, 1] }}
-            className="w-full relative group"
-          >
+          {/* 5. Notas */}
+          <div className="w-full relative group">
             <button 
               id="nav-btn-notes"
+              type="button"
               onClick={() => handleNavClick('notes')}
-              aria-label="Notas e Caderno"
+              aria-label="Notas"
               data-active={activeTab === 'notes'}
-              className={`w-full flex items-center ${isSidebarExpanded ? 'px-3.5 py-2.5 justify-start' : 'p-2.5 justify-center relative'} text-sm font-medium rounded-xl transition-all duration-200 ease-out hover:translate-x-1 hover:shadow-md hover:shadow-black/20 ${
+              className={`w-full flex items-center ${isSidebarExpanded ? 'px-3 py-2.5 justify-start' : 'p-2.5 justify-center relative'} text-sm font-medium rounded-xl transition-all duration-200 cursor-pointer ${
                 activeTab === 'notes' 
-                  ? 'text-white shadow-md shadow-blue-600/20 active border-l-4 border-l-blue-300 scale-[1.01]' 
-                  : 'text-slate-300 hover:bg-slate-800/90 hover:text-white border-l-4 border-l-transparent'
+                  ? 'bg-blue-600 text-white shadow-md font-bold' 
+                  : 'text-slate-300 hover:bg-slate-900 hover:text-white'
               }`}
             >
-              <StickyNote className={`w-4 h-4 shrink-0 text-slate-300 group-hover:text-blue-300 ${isSidebarExpanded ? 'mr-3' : ''}`} />
-              {isSidebarExpanded ? (
+              <StickyNote className={`w-4 h-4 shrink-0 text-slate-300 ${isSidebarExpanded ? 'mr-3' : ''}`} />
+              {isSidebarExpanded && (
                 <div className="w-full flex items-center justify-between min-w-0">
-                  <span className="truncate text-slate-200 group-hover:text-white font-medium">Notas</span>
-                  <div className="flex items-center gap-1.5 ml-auto shrink-0">
-                    <span className="text-[10px] font-mono text-slate-300 bg-slate-800/90 px-1.5 py-0.5 rounded border border-slate-700/80 font-semibold" title="Atalho: Alt+N ou Alt+6">
-                      Alt+N
-                    </span>
-                    <span className="bg-blue-500/25 text-blue-300 text-[10px] uppercase font-bold px-1.5 py-0.5 rounded border border-blue-400/30">
-                      NOTAS
-                    </span>
-                  </div>
+                  <span className="truncate text-slate-200 font-medium">Notas</span>
+                  <span className="text-[10px] font-mono text-slate-400 bg-slate-900 px-1.5 py-0.5 rounded border border-slate-800 shrink-0 ml-auto">Alt+5</span>
                 </div>
-              ) : null}
+              )}
             </button>
             {!isSidebarExpanded && (
               <div 
                 role="tooltip"
-                className="sidebar-tooltip pointer-events-none absolute left-full ml-3.5 top-1/2 -translate-y-1/2 px-3 py-1.5 bg-slate-900 border border-slate-700/90 text-white text-xs font-semibold rounded-xl shadow-2xl shadow-black/80 whitespace-nowrap opacity-0 group-hover:opacity-100 -translate-x-1 group-hover:translate-x-0 transition-all duration-200 z-50 flex items-center gap-2"
+                className="sidebar-tooltip pointer-events-none absolute left-full ml-3 top-1/2 -translate-y-1/2 px-3 py-1.5 bg-slate-900 border border-slate-700 text-white text-xs font-semibold rounded-xl shadow-2xl whitespace-nowrap opacity-0 group-hover:opacity-100 transition-all z-50 flex items-center gap-2"
               >
                 <span>Notas</span>
-                <span className="text-[10px] font-mono text-slate-200 bg-slate-800 px-1.5 py-0.5 rounded border border-slate-700">Alt+N</span>
-                <span className="bg-blue-500/25 text-blue-300 text-[10px] uppercase font-bold px-1.5 py-0.5 rounded border border-blue-400/30">
-                  NOTAS
-                </span>
-                <div className="absolute -left-1 top-1/2 -translate-y-1/2 w-2 h-2 bg-slate-900 border-l border-b border-slate-700/90 rotate-45"></div>
+                <span className="text-[10px] font-mono text-slate-400 bg-slate-800 px-1.5 py-0.5 rounded border border-slate-700">Alt+5</span>
               </div>
             )}
-          </motion.div>
+          </div>
+
+          {/* 6. O Meu Perfil */}
+          <div className="w-full relative group">
+            <button 
+              id="nav-btn-profile"
+              type="button"
+              onClick={() => handleNavClick('profile')}
+              aria-label="O Meu Perfil"
+              data-active={activeTab === 'profile'}
+              className={`w-full flex items-center ${isSidebarExpanded ? 'px-3 py-2.5 justify-start' : 'p-2.5 justify-center relative'} text-sm font-medium rounded-xl transition-all duration-200 cursor-pointer ${
+                activeTab === 'profile' 
+                  ? 'bg-blue-600 text-white shadow-md font-bold' 
+                  : 'text-slate-300 hover:bg-slate-900 hover:text-white'
+              }`}
+            >
+              <User className={`w-4 h-4 shrink-0 text-slate-300 ${isSidebarExpanded ? 'mr-3' : ''}`} />
+              {isSidebarExpanded && (
+                <div className="w-full flex items-center justify-between min-w-0">
+                  <span className="truncate text-slate-200 font-medium">Perfil</span>
+                  <span className="text-[10px] font-mono text-slate-400 bg-slate-900 px-1.5 py-0.5 rounded border border-slate-800 shrink-0 ml-auto">Alt+6</span>
+                </div>
+              )}
+            </button>
+            {!isSidebarExpanded && (
+              <div 
+                role="tooltip"
+                className="sidebar-tooltip pointer-events-none absolute left-full ml-3 top-1/2 -translate-y-1/2 px-3 py-1.5 bg-slate-900 border border-slate-700 text-white text-xs font-semibold rounded-xl shadow-2xl whitespace-nowrap opacity-0 group-hover:opacity-100 transition-all z-50 flex items-center gap-2"
+              >
+                <span>Perfil</span>
+                <span className="text-[10px] font-mono text-slate-400 bg-slate-800 px-1.5 py-0.5 rounded border border-slate-700">Alt+6</span>
+              </div>
+            )}
+          </div>
         </nav>
 
-        {/* Keyboard Shortcut Discovery Badge when expanded */}
-        {isSidebarExpanded && (
-          <div className="mx-2.5 mb-2 px-3 py-1.5 bg-slate-800/80 rounded-xl border border-slate-700/80 flex items-center justify-between text-[11px] text-slate-200 font-medium">
-            <span className="font-semibold text-slate-300">Atalhos:</span>
-            <span className="font-mono bg-slate-900 px-2 py-0.5 rounded border border-slate-700 text-blue-300 font-bold">
-              Alt+1..9
-            </span>
-          </div>
-        )}
+        {/* Footer da Sidebar */}
+        <div className="p-3 border-t border-slate-800 shrink-0 space-y-2" id="sidebar-footer">
+          {isSidebarExpanded && (
+            <div className="px-2.5 py-1.5 bg-slate-900/80 rounded-xl border border-slate-800 flex items-center justify-between text-[11px] text-slate-300 font-medium select-none">
+              <span className="text-slate-400">Atalhos:</span>
+              <span className="font-mono bg-slate-800 px-2 py-0.5 rounded text-blue-300 font-bold">
+                Alt+1..6 &bull; Alt+B
+              </span>
+            </div>
+          )}
 
-        {/* Account Plan Info & Logout */}
-        <div className="p-3 border-t border-slate-800 shrink-0" id="sidebar-footer">
           {isSidebarExpanded ? (
             <button
+              type="button"
               onClick={() => setIsLogoutModalOpen(true)}
-              className="w-full flex items-center justify-center gap-2 py-2 px-3 bg-red-500/15 hover:bg-red-500/25 text-red-300 text-xs font-bold rounded-xl border border-red-500/30 transition-all cursor-pointer mb-2"
+              className="w-full flex items-center justify-center gap-2 py-2 px-3 bg-red-500/15 hover:bg-red-500/25 text-red-300 text-xs font-bold rounded-xl border border-red-500/30 transition-all cursor-pointer"
             >
               <LogOut className="w-3.5 h-3.5" />
               <span>Terminar Sessão</span>
             </button>
           ) : (
-            <button
-              onClick={() => setIsLogoutModalOpen(true)}
-              className="w-full flex items-center justify-center p-2.5 bg-red-500/15 hover:bg-red-500/25 text-red-300 rounded-xl border border-red-500/30 transition-all cursor-pointer relative group mb-2"
-              title={undefined}
-            >
-              <LogOut className="w-4 h-4" />
-              <div className="absolute left-full ml-3.5 px-3 py-1.5 bg-slate-900 border border-slate-700/80 text-red-300 text-xs font-semibold rounded-lg shadow-xl shadow-black/60 whitespace-nowrap opacity-0 pointer-events-none group-hover:opacity-100 transition-all duration-200 delay-200 z-50 translate-x-1 group-hover:translate-x-0 flex items-center gap-1.5">
-                <span>Terminar Sessão</span>
-                <div className="absolute -left-1 top-1/2 -translate-y-1/2 w-2 h-2 bg-slate-900 border-l border-b border-slate-700/80 rotate-45"></div>
+            <div className="relative group flex justify-center">
+              <button
+                type="button"
+                onClick={() => setIsLogoutModalOpen(true)}
+                className="p-2.5 bg-red-500/15 hover:bg-red-500/25 text-red-300 rounded-xl border border-red-500/30 transition-all cursor-pointer"
+                aria-label="Terminar Sessão"
+              >
+                <LogOut className="w-4 h-4" />
+              </button>
+              <div 
+                role="tooltip"
+                className="sidebar-tooltip pointer-events-none absolute left-full ml-3 top-1/2 -translate-y-1/2 px-2.5 py-1 bg-slate-900 border border-slate-700 text-red-300 text-xs font-semibold rounded-lg shadow-xl whitespace-nowrap opacity-0 group-hover:opacity-100 transition-all z-50"
+              >
+                Terminar Sessão
               </div>
-            </button>
+            </div>
           )}
-
-          {/* Chevron expand/collapse toggle indicator at bottom of sidebar */}
-          <div className="pt-2 border-t border-slate-800/80 flex items-center justify-between">
-            <button
-              id="sidebar-bottom-chevron-btn"
-              onClick={toggleSidebarPin}
-              className="w-full flex items-center justify-between p-2 text-slate-300 hover:text-white hover:bg-slate-800/80 rounded-xl transition-all cursor-pointer group"
-              title={isSidebarPinned ? "Desafixar barra lateral" : "Fixar barra lateral expandida"}
-            >
-              {isSidebarExpanded && (
-                <span className="text-[11px] font-semibold text-slate-300 group-hover:text-white truncate">
-                  {isSidebarPinned ? 'Barra Lateral Fixada' : 'Modo Expansível'}
-                </span>
-              )}
-              <ChevronRight 
-                className={`w-4 h-4 shrink-0 transition-transform duration-300 text-slate-300 group-hover:text-blue-300 ${
-                  isSidebarExpanded ? 'rotate-180' : 'rotate-0'
-                }`} 
-              />
-            </button>
-          </div>
         </div>
       </aside>
 
-      {/* MAIN LAYOUT WRAPPER */}
-      <main 
-        className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden w-full max-w-full" 
-        id="main-content-panel"
+      {/* MAIN CONTENT WRAPPER (COLUMN) */}
+      <div 
+        className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden w-full max-w-full h-full" 
+        id="app-workspace-column"
       >
 
-        {/* UPPER HEADER - FIXED & PERMANENT ON DESKTOP & TABLET (>=768px) - HIDDEN COMPLETELY ON MOBILE (<768px) */}
+        {/* UPPER HEADER - FIXED & PERMANENT ON MOBILE, TABLET & DESKTOP */}
         <header 
-          className="topbar hidden md:flex h-16 shrink-0 z-[999] bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-b border-slate-200 dark:border-slate-800 px-3 sm:px-5 lg:px-6 items-center justify-between gap-2 sm:gap-4 select-none" 
+          className="topbar flex h-14 sm:h-16 shrink-0 z-[999] bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-b border-slate-200 dark:border-slate-800 px-3 sm:px-5 lg:px-6 items-center justify-between gap-2 sm:gap-4 select-none" 
           style={{ zIndex: 999, backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)' }}
           id="header-panel"
         >
@@ -2241,13 +2133,11 @@ export default function App({ firebaseUser, firebaseUid }: { firebaseUser?: any;
             {/* Active Workspace / Page Title */}
             <span className="font-black text-slate-900 dark:text-slate-100 text-xs sm:text-sm tracking-tight truncate max-w-[150px] sm:max-w-[200px] lg:max-w-xs sm:text-left text-center">
               {activeTab === 'dashboard' && 'Painel Principal'}
-              {activeTab === 'notes' && 'Notas'}
-              {activeTab === 'accounting' && 'Contabilidade & Razão'}
-              {activeTab === 'assistant' && 'AI Assistant'}
+              {activeTab === 'assistant' && 'Yohan AI — Consultor & Auditor PGC'}
               {activeTab === 'learning' && 'Estudos & Módulos'}
               {activeTab === 'quizzes' && 'Quizzes & Avaliações'}
+              {activeTab === 'notes' && 'Notas'}
               {activeTab === 'profile' && 'O Meu Perfil'}
-              {activeTab === 'admin' && 'Painel Admin'}
             </span>
 
             {/* Sync Status Indicator (Full on Desktop >1200px, Dot on Tablet, Hidden on Mobile <640px) */}
@@ -2431,30 +2321,6 @@ export default function App({ firebaseUser, firebaseUid }: { firebaseUser?: any;
             
             {/* User Profile Avatar Button (Min 44x44px touch target) */}
             <div className="relative flex items-center gap-1.5">
-              {/* Mobile Quick New Chat Button for AI Accountant (visible on mobile <768px when on assistant tab) */}
-              {activeTab === 'assistant' && (
-                <div className="md:hidden flex items-center gap-1">
-                  <button
-                    type="button"
-                    onClick={() => window.dispatchEvent(new CustomEvent('ga-open-ai-history'))}
-                    className="w-9 h-9 flex items-center justify-center rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:text-indigo-600 dark:hover:text-indigo-400 active:scale-95 transition-all cursor-pointer border border-slate-200/80 dark:border-slate-700/80"
-                    title="Histórico de Conversas"
-                    aria-label="Histórico de Conversas IA"
-                  >
-                    <MessageSquare className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => window.dispatchEvent(new CustomEvent('ga-new-ai-chat'))}
-                    className="w-9 h-9 flex items-center justify-center rounded-xl bg-indigo-600 text-white font-bold hover:bg-indigo-500 active:scale-95 transition-all cursor-pointer shadow-xs border border-indigo-500"
-                    title="Nova Conversa IA"
-                    aria-label="Nova Conversa IA"
-                  >
-                    <Plus className="w-5 h-5" />
-                  </button>
-                </div>
-              )}
-
               {/* User Profile Avatar & Tools Dropdown Button */}
               <div className="relative flex items-center">
                 <button 
@@ -2542,9 +2408,9 @@ export default function App({ firebaseUser, firebaseUid }: { firebaseUser?: any;
                           onClick={() => {
                             setIsToolsMenuOpen(false);
                             setIsUserMenuOpen(false);
-                            setIsMobileDrawerOpen(true);
+                            setIsMobileOpen(true);
                           }}
-                          className="flex-1 flex flex-col items-center justify-center p-1.5 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 text-[10px] font-semibold text-slate-700 dark:text-slate-200 transition-colors"
+                          className="flex-1 flex flex-col items-center justify-center p-1.5 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 text-[10px] font-semibold text-slate-700 dark:text-slate-200 transition-colors cursor-pointer"
                           title="Mais Ferramentas"
                         >
                           <span className="text-sm">⋯</span>
@@ -2589,19 +2455,6 @@ export default function App({ firebaseUser, firebaseUid }: { firebaseUser?: any;
                         <Database className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
                         Supabase Cloud & Dispositivos
                       </button>
-                      {currentUser?.role === 'admin' && (
-                        <button
-                          onClick={() => {
-                            setActiveTab('admin');
-                            setIsUserMenuOpen(false);
-                            setIsToolsMenuOpen(false);
-                          }}
-                          className="w-full text-left px-4 py-2.5 text-xs font-bold text-blue-600 dark:text-blue-400 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors border-t border-slate-100 dark:border-slate-800 flex items-center gap-2 cursor-pointer"
-                        >
-                          <Shield className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
-                          Painel Admin
-                        </button>
-                      )}
                       <div className="border-t border-slate-100 dark:border-slate-800 my-1"></div>
                       <button
                         type="button"
@@ -2636,192 +2489,48 @@ export default function App({ firebaseUser, firebaseUid }: { firebaseUser?: any;
           </div>
         </header>
 
-        {/* MOBILE DRAWER OVERLAY PANEL (<768px) */}
-        <AnimatePresence>
-          {isMobileDrawerOpen && (
-            <div className="mobile-profile-overlay fixed inset-0 z-[250] flex justify-end bg-slate-950/60 backdrop-blur-xs md:hidden">
-              <motion.div
-                initial={{ x: '100%' }}
-                animate={{ x: 0 }}
-                exit={{ x: '100%' }}
-                transition={{ type: 'spring', damping: 25, stiffness: 300 }}
-                className="w-80 max-w-[88vw] bg-white dark:bg-slate-900 h-full shadow-2xl flex flex-col overflow-y-auto text-slate-800 dark:text-slate-100"
-              >
-                {/* Mobile Drawer Header */}
-                <div className="p-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between bg-slate-900 text-white">
-                  <div className="flex items-center gap-3 min-w-0">
-                    <div className="w-10 h-10 rounded-full bg-blue-600 text-white flex items-center justify-center font-black text-sm border border-blue-400 shadow-xs shrink-0">
-                      {(currentUser?.name || 'U').substring(0, 2).toUpperCase()}
-                    </div>
-                    <div className="min-w-0">
-                      <p className="text-xs font-black text-white truncate">{currentUser?.name || 'Utilizador'}</p>
-                      <p className="text-[10px] text-slate-300 truncate">{currentUser?.email || 'membro@estudos.ao'}</p>
-                    </div>
-                  </div>
-                  <button
-                    onClick={() => setIsMobileDrawerOpen(false)}
-                    className="p-2 text-slate-300 hover:text-white rounded-xl cursor-pointer min-w-[44px] min-h-[44px] flex items-center justify-center"
-                    aria-label="Fechar Painel"
-                  >
-                    <X className="w-5 h-5" />
-                  </button>
-                </div>
-
-                {/* Mobile Drawer Body */}
-                <div className="p-4 space-y-5 flex-1">
-                  
-                  {/* Quick Actions: Search & Notifications */}
-                  <div>
-                    <p className="text-[10px] font-black uppercase text-slate-400 dark:text-slate-400 tracking-wider mb-2">Ações Rápidas</p>
-                    <div className="grid grid-cols-2 gap-2">
-                      <button
-                        onClick={() => {
-                          setIsSearchOpen(true);
-                          setIsMobileDrawerOpen(false);
-                        }}
-                        className="p-3 bg-blue-50 hover:bg-blue-100 dark:bg-blue-950/60 dark:hover:bg-blue-900/80 border border-blue-200/80 dark:border-blue-800/80 rounded-xl text-left flex flex-col items-start gap-1 text-xs font-bold text-blue-900 dark:text-blue-200 cursor-pointer shadow-2xs"
-                      >
-                        <Search className="w-4 h-4 text-blue-600 dark:text-blue-400" />
-                        <span>Pesquisa</span>
-                      </button>
-
-                      <button
-                        onClick={() => {
-                          setIsNotifOpen(true);
-                          setIsMobileDrawerOpen(false);
-                        }}
-                        className="p-3 bg-slate-50 hover:bg-slate-100 dark:bg-slate-800 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 rounded-xl text-left flex flex-col items-start gap-1 text-xs font-bold text-slate-800 dark:text-slate-100 cursor-pointer relative"
-                      >
-                        <div className="flex items-center justify-between w-full">
-                          <Bell className="w-4 h-4 text-slate-600 dark:text-slate-300" />
-                          {notifications.some(n => !n.read) && (
-                            <span className="w-2 h-2 bg-red-500 rounded-full animate-pulse"></span>
-                          )}
-                        </div>
-                        <span>Notificações</span>
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Real-time sync status card */}
-                  <div>
-                    <p className="text-[10px] font-black uppercase text-slate-400 dark:text-slate-400 tracking-wider mb-2">Estado de Sincronização</p>
-                    <SyncBanner onOpenModal={() => {
-                      setIsOfflineModalOpen(true);
-                      setIsMobileDrawerOpen(false);
-                    }} />
-                  </div>
-
-                  {/* Work Hours Focus Mode */}
-                  <div>
-                    <p className="text-[10px] font-black uppercase text-slate-400 dark:text-slate-400 tracking-wider mb-2">Período de Trabalho</p>
-                    <button
-                      onClick={() => {
-                        setActiveTab('profile');
-                        setIsMobileDrawerOpen(false);
-                      }}
-                      className="w-full p-3 bg-slate-50 hover:bg-slate-100 dark:bg-slate-800 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 rounded-xl text-left flex items-center justify-between text-xs font-bold text-slate-700 dark:text-slate-200 cursor-pointer"
-                    >
-                      <div className="flex items-center gap-2">
-                        <Clock className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
-                        <span>Modo Foco no Trabalho</span>
-                      </div>
-                      <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${
-                        isWorkHoursActive ? 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/60 dark:text-indigo-300' : 'bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300'
-                      }`}>
-                        {isWorkHoursActive ? 'Ativo' : 'Inativo'}
-                      </span>
-                    </button>
-                  </div>
-
-                  {/* Theme Selector Section */}
-                  <div>
-                    <p className="text-[10px] font-black uppercase text-slate-400 dark:text-slate-400 tracking-wider mb-2">Tema Visual</p>
-                    <div className="p-1.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl">
-                      <ThemeSelector />
-                    </div>
-                  </div>
-
-                  {/* Language Selector Section */}
-                  <div>
-                    <p className="text-[10px] font-black uppercase text-slate-400 dark:text-slate-400 tracking-wider mb-2">Idioma do Sistema</p>
-                    <div className="p-1 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl">
-                      <LanguageSelector isTopbar={true} />
-                    </div>
-                  </div>
-
-                  {/* Quick Links */}
-                  <div className="pt-3 border-t border-slate-100 space-y-2">
-                    <button
-                      onClick={() => {
-                        setActiveTab('profile');
-                        setIsMobileDrawerOpen(false);
-                      }}
-                      className="w-full text-left p-3 rounded-xl bg-slate-50 hover:bg-slate-100 text-xs font-bold text-slate-800 flex items-center gap-2.5 cursor-pointer min-h-[44px]"
-                    >
-                      <User className="w-4 h-4 text-blue-600" />
-                      <span>O meu Perfil & Segurança</span>
-                    </button>
-
-                    {currentUser?.role === 'admin' && (
-                      <button
-                        onClick={() => {
-                          setActiveTab('admin');
-                          setIsMobileDrawerOpen(false);
-                        }}
-                        className="w-full text-left p-3 rounded-xl bg-blue-50 text-blue-700 text-xs font-bold flex items-center gap-2.5 cursor-pointer min-h-[44px]"
-                      >
-                        <Shield className="w-4 h-4 text-blue-600" />
-                        <span>Painel Admin</span>
-                      </button>
-                    )}
-
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setIsMobileDrawerOpen(false);
-                        handleTrocarConta();
-                      }}
-                      className="w-full text-left p-3 rounded-xl bg-indigo-50/80 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 text-xs font-bold flex items-center gap-2.5 cursor-pointer min-h-[44px]"
-                      id="btn-trocar-conta-mobile-drawer"
-                    >
-                      <Users className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
-                      <span>Trocar de Conta Google</span>
-                    </button>
-
-                    <button
-                      onClick={() => {
-                        setIsLogoutModalOpen(true);
-                        setIsMobileDrawerOpen(false);
-                      }}
-                      className="w-full text-left p-3 rounded-xl bg-red-50 dark:bg-red-950/40 text-red-600 dark:text-red-400 text-xs font-bold flex items-center gap-2.5 cursor-pointer min-h-[44px]"
-                    >
-                      <LogOut className="w-4 h-4 text-red-600 dark:text-red-400" />
-                      <span>Sair do Sistema</span>
-                    </button>
-                  </div>
-
-                </div>
-              </motion.div>
-            </div>
-          )}
-        </AnimatePresence>
-
-        {/* WORKSPACE AREA */}
-        <div 
-          className={`flex min-h-0 min-w-0 flex-1 flex-col overflow-x-hidden ${activeTab === 'assistant' ? 'overflow-hidden p-0 m-0 h-full w-full' : 'overflow-y-auto p-4 sm:p-6 lg:p-8 pb-24 md:pb-8'}`} 
-          id="workspace-scroll-area"
+        {/* MAIN LAYOUT WRAPPER (SIBLING DO HEADER - RECEBE O ESPAÇO RESTANTE) */}
+        <main 
+          className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden w-full max-w-full" 
+          id="main-content-panel"
         >
+          {/* WORKSPACE AREA */}
+          <div 
+            className={`flex min-h-0 min-w-0 flex-1 flex-col overflow-x-hidden ${activeTab === 'assistant' ? 'overflow-hidden p-0 m-0 w-full' : 'overflow-y-auto p-4 sm:p-6 lg:p-8 pb-8'}`} 
+            id="workspace-scroll-area"
+            data-tab={activeTab}
+          >
           <Suspense fallback={<PageSkeleton />}>
 
           {/* OFFLINE BLOCKED PAGE REDIRECT */}
-          {!isAppOnline && !['dashboard', 'learning', 'quizzes'].includes(activeTab) ? (
+          {!isAppOnline && !['dashboard', 'assistant', 'learning', 'quizzes'].includes(activeTab) ? (
             <OfflineBlockedView 
               onGoToDashboard={() => setActiveTab('dashboard')} 
               onGoToEstudos={() => setActiveTab('learning')} 
             />
           ) : (
             <AnimatePresence mode="wait">
+              {/* TAB: YOHAN AI ASSISTANT */}
+              {activeTab === 'assistant' && (
+                <motion.div 
+                  key="assistant"
+                  className="w-full h-full flex-1 flex flex-col min-h-0" 
+                  id="tab-content-assistant"
+                  initial={{ opacity: 0, x: 20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: -20 }}
+                  transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
+                  style={{ height: '100%', flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}
+                >
+                  <ErrorBoundary fallbackTitle="Erro ao carregar o Yohan AI">
+                    <YohanAI 
+                      currentLanguage={i18n.currentLang}
+                      onBack={() => setActiveTab('dashboard')}
+                    />
+                  </ErrorBoundary>
+                </motion.div>
+              )}
+
               {/* TAB 1: DASHBOARD OVERVIEW */}
               {activeTab === 'dashboard' && (
                 <motion.div 
@@ -2836,13 +2545,10 @@ export default function App({ firebaseUser, firebaseUid }: { firebaseUser?: any;
                       onNavigateTab={(tab) => {
                         if (tab === 'knowledge_center' || tab === 'learning') {
                           setActiveTab('learning');
-                        } else if (tab === 'ai_accountant' || tab === 'assistant') {
-                          setActiveTab('assistant');
                         } else {
                           setActiveTab(tab);
                         }
                       }}
-                      onOpenAiAssistant={() => setActiveTab('assistant')}
                     />
                   </ErrorBoundary>
                 </motion.div>
@@ -2865,76 +2571,6 @@ export default function App({ firebaseUser, firebaseUid }: { firebaseUser?: any;
                       onNavigateTab={setActiveTab} 
                     />
                   </ErrorBoundary>
-                </motion.div>
-              )}
-
-              {/* TAB: CONTABILIDADE (ERP) */}
-              {activeTab === 'accounting' && (
-                <motion.div 
-                  key="accounting"
-                  className="w-full" 
-                  id="tab-content-accounting"
-                  initial={{ opacity: 0, x: 20 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  exit={{ opacity: 0, x: -20 }}
-                  transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
-                >
-                  <ErrorBoundary fallbackTitle="Erro ao carregar Contabilidade PGC">
-                    <ErpAccountingWorkspace onNavigateTab={setActiveTab} />
-                  </ErrorBoundary>
-                </motion.div>
-              )}
-
-              {/* TAB 6: AI CONSULTANT */}
-              {activeTab === 'assistant' && (
-                <motion.div 
-                  key="assistant"
-                  className="flex min-h-0 min-w-0 w-full max-w-full flex-1 h-full flex-col overflow-hidden ai-accountant-page" 
-                  id="tab-content-assistant"
-                  initial={{ opacity: 0, x: 20 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  exit={{ opacity: 0, x: -20 }}
-                  transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
-                >
-                  <ErrorBoundary fallbackTitle="Erro ao carregar o Yohan AI">
-                    <div className="flex min-h-0 min-w-0 h-full w-full flex-1 flex-col overflow-hidden">
-                      <YohanAI 
-                        currentLanguage={i18n.currentLang} 
-                        onSaveToVault={(type, title, content) => {
-                          if (!activeWorkspace) return;
-                          const txId = `tx-vault-${Date.now()}`;
-                          const docTx: any = {
-                            id: txId,
-                            entityId: entities[0]?.id || 'custom',
-                            entityName: entities[0]?.name || 'Vertex Holdings',
-                            date: new Date().toISOString().split('T')[0],
-                            description: `[AI Vault: ${type}] ${title.substring(0, 30)}`,
-                            account: 'AI Document Vault',
-                            amount: 0,
-                            type: 'Debit',
-                            status: 'Reconciled'
-                          };
-                          DB.setWorkspace(activeWorkspace.id, 'transactions', txId, docTx);
-                          logAuditEvent('AI Vault Salvo', `Guardou relatório "${title}" no workspace`, 'ai');
-                          createNotification('ai', 'Relatório Salvo', `O relatório de tipo "${type}" foi arquivado no ledger com sucesso.`);
-                          setRefreshCount(c => c + 1);
-                        }} 
-                      />
-                    </div>
-                  </ErrorBoundary>
-
-                  {/* FLOATING MOBILE SIDEBAR BUTTON (Visible only on mobile <= 767px / md:hidden) */}
-                  <button
-                    type="button"
-                    onClick={() => setIsMobileOpen(true)}
-                    className="md:hidden fixed bottom-5 left-4 z-40 flex items-center gap-2 px-3.5 py-2.5 rounded-full bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 active:scale-95 text-white shadow-xl shadow-blue-950/40 border border-white/20 backdrop-blur-md transition-all cursor-pointer select-none"
-                    aria-label="Abrir Menu de Navegação"
-                    title="Abrir Menu de Navegação"
-                    id="mobile-sidebar-assistant-fab"
-                  >
-                    <Menu className="w-4 h-4 text-white shrink-0" />
-                    <span className="text-xs font-bold tracking-tight">Menu</span>
-                  </button>
                 </motion.div>
               )}
 
@@ -3000,29 +2636,13 @@ export default function App({ firebaseUser, firebaseUid }: { firebaseUser?: any;
                   </ErrorBoundary>
                 </motion.div>
               )}
-
-              {/* TAB 10: ADMIN DASHBOARD */}
-              {activeTab === 'admin' && (
-                <motion.div 
-                  key="admin"
-                  className="space-y-8" 
-                  id="tab-content-admin"
-                  initial={{ opacity: 0, x: 20 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  exit={{ opacity: 0, x: -20 }}
-                  transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
-                >
-                  <ErrorBoundary fallbackTitle="Erro ao carregar Painel de Administração">
-                    <AdminDashboard />
-                  </ErrorBoundary>
-                </motion.div>
-              )}
             </AnimatePresence>
           )}
           </Suspense>
 
         </div>
       </main>
+    </div>
 
 
 
@@ -3603,19 +3223,6 @@ export default function App({ firebaseUser, firebaseUid }: { firebaseUser?: any;
           </motion.aside>
         )}
       </AnimatePresence>
-
-      {/* FLOATING VISUAL THEME & ACCENT CUSTOMIZER 🎨 */}
-      <ThemeCustomizerFloatingButton userId={currentUser?.id || 'global'} />
-
-      {/* MOBILE & TABLET BOTTOM NAVIGATION BAR (<1024px) */}
-      <MobileBottomNavigation 
-        activeTab={activeTab as AppTab}
-        onNavigate={(tab) => setActiveTab(tab)}
-        currentUser={currentUser}
-        onLogout={() => setIsLogoutModalOpen(true)}
-        onOpenMenu={() => setIsMobileDrawerOpen(true)}
-        unreadNotificationsCount={notifications.filter(n => !n.read).length}
-      />
 
     </motion.div>
   );

@@ -13,13 +13,11 @@ const SHORTCUT_GROUPS = [
     title: 'Navegação Rápida entre Abas (Alt + Tecla / Alt + Número)',
     shortcuts: [
       { key: 'Alt + 1', label: 'Painel Principal (Dashboard)', tab: 'dashboard' },
-      { key: 'Alt + 2', label: 'Yohan AI (Consultor PGC)', tab: 'assistant' },
+      { key: 'Alt + 2 / Alt + Y', label: 'Yohan AI (Consultor & Auditor PGC)', tab: 'assistant' },
       { key: 'Alt + 3', label: 'Aprendizados (Biblioteca)', tab: 'learning' },
-      { key: 'Alt + 4', label: 'Quizzes & Duelo Contábil', tab: 'quizzes' },
-      { key: 'Alt + A / Alt + 5', label: 'Contabilidade (PGC Angola)', tab: 'accounting' },
-      { key: 'Alt + N / Alt + 6', label: 'Notas & Anotações', tab: 'notes' },
-      { key: 'Alt + 7', label: 'Recursos Humanos (RH)', tab: 'rh' },
-      { key: 'Alt + 8', label: 'Taxas de Câmbio BNA', tab: 'exchange_rates' },
+      { key: 'Alt + 4', label: 'Quizzes & Avaliações', tab: 'quizzes' },
+      { key: 'Alt + 5 / Alt + N', label: 'Notas & Anotações', tab: 'notes' },
+      { key: 'Alt + 6', label: 'O Meu Perfil', tab: 'profile' }
     ]
   },
   {

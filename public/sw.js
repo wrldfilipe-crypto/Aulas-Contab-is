@@ -1,225 +1,169 @@
 /*
- * ContaGlobal Offline — Service Worker + Cache API
- * Sem Firebase, Supabase ou bibliotecas externas.
- *
- * Estratégias:
- * - App shell e rotas principais: network-first com fallback para index.html.
- * - JavaScript, CSS, fontes e imagens: stale-while-revalidate.
- * - GET JSON same-origin: network-first e cache automático.
- * - POST/PUT/DELETE: nunca são interceptados pelo cache.
+ * ContaEstudo PWA Service Worker — PGC Angola & Contabilidade
+ * Cache-first para assets estáticos (JS, CSS, fontes, imagens, ícones)
+ * Network-only para API, Firestore, Gemini, Firebase Auth (nunca cachear pedidos dinâmicos)
+ * Fallback offline para app shell e offline.html
  */
 
-const VERSION = "v6";
-const STATIC_CACHE = `contaglobal-static-${VERSION}`;
-const RUNTIME_CACHE = `contaglobal-runtime-${VERSION}`;
-const DATA_CACHE = `contaglobal-data-${VERSION}`;
-const OFFLINE_PAGE = "/sem-ligacao.html";
-const MANIFEST_URL = "/asset-manifest.json";
+const CACHE_NAME = 'contaestudo-static-v1';
+const OFFLINE_FALLBACK = '/offline.html';
 
-const OFFLINE_ROUTES = [
-  "/",
-  "/index.html",
-  "/notas",
-  "/estudos",
-  "/quizzes",
-  "/sem-ligacao.html",
-  "/offline.html"
+const PRECACHE_ASSETS = [
+  '/',
+  '/index.html',
+  '/manifest.json',
+  '/offline.html',
+  '/sem-ligacao.html',
+  '/icon-192.png',
+  '/icon-512.png',
+  '/icon-512-maskable.png',
+  '/apple-touch-icon.png',
+  '/logo.svg'
 ];
 
-const STATIC_FILES = [
-  "/",
-  "/index.html",
-  "/manifest.json",
-  "/contaestudo-logo.png",
-  "/logo_icone_192.png",
-  "/logo_icone_512.png",
-  "/icon-invoice.png",
-  "/icon-ai.png",
-  "/icon-study.png",
-  "/icon-calc.png",
-  "/sem-ligacao.html",
-  "/offline.html"
-];
-
-function isSameOrigin(request) {
-  return new URL(request.url).origin === self.location.origin;
-}
-
-function isOfflineRoute(pathname) {
-  const path = pathname.toLowerCase();
-  return OFFLINE_ROUTES.some((route) => {
-    const normalized = route.toLowerCase();
-    return path === normalized || path.startsWith(`${normalized}/`);
-  });
-}
-
-function isAssetRequest(request) {
-  const url = new URL(request.url);
-  return /\.(?:js|css|mjs|woff2?|ttf|otf|png|jpe?g|gif|svg|webp|ico|avif)$/i.test(url.pathname) ||
-    url.pathname.includes("/assets/");
-}
-
-function isDataRequest(request) {
-  const url = new URL(request.url);
-  const contentType = request.headers.get("accept") || "";
-  return contentType.includes("application/json") ||
-    url.pathname.startsWith("/api/") ||
-    url.pathname.endsWith(".json");
-}
-
-async function readBuildAssets() {
-  try {
-    const response = await fetch(MANIFEST_URL, { cache: "no-store" });
-    if (!response.ok) return [];
-
-    const manifest = await response.json();
-    const files = new Set();
-    const visited = new Set();
-
-    function addEntry(keyOrEntry) {
-      const key = typeof keyOrEntry === "string" ? keyOrEntry : null;
-      const entry = key ? manifest[key] : keyOrEntry;
-      if (!entry || typeof entry !== "object" || (key && visited.has(key))) return;
-      if (key) visited.add(key);
-
-      if (typeof entry.file === "string") files.add(`/${entry.file.replace(/^\//, "")}`);
-      for (const field of ["css", "assets"]) {
-        if (Array.isArray(entry[field])) {
-          entry[field].forEach((file) => files.add(`/${String(file).replace(/^\//, "")}`));
-        }
-      }
-      if (Array.isArray(entry.imports)) entry.imports.forEach(addEntry);
-      if (Array.isArray(entry.dynamicImports)) entry.dynamicImports.forEach(addEntry);
-    }
-
-    Object.keys(manifest).forEach(addEntry);
-    return [...files];
-  } catch {
-    return [];
-  }
-}
-
-async function cacheResources(cacheName, resources) {
-  const cache = await caches.open(cacheName);
-  await Promise.allSettled(resources.map(async (resource) => {
-    try {
-      const response = await fetch(resource, { cache: "reload" });
-      if (response.ok) await cache.put(resource, response);
-    } catch {
-      // Um asset opcional ausente não deve impedir a instalação do PWA.
-    }
-  }));
-}
-
-self.addEventListener("install", (event) => {
-  event.waitUntil((async () => {
-    const buildAssets = await readBuildAssets();
-    await cacheResources(STATIC_CACHE, [...new Set([...STATIC_FILES, ...buildAssets])]);
-    await self.skipWaiting();
-  })());
+// Instalação: pre-caching de assets estáticos essenciais
+self.addEventListener('install', (event) => {
+  event.waitUntil(
+    caches.open(CACHE_NAME).then((cache) => {
+      return Promise.allSettled(
+        PRECACHE_ASSETS.map((asset) =>
+          fetch(asset, { cache: 'reload' })
+            .then((res) => {
+              if (res.ok) return cache.put(asset, res);
+            })
+            .catch(() => {})
+        )
+      );
+    }).then(() => self.skipWaiting())
+  );
 });
 
-self.addEventListener("activate", (event) => {
-  event.waitUntil((async () => {
-    const keep = new Set([STATIC_CACHE, RUNTIME_CACHE, DATA_CACHE]);
-    const keys = await caches.keys();
-    await Promise.all(keys.filter((key) => key.startsWith("contaglobal-") && !keep.has(key))
-      .map((key) => caches.delete(key)));
-    await self.clients.claim();
-  })());
+// Ativação: limpeza de caches antigos
+self.addEventListener('activate', (event) => {
+  event.waitUntil(
+    caches.keys().then((keys) => {
+      return Promise.all(
+        keys.map((key) => {
+          if (key !== CACHE_NAME) {
+            return caches.delete(key);
+          }
+        })
+      );
+    }).then(() => self.clients.claim())
+  );
 });
 
-self.addEventListener("message", (event) => {
-  const message = event.data || {};
-  if (message.type === "SKIP_WAITING") self.skipWaiting();
-  if (message.type === "CLEAR_OFFLINE_CACHE") {
-    event.waitUntil(Promise.all([
-      caches.delete(STATIC_CACHE),
-      caches.delete(RUNTIME_CACHE),
-      caches.delete(DATA_CACHE)
-    ]));
-  }
-  if (message.type === "WARM_OFFLINE_PAGES") {
-    event.waitUntil(warmOfflinePages());
-  }
-});
-
-async function warmOfflinePages() {
-  const cache = await caches.open(STATIC_CACHE);
-  await Promise.allSettled(OFFLINE_ROUTES.map(async (route) => {
-    try {
-      const response = await fetch(route, { cache: "reload" });
-      if (response.ok) await cache.put(route, response);
-    } catch {
-      // O app shell já é suficiente para rotas SPA durante a falta de rede.
-    }
-  }));
-}
-
-self.addEventListener("fetch", (event) => {
+// Interceção de pedidos
+self.addEventListener('fetch', (event) => {
   const request = event.request;
-  if (request.method !== "GET" || !isSameOrigin(request)) return;
+
+  // Apenas requisições GET
+  if (request.method !== 'GET') {
+    return;
+  }
 
   const url = new URL(request.url);
-  if (request.mode === "navigate") {
-    event.respondWith(handleNavigation(request, url.pathname));
+
+  // 1. REQUISITOS NETWORK-ONLY: NUNCA CACHEAR API, FIRESTORE, GEMINI, FIREBASE AUTH
+  const isNetworkOnly =
+    url.pathname.startsWith('/api/') ||
+    url.hostname.includes('googleapis.com') ||
+    url.hostname.includes('firestore') ||
+    url.hostname.includes('firebase') ||
+    url.hostname.includes('identitytoolkit') ||
+    url.hostname.includes('securetoken');
+
+  if (isNetworkOnly) {
+    // Deixar a rede lidar directamente, sem interferência nem cache
     return;
   }
 
-  if (isAssetRequest(request)) {
-    event.respondWith(staleWhileRevalidate(request, STATIC_CACHE));
+  // 2. NAVEGAÇÃO SPA (HTML document)
+  if (request.mode === 'navigate') {
+    event.respondWith(
+      fetch(request)
+        .then((response) => {
+          if (response.ok) {
+            const copy = response.clone();
+            caches.open(CACHE_NAME).then((cache) => cache.put(request, copy)).catch(() => {});
+          }
+          return response;
+        })
+        .catch(async () => {
+          const cache = await caches.open(CACHE_NAME);
+          return (
+            (await cache.match(request)) ||
+            (await cache.match('/index.html')) ||
+            (await cache.match('/')) ||
+            (await cache.match(OFFLINE_FALLBACK))
+          );
+        })
+    );
     return;
   }
 
-  if (isDataRequest(request)) {
-    event.respondWith(networkFirst(request, DATA_CACHE));
+  // 3. ASSETS ESTÁTICOS (JS, CSS, Fontes, Imagens): Cache-first com revalidação em background
+  const isStaticAsset =
+    /\.(?:js|css|mjs|woff2?|ttf|otf|png|jpe?g|gif|svg|webp|ico|avif)$/i.test(url.pathname) ||
+    url.pathname.startsWith('/assets/') ||
+    url.hostname.includes('fonts.gstatic.com') ||
+    url.hostname.includes('fonts.googleapis.com');
+
+  if (isStaticAsset) {
+    event.respondWith(
+      caches.match(request).then((cachedResponse) => {
+        if (cachedResponse) {
+          // Revalidação em background silenciosa
+          fetch(request)
+            .then((networkResponse) => {
+              if (networkResponse && networkResponse.ok) {
+                caches.open(CACHE_NAME).then((cache) => cache.put(request, networkResponse)).catch(() => {});
+              }
+            })
+            .catch(() => {});
+          return cachedResponse;
+        }
+
+        // Se não estiver em cache, busca na rede e guarda em cache
+        return fetch(request)
+          .then((networkResponse) => {
+            if (networkResponse && networkResponse.ok) {
+              const copy = networkResponse.clone();
+              caches.open(CACHE_NAME).then((cache) => cache.put(request, copy)).catch(() => {});
+            }
+            return networkResponse;
+          })
+          .catch(() => {
+            return new Response('Asset offline indisponível', { status: 503 });
+          });
+      })
+    );
     return;
   }
 
-  event.respondWith(staleWhileRevalidate(request, RUNTIME_CACHE));
+  // Padrão para outros pedidos GET de mesma origem
+  if (url.origin === self.location.origin) {
+    event.respondWith(
+      caches.match(request).then((cached) => {
+        return (
+          cached ||
+          fetch(request)
+            .then((res) => {
+              if (res && res.ok) {
+                const copy = res.clone();
+                caches.open(CACHE_NAME).then((cache) => cache.put(request, copy)).catch(() => {});
+              }
+              return res;
+            })
+            .catch(() => new Response('Offline', { status: 503 }))
+        );
+      })
+    );
+  }
 });
 
-async function handleNavigation(request, pathname) {
-  try {
-    const response = await fetch(request);
-    if (response.ok && isOfflineRoute(pathname)) {
-      const cache = await caches.open(STATIC_CACHE);
-      await cache.put(request, response.clone());
-    }
-    return response;
-  } catch {
-    const cache = await caches.open(STATIC_CACHE);
-    return (await cache.match(request)) ||
-      (await cache.match(pathname)) ||
-      (await cache.match("/index.html")) ||
-      (await cache.match("/")) ||
-      (await cache.match(OFFLINE_PAGE));
+self.addEventListener('message', (event) => {
+  if (event.data && event.data.type === 'SKIP_WAITING') {
+    self.skipWaiting();
   }
-}
-
-async function staleWhileRevalidate(request, cacheName) {
-  const cache = await caches.open(cacheName);
-  const cached = await cache.match(request);
-  const update = fetch(request).then(async (response) => {
-    if (response.ok) await cache.put(request, response.clone());
-    return response;
-  }).catch(() => null);
-  return cached || update || new Response("Recurso offline indisponível", { status: 503 });
-}
-
-async function networkFirst(request, cacheName) {
-  const cache = await caches.open(cacheName);
-  try {
-    const response = await fetch(request);
-    if (response.ok) await cache.put(request, response.clone());
-    return response;
-  } catch {
-    return (await cache.match(request)) || new Response(JSON.stringify({
-      offline: true,
-      message: "Este dado ainda não foi guardado neste dispositivo."
-    }), {
-      status: 503,
-      headers: { "Content-Type": "application/json" }
-    });
-  }
-}
+});

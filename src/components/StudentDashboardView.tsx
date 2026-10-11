@@ -25,6 +25,8 @@ import { getStudentProgress } from '../services/studentProgressService';
 import { StudentQuizProgressStats } from './StudentQuizProgressStats';
 import { KpiCardSkeleton, ListItemSkeleton } from './GranularSkeletons';
 
+import { SectionHeader } from './SectionHeader';
+
 interface InactiveFavoriteItem {
   id: string;
   title: string;
@@ -36,12 +38,14 @@ interface InactiveFavoriteItem {
 
 interface StudentDashboardViewProps {
   onNavigateTab: (tab: string) => void;
-  onOpenAiAssistant: (customPrompt?: string) => void;
+  onOpenAiAssistant?: (customPrompt?: string) => void;
+  onOpenNav?: () => void;
 }
 
 export const StudentDashboardView: React.FC<StudentDashboardViewProps> = ({
   onNavigateTab,
-  onOpenAiAssistant
+  onOpenAiAssistant,
+  onOpenNav
 }) => {
   const currentUser = getCurrentUser();
   const [userName, setUserName] = useState<string>(() => currentUser?.name || 'Estudante');
@@ -219,9 +223,23 @@ export const StudentDashboardView: React.FC<StudentDashboardViewProps> = ({
     }
   }, [userMaterialsCount, quizzesStats]);
 
+  const handleOpenNav = () => {
+    if (onOpenNav) {
+      onOpenNav();
+    } else if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('ga-open-mobile-nav'));
+    }
+  };
+
   return (
-    <div className="space-y-8 animate-fade-in p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto" id="student-dashboard-root">
-      
+    <div className="space-y-6 animate-fade-in p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto" id="student-dashboard-root">
+      {/* Mobile/Tablet Section Header */}
+      <SectionHeader 
+        title="Painel Principal"
+        subtitle="Visão geral de estudos e progresso"
+        onOpenNav={handleOpenNav}
+      />
+
       {/* Offline Limited Banner */}
       <OfflineLimitedBanner onNavigateToEstudos={() => onNavigateTab('learning')} />
 
@@ -239,17 +257,17 @@ export const StudentDashboardView: React.FC<StudentDashboardViewProps> = ({
         initial={{ opacity: 0, y: 16 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
-        className="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 rounded-2xl p-6 sm:p-8 text-white shadow-xl relative overflow-hidden border border-slate-800" 
+        className="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 rounded-2xl p-6 sm:p-8 text-white shadow-xl relative overflow-hidden border border-slate-800 mt-1" 
         id="welcome-panel"
       >
         <div className="absolute right-0 top-0 w-96 h-96 bg-indigo-500/10 rounded-full blur-3xl pointer-events-none" />
         <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
-          <div className="space-y-2">
-            <div className="inline-flex items-center gap-2 px-3 py-1 bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 rounded-full text-xs font-bold uppercase tracking-wider">
-              <GraduationCap className="w-4 h-4" />
-              <span>Painel Global de Gestão & Estudo</span>
+          <div className="space-y-3">
+            <div className="inline-flex items-center gap-2 px-3 py-1.5 bg-indigo-500/25 text-indigo-200 border border-indigo-400/50 rounded-full text-xs font-bold uppercase tracking-wider mt-0.5 max-w-full shadow-xs">
+              <GraduationCap className="w-4 h-4 shrink-0 text-indigo-300" />
+              <span className="truncate sm:whitespace-normal">Painel Global de Gestão & Estudo</span>
             </div>
-            <h1 className="text-2xl sm:text-3xl font-black tracking-tight text-white">
+            <h1 className="text-2xl sm:text-3xl font-black tracking-tight text-white leading-tight">
               Bem-vindo(a), {userName}
             </h1>
             <p className="text-xs sm:text-sm text-slate-300 leading-relaxed max-w-2xl">
@@ -267,11 +285,11 @@ export const StudentDashboardView: React.FC<StudentDashboardViewProps> = ({
               <span>Aprendizados</span>
             </button>
             <button
-              id="welcome-btn-ai-accountant"
+              id="welcome-btn-assistant"
               onClick={() => onNavigateTab('assistant')}
               className="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs rounded-xl shadow-lg transition-all flex items-center gap-2 cursor-pointer active:scale-[0.98]"
             >
-              <Sparkles className="w-4 h-4" />
+              <Sparkles className="w-4 h-4 text-amber-300" />
               <span>Yohan AI</span>
             </button>
           </div>
@@ -350,68 +368,35 @@ export const StudentDashboardView: React.FC<StudentDashboardViewProps> = ({
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4" id="quick-access-cards-grid">
-          {/* Card: Contabilidade (PGC) — Lançamentos & Balancete */}
+          {/* Card: Yohan AI — Consultor Contabilístico PGC */}
           <motion.div
             initial={{ opacity: 0, y: 12 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.3, delay: 0.05 }}
-            onClick={() => onNavigateTab('accounting')}
+            onClick={() => onNavigateTab('assistant')}
             className="bg-white border border-gray-200 hover:border-indigo-300 rounded-2xl p-5 shadow-2xs hover:shadow-md transition-all cursor-pointer group flex flex-col justify-between quick-access-card"
-            id="card-quick-accounting"
+            id="card-quick-assistant"
           >
             <div>
               <div className="flex items-center justify-between mb-3 card-header">
                 <div className="w-10 h-10 rounded-xl bg-indigo-50 text-indigo-600 border border-indigo-100 flex items-center justify-center shadow-2xs group-hover:scale-105 transition-transform">
-                  <Calculator className="w-5 h-5 card-icon" />
+                  <Sparkles className="w-5 h-5 card-icon" />
                 </div>
                 <span className="text-[10px] font-extrabold uppercase tracking-wider bg-indigo-50 text-indigo-600 px-2 py-0.5 rounded-full border border-indigo-100 card-badge">
-                  ERP
+                  IA PGC
                 </span>
               </div>
 
               <h3 className="text-sm font-black text-slate-900 group-hover:text-indigo-600 transition-colors">
-                Contabilidade — Lançamentos & Balancete
+                Yohan AI — Consultor & Auditor PGC
               </h3>
               <p className="text-xs text-slate-500 font-medium mt-1.5 leading-relaxed">
-                Lançamentos contábeis, diário geral, razão, balancete de verificação e demonstrações financeiras.
+                Consultoria e auditoria contabilística em tempo real, fiscalidade AGT, IVA e suporte especializado PGC Angola.
               </p>
             </div>
 
             <div className="pt-4 border-t border-slate-100 mt-4 flex items-center justify-between text-xs font-bold text-indigo-600 card-link">
-              <span>Abrir Contabilidade</span>
-              <ChevronRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
-            </div>
-          </motion.div>
-
-          {/* Card: AI Accountant — Consultoria & Análise */}
-          <motion.div
-            initial={{ opacity: 0, y: 12 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.3, delay: 0.1 }}
-            onClick={() => onNavigateTab('assistant')}
-            className="bg-white border border-gray-200 hover:border-blue-300 rounded-2xl p-5 shadow-2xs hover:shadow-md transition-all cursor-pointer group flex flex-col justify-between quick-access-card"
-            id="card-quick-ai-assistant"
-          >
-            <div>
-              <div className="flex items-center justify-between mb-3 card-header">
-                <div className="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 border border-blue-100 flex items-center justify-center shadow-2xs group-hover:scale-105 transition-transform">
-                  <Sparkles className="w-5 h-5 card-icon" />
-                </div>
-                <span className="text-[10px] font-extrabold uppercase tracking-wider bg-blue-50 text-blue-600 px-2 py-0.5 rounded-full border border-blue-100 card-badge">
-                  IA Ativa
-                </span>
-              </div>
-
-              <h3 className="text-sm font-black text-slate-900 group-hover:text-blue-600 transition-colors">
-                Yohan AI — Consultoria & Auditoria
-              </h3>
-              <p className="text-xs text-slate-500 font-medium mt-1.5 leading-relaxed">
-                Assistente inteligente para resolução de dúvidas contabilísticas, fiscais, auditoria e geração de relatórios.
-              </p>
-            </div>
-
-            <div className="pt-4 border-t border-slate-100 mt-4 flex items-center justify-between text-xs font-bold text-blue-600 card-link">
-              <span>Aceder ao Yohan AI</span>
+              <span>Abrir Yohan AI</span>
               <ChevronRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
             </div>
           </motion.div>

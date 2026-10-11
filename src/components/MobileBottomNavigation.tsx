@@ -13,12 +13,11 @@ import {
   LogOut,
   X,
   ChevronRight,
-  Calculator
+  Calculator,
+  Sparkles
 } from 'lucide-react';
 import { AppTab } from '../App';
 import { UserSession } from '../lib/db';
-import { YohanLogo } from './YohanLogo';
-import { AccountingLogo } from './AccountingLogo';
 import { ThemeSelector } from './ThemeSelector';
 
 interface MobileBottomNavigationProps {
@@ -48,24 +47,17 @@ export const MobileBottomNavigation: React.FC<MobileBottomNavigationProps> = ({
       ariaLabel: 'Ir para o Painel Principal'
     },
     {
+      id: 'assistant' as AppTab,
+      label: 'Yohan AI',
+      icon: Sparkles,
+      isAi: true,
+      ariaLabel: 'Ir para Yohan AI Consultor Contabilístico'
+    },
+    {
       id: 'learning' as AppTab,
       label: 'Estudar',
       icon: BookOpen,
       ariaLabel: 'Ir para o Centro de Estudos'
-    },
-    {
-      id: 'assistant' as AppTab,
-      label: 'Yohan AI',
-      icon: null,
-      isAi: true,
-      ariaLabel: 'Aceder ao Yohan AI Consultor Contabilístico'
-    },
-    {
-      id: 'accounting' as AppTab,
-      label: 'Contabilidade',
-      icon: null,
-      isAccounting: true,
-      ariaLabel: 'Ir para Contabilidade e Balancete PGC'
     },
     {
       id: 'quizzes' as AppTab,
@@ -93,9 +85,9 @@ export const MobileBottomNavigation: React.FC<MobileBottomNavigationProps> = ({
 
   return (
     <>
-      {/* 1. FIXED BOTTOM TAB BAR (UNIVERSAL: DESKTOP, TABLET & MOBILE) */}
+      {/* 1. FIXED BOTTOM TAB BAR (TABLET & MOBILE <1024px) */}
       <nav
-        className="fixed bottom-0 left-0 right-0 w-full h-16 z-[500] bg-white/95 dark:bg-slate-950/95 backdrop-blur-md border-t border-slate-200 dark:border-slate-800/90 shadow-[0_-4px_20px_rgba(0,0,0,0.08)] dark:shadow-[0_-4px_20px_rgba(0,0,0,0.3)] pb-[env(safe-area-inset-bottom)] px-2 sm:px-4 flex items-center justify-around"
+        className="lg:hidden fixed bottom-0 left-0 right-0 w-full h-16 z-[500] bg-white/95 dark:bg-slate-950/95 backdrop-blur-md border-t border-slate-200 dark:border-slate-800/90 shadow-[0_-4px_20px_rgba(0,0,0,0.08)] dark:shadow-[0_-4px_20px_rgba(0,0,0,0.3)] pb-[env(safe-area-inset-bottom)] px-2 sm:px-4 flex items-center justify-around"
         aria-label="Navegação Principal"
         id="mobile-bottom-tab-bar"
       >
@@ -113,9 +105,7 @@ export const MobileBottomNavigation: React.FC<MobileBottomNavigationProps> = ({
                 aria-current={isActive ? 'page' : undefined}
                 className={`relative flex flex-col items-center justify-center flex-1 h-full py-1 transition-all active:scale-95 cursor-pointer select-none ${
                   isActive
-                    ? item.isAi
-                      ? 'text-indigo-600 dark:text-indigo-400 font-black'
-                      : 'text-blue-600 dark:text-blue-400 font-bold'
+                    ? 'text-blue-600 dark:text-blue-400 font-bold'
                     : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 font-medium'
                 }`}
                 id={`mobile-tab-${item.id}`}
@@ -123,32 +113,20 @@ export const MobileBottomNavigation: React.FC<MobileBottomNavigationProps> = ({
                 {/* Highlight pill behind active icon */}
                 {isActive && (
                   <span
-                    className={`absolute inset-1 rounded-xl transition-all ${
-                      item.isAi
-                        ? 'bg-indigo-500/10 dark:bg-indigo-500/20'
-                        : 'bg-blue-500/10 dark:bg-blue-500/20'
-                    }`}
+                    className="absolute inset-1 rounded-xl transition-all bg-blue-500/10 dark:bg-blue-500/20"
                     aria-hidden="true"
                   />
                 )}
 
                 {/* Icon Container */}
                 <div className="relative z-10 flex items-center justify-center">
-                  {item.isAi ? (
+                  {(item as any).isAi ? (
                     <div className={`w-6 h-6 rounded-lg flex items-center justify-center ${
                       isActive
-                        ? 'bg-slate-900 border border-indigo-500/40 p-0.5 shadow-xs shadow-indigo-500/30'
-                        : ''
+                        ? 'bg-indigo-600 text-white shadow-xs shadow-indigo-500/40'
+                        : 'text-indigo-500 dark:text-indigo-400'
                     }`}>
-                      <YohanLogo size={20} showGlow={isActive} />
-                    </div>
-                  ) : (item as any).isAccounting ? (
-                    <div className={`w-6 h-6 rounded-lg flex items-center justify-center ${
-                      isActive
-                        ? 'bg-slate-900 border border-blue-500/40 p-0.5 shadow-xs shadow-blue-500/30'
-                        : ''
-                    }`}>
-                      <AccountingLogo size={20} showGlow={isActive} />
+                      <Sparkles className={`w-4 h-4 ${isActive ? 'animate-pulse' : ''}`} />
                     </div>
                   ) : (
                     Icon && <Icon className={`w-5 h-5 transition-transform ${isActive ? 'scale-110' : ''}`} />
@@ -161,7 +139,7 @@ export const MobileBottomNavigation: React.FC<MobileBottomNavigationProps> = ({
                 </span>
 
                 {/* Small Active Dot */}
-                {isActive && !item.isAi && (
+                {isActive && (
                   <span className="w-1 h-1 rounded-full bg-blue-600 dark:bg-blue-400 mt-0.5" />
                 )}
               </button>
@@ -175,13 +153,13 @@ export const MobileBottomNavigation: React.FC<MobileBottomNavigationProps> = ({
             aria-label="Abrir Menu Mais Opções"
             aria-expanded={isMoreSheetOpen}
             className={`relative flex flex-col items-center justify-center flex-1 h-full py-1 transition-all active:scale-95 cursor-pointer select-none ${
-              isMoreSheetOpen || ['notes', 'profile', 'admin'].includes(activeTab)
+              isMoreSheetOpen || ['notes', 'profile'].includes(activeTab)
                 ? 'text-blue-600 dark:text-blue-400 font-bold'
                 : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 font-medium'
             }`}
             id="mobile-tab-more"
           >
-            {(isMoreSheetOpen || ['notes', 'profile', 'admin'].includes(activeTab)) && (
+            {(isMoreSheetOpen || ['notes', 'profile'].includes(activeTab)) && (
               <span className="absolute inset-1 rounded-xl bg-blue-500/10 dark:bg-blue-500/20" aria-hidden="true" />
             )}
             <div className="relative z-10 flex items-center justify-center">
@@ -334,27 +312,6 @@ export const MobileBottomNavigation: React.FC<MobileBottomNavigationProps> = ({
                     <ThemeSelector />
                   </div>
                 </div>
-
-                {/* Admin Option if role === admin */}
-                {currentUser?.role === 'admin' && (
-                  <button
-                    type="button"
-                    onClick={() => handleSelectTab('admin')}
-                    className="w-full text-left p-3.5 rounded-2xl bg-purple-50 hover:bg-purple-100 dark:bg-purple-950/30 dark:hover:bg-purple-900/40 border border-purple-200 dark:border-purple-800/60 text-purple-900 dark:text-purple-200 flex items-center justify-between transition-all cursor-pointer"
-                    id="more-link-admin"
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className="w-9 h-9 rounded-xl bg-purple-500/10 dark:bg-purple-500/20 text-purple-600 dark:text-purple-400 flex items-center justify-center shrink-0">
-                        <Shield className="w-5 h-5" />
-                      </div>
-                      <div>
-                        <p className="text-xs font-bold">Painel de Administração</p>
-                        <p className="text-[11px] text-purple-600/80 dark:text-purple-300/80">Gestão global e auditoria</p>
-                      </div>
-                    </div>
-                    <ChevronRight className="w-4 h-4 text-purple-400" />
-                  </button>
-                )}
 
                 {/* Link: Terminar Sessão (Bottom Button) */}
                 <div className="pt-3">

@@ -711,7 +711,16 @@ export const PGC_CHART_OF_ACCOUNTS: PGCAccount[] = [
   { codigo: '88.9', nome: 'Transferência para resultados transitados', classe: 8 },
 
   { codigo: '89', nome: 'Dividendos antecipados', classe: 8, tipo: 'sintetica' },
-  { codigo: '89.9', nome: 'Transferência para resultados transitados', classe: 8 }
+  { codigo: '89.9', nome: 'Transferência para resultados transitados', classe: 8 },
+
+  // CLASSE 9 - CONTABILIDADE ANALÍTICA (FACULTATIVA / CONTAS DE GESTÃO - DECRETO N.º 82/01)
+  { codigo: '9', nome: 'Contabilidade analítica (Facultativa)', classe: 9, tipo: 'sintetica', descricao: 'Classe de adopção facultativa segundo o PGC Angola, vocacionada para controlo interno de custos e apuramento analítico de margens.' },
+  { codigo: '91', nome: 'Contas reflectidas', classe: 9, descricao: 'Reflexo das contas financeiras da contabilidade geral (facultativa)' },
+  { codigo: '92', nome: 'Centros de custos', classe: 9, descricao: 'Afectação por secções, departamentos ou centros de responsabilidade (facultativa)' },
+  { codigo: '93', nome: 'Custos de produção', classe: 9, descricao: 'Acumulação de custos por ordens ou processos de fabricação (facultativa)' },
+  { codigo: '94', nome: 'Produtos e trabalhos intermédios', classe: 9, descricao: 'Controlo analítico interno (facultativa)' },
+  { codigo: '95', nome: 'Custos não incorporados e desvios', classe: 9, descricao: 'Controlo de variações orçamentais e desvios padrão (facultativa)' },
+  { codigo: '98', nome: 'Resultados analíticos', classe: 9, descricao: 'Apuramento de resultados por produto, linha de negócio ou centro de lucro (facultativa)' }
 ];
 
 // ─────────────────────────────────────────────────────────────────────────────
